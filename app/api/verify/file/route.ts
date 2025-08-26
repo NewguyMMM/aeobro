@@ -1,0 +1,1 @@
+export async function POST(){return new Response(JSON.stringify({token:'demo-token'}),{headers:{'content-type':'application/json'}})}

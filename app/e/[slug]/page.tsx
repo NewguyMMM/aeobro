@@ -1,0 +1,1 @@
+export const dynamic='force-dynamic';export default function Page({params}:{params:{slug:string}}){return(<section className='container py-16'><h1 className='text-3xl font-extrabold'>Public Profile: {params.slug}</h1><p className='text-gray-700 mt-2'>Entity facts + FAQ with embedded JSON‑LD.</p></section>)}

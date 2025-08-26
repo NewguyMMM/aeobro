@@ -1,0 +1,1 @@
+export default ()=> (<section className='container py-16'><h1 className='text-4xl font-extrabold'>Disputes & Impersonation</h1><p className='mt-6'>We may request DNS/file verification; disputed pages may be temporarily removed.</p></section>);

@@ -1,0 +1,1 @@
+export default function Page(){return(<section className='container py-16'><h1 className='text-4xl font-extrabold'>FAQ</h1><div className='card mt-6'><h3 className='font-semibold'>What is AEOBRO?</h3><p className='text-gray-700 mt-2'>A machine‑readable registry that helps AI systems find verified facts about your brand.</p></div></section>)}

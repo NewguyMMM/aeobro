@@ -1,0 +1,1 @@
+# AEOBRO — Next.js 14 MVP\n\nRun `npm install` then `npm run dev`. Fill `.env.local` from `.env.example`. Use Supabase + Stripe + Resend as described.

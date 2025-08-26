@@ -1,0 +1,1 @@
+export default ()=> (<section className='container py-16'><h1 className='text-3xl font-bold'>Dashboard</h1><p className='text-gray-700 mt-2'>Auth + profile editor goes here.</p></section>);

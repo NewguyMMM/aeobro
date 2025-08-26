@@ -1,0 +1,1 @@
+export default ()=> (<section className='container py-16'><h1 className='text-4xl font-extrabold'>Privacy Policy</h1><p className='mt-6'>We process only necessary data. See GDPR/CCPA rights.</p></section>);

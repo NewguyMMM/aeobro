@@ -1,0 +1,1 @@
+import { MetadataRoute } from 'next';export default function sitemap():MetadataRoute.Sitemap{const base=process.env.SITE_URL||'https://aeobro.com';return['','/pricing','/faq','/privacy','/terms','/aup','/disputes','/audit'].map(p=>({url:`${base}${p}`,lastModified:new Date()}));}

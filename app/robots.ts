@@ -1,0 +1,1 @@
+import { MetadataRoute } from 'next';export default function robots():MetadataRoute.Robots{const host=process.env.SITE_URL||'https://aeobro.com';return{rules:[{userAgent:'*',allow:'/'}],sitemap:`${host}/sitemap.xml`,host};}
