@@ -1,0 +1,38 @@
+# Node.js dependencies
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Next.js build output
+.next/
+out/
+dist/
+
+# Local environment variables
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Logs
+*.log
+logs
+*.csv
+
+# OS / IDE files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.swo
+*.swn
+
+# Coverage / test output
+coverage/
+*.lcov
+
+# Misc
+*.tgz
