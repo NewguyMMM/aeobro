@@ -1,1 +1,3 @@
-export default function Page(){return(<section className='container py-16'><h1 className='text-5xl font-extrabold'>Make <span className='text-cyan'>AI</span> find you.</h1><p className='mt-4 text-lg text-gray-700'>AEOBRO turns your brand facts into machine‑readable profiles with verification, JSON‑LD, and a public facts bundle.</p><div className='mt-8 flex gap-3'><a className='btn btn-primary' href='/dashboard'>Create your profile</a><a className='btn' href='/pricing'>See pricing</a></div></section>)}
+import Link from 'next/link';
+/* … */
+<Link href="/dashboard" className="btn btn-primary">Create your profile</Link>
