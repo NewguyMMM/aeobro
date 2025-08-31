@@ -1,18 +1,15 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState } from 'react';
 
 const PRICES = {
-  LITE: process.env.NEXT_PUBLIC_STRIPE_PRICE_LITE,
-  PRO: process.env.NEXT_PUBLIC_STRIPE_PRICE_PRO,
-  BUSINESS: process.env.NEXT_PUBLIC_STRIPE_PRICE_BUSINESS,
-  ENTERPRISE: process.env.NEXT_PUBLIC_STRIPE_PRICE_ENTERPRISE,
+  LITE: process.env.NEXT_PUBLIC_STRIPE_PRICE_LITE!,
+  PRO: process.env.NEXT_PUBLIC_STRIPE_PRICE_PRO!,
+  BUSINESS: process.env.NEXT_PUBLIC_STRIPE_PRICE_BUSINESS!,
+  ENTERPRISE: process.env.NEXT_PUBLIC_STRIPE_PRICE_ENTERPRISE!,
 } as const;
 
-async function startCheckout(
-  priceId: string,
-  setLoading: (v: boolean) => void
-) {
+async function startCheckout(priceId: string, setLoading: (v: boolean) => void) {
   try {
     setLoading(true);
     const res = await fetch('/api/stripe/create-checkout-session', {
@@ -22,25 +19,45 @@ async function startCheckout(
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Checkout failed');
-    window.location.href = data.url as string; // Stripe-hosted Checkout
-  } catch (err: any) {
-    alert(err.message || 'Checkout failed');
+    window.location.href = data.url; // Stripe-hosted Checkout
+  } catch (err) {
+    alert((err as Error).message);
   } finally {
     setLoading(false);
   }
 }
 
+// Simple spinner component
+function Spinner() {
+  return (
+    <svg
+      className="animate-spin h-5 w-5 text-white mx-auto"
+      xmlns="http://www.w3.org/2000/svg"
+      fill="none"
+      viewBox="0 0 24 24"
+    >
+      <circle
+        className="opacity-25"
+        cx="12"
+        cy="12"
+        r="10"
+        stroke="currentColor"
+        strokeWidth="4"
+      ></circle>
+      <path
+        className="opacity-75"
+        fill="currentColor"
+        d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"
+      ></path>
+    </svg>
+  );
+}
+
 export default function PricingPage() {
   const [loadingLite, setLoadingLite] = useState(false);
   const [loadingPro, setLoadingPro] = useState(false);
-  const [loadingBiz, setLoadingBiz] = useState(false);
-  const [loadingEnt, setLoadingEnt] = useState(false);
-
-  // Safety: disable buttons if a price env var wasn’t set (avoids runtime errors)
-  const canLite = useMemo(() => Boolean(PRICES.LITE), []);
-  const canPro = useMemo(() => Boolean(PRICES.PRO), []);
-  const canBiz = useMemo(() => Boolean(PRICES.BUSINESS), []);
-  const canEnt = useMemo(() => Boolean(PRICES.ENTERPRISE), []);
+  const [loadingBusiness, setLoadingBusiness] = useState(false);
+  const [loadingEnterprise, setLoadingEnterprise] = useState(false);
 
   return (
     <main className="container py-16">
@@ -60,12 +77,11 @@ export default function PricingPage() {
             <li>“Powered by AEOBRO” badge</li>
           </ul>
           <button
-            onClick={() => startCheckout(PRICES.LITE!, setLoadingLite)}
-            disabled={!canLite || loadingLite}
-            className="w-full rounded-lg bg-black text-white py-3 font-semibold hover:opacity-90 transition disabled:opacity-50"
-            title={!canLite ? 'Missing price ID env var' : undefined}
+            onClick={() => startCheckout(PRICES.LITE, setLoadingLite)}
+            disabled={loadingLite}
+            className="w-full rounded-lg bg-black text-white py-3 font-semibold hover:opacity-90 transition disabled:opacity-60 flex justify-center"
           >
-            {loadingLite ? 'Starting…' : 'Start Lite'}
+            {loadingLite ? <Spinner /> : 'Start Lite'}
           </button>
           <p className="text-[11px] text-gray-500 mt-2">Renews monthly. Cancel anytime.</p>
         </div>
@@ -84,12 +100,11 @@ export default function PricingPage() {
             <li>API read</li>
           </ul>
           <button
-            onClick={() => startCheckout(PRICES.PRO!, setLoadingPro)}
-            disabled={!canPro || loadingPro}
-            className="w-full rounded-lg bg-black text-white py-3 font-semibold hover:opacity-90 transition disabled:opacity-50"
-            title={!canPro ? 'Missing price ID env var' : undefined}
+            onClick={() => startCheckout(PRICES.PRO, setLoadingPro)}
+            disabled={loadingPro}
+            className="w-full rounded-lg bg-black text-white py-3 font-semibold hover:opacity-90 transition disabled:opacity-60 flex justify-center"
           >
-            {loadingPro ? 'Starting…' : 'Upgrade to Pro'}
+            {loadingPro ? <Spinner /> : 'Upgrade to Pro'}
           </button>
           <p className="text-[11px] text-gray-500 mt-2">Renews monthly. Cancel anytime.</p>
         </div>
@@ -104,14 +119,13 @@ export default function PricingPage() {
             <li>Advanced analytics</li>
           </ul>
           <button
-            onClick={() => startCheckout(PRICES.BUSINESS!, setLoadingBiz)}
-            disabled={!canBiz || loadingBiz}
-            className="w-full rounded-lg bg-black text-white py-3 font-semibold hover:opacity-90 transition disabled:opacity-50"
-            title={!canBiz ? 'Missing price ID env var' : undefined}
+            onClick={() => startCheckout(PRICES.BUSINESS, setLoadingBusiness)}
+            disabled={loadingBusiness}
+            className="w-full rounded-lg bg-black text-white py-3 font-semibold hover:opacity-90 transition disabled:opacity-60 flex justify-center"
           >
-            {loadingBiz ? 'Starting…' : 'Choose Business'}
+            {loadingBusiness ? <Spinner /> : 'Choose Business'}
           </button>
-          <p className="text-[11px] text-gray-500 mt-2">Renews monthly. Cancel anytime.</p>
+          <p className="text-[11px] text-gray-500 mt-2">Custom onboarding available.</p>
         </div>
 
         {/* Enterprise */}
@@ -123,14 +137,13 @@ export default function PricingPage() {
             <li>Dedicated subdomain</li>
           </ul>
           <button
-            onClick={() => startCheckout(PRICES.ENTERPRISE!, setLoadingEnt)}
-            disabled={!canEnt || loadingEnt}
-            className="w-full rounded-lg bg-black text-white py-3 font-semibold hover:opacity-90 transition disabled:opacity-50"
-            title={!canEnt ? 'Missing price ID env var' : undefined}
+            onClick={() => startCheckout(PRICES.ENTERPRISE, setLoadingEnterprise)}
+            disabled={loadingEnterprise}
+            className="w-full rounded-lg bg-black text-white py-3 font-semibold hover:opacity-90 transition disabled:opacity-60 flex justify-center"
           >
-            {loadingEnt ? 'Starting…' : 'Choose Enterprise'}
+            {loadingEnterprise ? <Spinner /> : 'Choose Enterprise'}
           </button>
-          <p className="text-[11px] text-gray-500 mt-2">Renews monthly. Cancel anytime.</p>
+          <p className="text-[11px] text-gray-500 mt-2">Let’s scope your requirements.</p>
         </div>
       </div>
 
