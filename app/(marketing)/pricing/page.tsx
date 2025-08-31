@@ -5,10 +5,14 @@ import { useState } from 'react';
 const PRICES = {
   LITE: process.env.NEXT_PUBLIC_STRIPE_PRICE_LITE!,
   PRO: process.env.NEXT_PUBLIC_STRIPE_PRICE_PRO!,
-  // You can add BUSINESS/ENTERPRISE price IDs here later if you decide to self-serve those
+  BUSINESS: process.env.NEXT_PUBLIC_STRIPE_PRICE_BUSINESS!,
+  ENTERPRISE: process.env.NEXT_PUBLIC_STRIPE_PRICE_ENTERPRISE!,
 };
 
-async function startCheckout(priceId: string, setLoading: (v: boolean) => void) {
+async function startCheckout(
+  priceId: string,
+  setLoading: (v: boolean) => void
+) {
   try {
     setLoading(true);
     const res = await fetch('/api/stripe/checkout', {
@@ -18,8 +22,7 @@ async function startCheckout(priceId: string, setLoading: (v: boolean) => void) 
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Checkout failed');
-    // Redirect to Stripe-hosted checkout
-    window.location.href = data.url;
+    window.location.href = data.url; // Stripe-hosted Checkout
   } catch (err) {
     alert((err as Error).message);
   } finally {
@@ -30,6 +33,8 @@ async function startCheckout(priceId: string, setLoading: (v: boolean) => void) 
 export default function PricingPage() {
   const [loadingLite, setLoadingLite] = useState(false);
   const [loadingPro, setLoadingPro] = useState(false);
+  const [loadingBiz, setLoadingBiz] = useState(false);
+  const [loadingEnt, setLoadingEnt] = useState(false);
 
   return (
     <main className="container py-16">
@@ -90,13 +95,14 @@ export default function PricingPage() {
             <li>Bulk import + webhooks</li>
             <li>Advanced analytics</li>
           </ul>
-          <a
-            href="/contact?plan=business"
-            className="w-full inline-flex justify-center rounded-lg border py-3 font-semibold hover:bg-gray-50"
+          <button
+            onClick={() => startCheckout(PRICES.BUSINESS, setLoadingBiz)}
+            disabled={loadingBiz}
+            className="w-full rounded-lg bg-black text-white py-3 font-semibold hover:opacity-90 transition disabled:opacity-60"
           >
-            Talk to sales
-          </a>
-          <p className="text-[11px] text-gray-500 mt-2">Custom onboarding available.</p>
+            {loadingBiz ? 'Starting…' : 'Choose Business'}
+          </button>
+          <p className="text-[11px] text-gray-500 mt-2">Renews monthly. Cancel anytime.</p>
         </div>
 
         {/* Enterprise */}
@@ -107,13 +113,14 @@ export default function PricingPage() {
             <li>SSO, SLA, custom schema</li>
             <li>Dedicated subdomain</li>
           </ul>
-          <a
-            href="/contact?plan=enterprise"
-            className="w-full inline-flex justify-center rounded-lg bg-black text-white py-3 font-semibold hover:opacity-90"
+          <button
+            onClick={() => startCheckout(PRICES.ENTERPRISE, setLoadingEnt)}
+            disabled={loadingEnt}
+            className="w-full rounded-lg bg-black text-white py-3 font-semibold hover:opacity-90 transition disabled:opacity-60"
           >
-            Contact us
-          </a>
-          <p className="text-[11px] text-gray-500 mt-2">Let’s scope your requirements.</p>
+            {loadingEnt ? 'Starting…' : 'Choose Enterprise'}
+          </button>
+          <p className="text-[11px] text-gray-500 mt-2">Renews monthly. Cancel anytime.</p>
         </div>
       </div>
 
