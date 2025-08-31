@@ -1,13 +1,13 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 
 const PRICES = {
-  LITE: process.env.NEXT_PUBLIC_STRIPE_PRICE_LITE!,
-  PRO: process.env.NEXT_PUBLIC_STRIPE_PRICE_PRO!,
-  BUSINESS: process.env.NEXT_PUBLIC_STRIPE_PRICE_BUSINESS!,
-  ENTERPRISE: process.env.NEXT_PUBLIC_STRIPE_PRICE_ENTERPRISE!,
-};
+  LITE: process.env.NEXT_PUBLIC_STRIPE_PRICE_LITE,
+  PRO: process.env.NEXT_PUBLIC_STRIPE_PRICE_PRO,
+  BUSINESS: process.env.NEXT_PUBLIC_STRIPE_PRICE_BUSINESS,
+  ENTERPRISE: process.env.NEXT_PUBLIC_STRIPE_PRICE_ENTERPRISE,
+} as const;
 
 async function startCheckout(
   priceId: string,
@@ -22,9 +22,9 @@ async function startCheckout(
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Checkout failed');
-    window.location.href = data.url; // Stripe-hosted Checkout
-  } catch (err) {
-    alert((err as Error).message);
+    window.location.href = data.url as string; // Stripe-hosted Checkout
+  } catch (err: any) {
+    alert(err.message || 'Checkout failed');
   } finally {
     setLoading(false);
   }
@@ -35,6 +35,12 @@ export default function PricingPage() {
   const [loadingPro, setLoadingPro] = useState(false);
   const [loadingBiz, setLoadingBiz] = useState(false);
   const [loadingEnt, setLoadingEnt] = useState(false);
+
+  // Safety: disable buttons if a price env var wasn’t set (avoids runtime errors)
+  const canLite = useMemo(() => Boolean(PRICES.LITE), []);
+  const canPro = useMemo(() => Boolean(PRICES.PRO), []);
+  const canBiz = useMemo(() => Boolean(PRICES.BUSINESS), []);
+  const canEnt = useMemo(() => Boolean(PRICES.ENTERPRISE), []);
 
   return (
     <main className="container py-16">
@@ -54,9 +60,10 @@ export default function PricingPage() {
             <li>“Powered by AEOBRO” badge</li>
           </ul>
           <button
-            onClick={() => startCheckout(PRICES.LITE, setLoadingLite)}
-            disabled={loadingLite}
-            className="w-full rounded-lg bg-black text-white py-3 font-semibold hover:opacity-90 transition disabled:opacity-60"
+            onClick={() => startCheckout(PRICES.LITE!, setLoadingLite)}
+            disabled={!canLite || loadingLite}
+            className="w-full rounded-lg bg-black text-white py-3 font-semibold hover:opacity-90 transition disabled:opacity-50"
+            title={!canLite ? 'Missing price ID env var' : undefined}
           >
             {loadingLite ? 'Starting…' : 'Start Lite'}
           </button>
@@ -77,9 +84,10 @@ export default function PricingPage() {
             <li>API read</li>
           </ul>
           <button
-            onClick={() => startCheckout(PRICES.PRO, setLoadingPro)}
-            disabled={loadingPro}
-            className="w-full rounded-lg bg-black text-white py-3 font-semibold hover:opacity-90 transition disabled:opacity-60"
+            onClick={() => startCheckout(PRICES.PRO!, setLoadingPro)}
+            disabled={!canPro || loadingPro}
+            className="w-full rounded-lg bg-black text-white py-3 font-semibold hover:opacity-90 transition disabled:opacity-50"
+            title={!canPro ? 'Missing price ID env var' : undefined}
           >
             {loadingPro ? 'Starting…' : 'Upgrade to Pro'}
           </button>
@@ -96,9 +104,10 @@ export default function PricingPage() {
             <li>Advanced analytics</li>
           </ul>
           <button
-            onClick={() => startCheckout(PRICES.BUSINESS, setLoadingBiz)}
-            disabled={loadingBiz}
-            className="w-full rounded-lg bg-black text-white py-3 font-semibold hover:opacity-90 transition disabled:opacity-60"
+            onClick={() => startCheckout(PRICES.BUSINESS!, setLoadingBiz)}
+            disabled={!canBiz || loadingBiz}
+            className="w-full rounded-lg bg-black text-white py-3 font-semibold hover:opacity-90 transition disabled:opacity-50"
+            title={!canBiz ? 'Missing price ID env var' : undefined}
           >
             {loadingBiz ? 'Starting…' : 'Choose Business'}
           </button>
@@ -114,9 +123,10 @@ export default function PricingPage() {
             <li>Dedicated subdomain</li>
           </ul>
           <button
-            onClick={() => startCheckout(PRICES.ENTERPRISE, setLoadingEnt)}
-            disabled={loadingEnt}
-            className="w-full rounded-lg bg-black text-white py-3 font-semibold hover:opacity-90 transition disabled:opacity-60"
+            onClick={() => startCheckout(PRICES.ENTERPRISE!, setLoadingEnt)}
+            disabled={!canEnt || loadingEnt}
+            className="w-full rounded-lg bg-black text-white py-3 font-semibold hover:opacity-90 transition disabled:opacity-50"
+            title={!canEnt ? 'Missing price ID env var' : undefined}
           >
             {loadingEnt ? 'Starting…' : 'Choose Enterprise'}
           </button>
