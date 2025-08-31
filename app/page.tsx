@@ -5,9 +5,11 @@ export default function Home() {
         Make <span className="text-sky-500">AI</span> find you.
       </h1>
 
-      {/* Main tagline */}
+      {/* Split tagline into two lines */}
+      <p className="text-gray-600 max-w-2xl">
+        AEOBRO turns your brand facts into centralized machine-readable profiles.
+      </p>
       <p className="text-gray-600 mb-4 max-w-2xl">
-        AEOBRO turns your brand facts into centralized machine-readable profiles. 
         Structured, efficient, trusted, and always up-to-date.
       </p>
 
@@ -17,15 +19,18 @@ export default function Home() {
       </p>
 
       <div className="flex gap-4">
+        {/* Primary CTA — bigger & bolder */}
         <a
           href="/dashboard"
-          className="px-5 py-3 rounded-xl bg-black text-white hover:bg-gray-900"
+          className="px-6 py-4 rounded-xl bg-black text-white font-semibold text-lg hover:bg-gray-900"
         >
           Create your AI Profile
         </a>
+
+        {/* Secondary CTA */}
         <a
           href="/pricing"
-          className="px-5 py-3 rounded-xl border hover:bg-gray-50"
+          className="px-6 py-4 rounded-xl border font-medium text-lg hover:bg-gray-50"
         >
           See pricing
         </a>
