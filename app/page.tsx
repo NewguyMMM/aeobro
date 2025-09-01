@@ -2,12 +2,12 @@ export default function Home() {
   return (
     <main className="container py-16">
       <h1 className="text-4xl font-bold mb-4">
-        Make <span className="text-sky-500">AI</span> find you.
+        Help <span className="text-sky-500">AI</span> find you.
       </h1>
 
-      {/* Split tagline into two lines */}
+      {/* Tagline */}
       <p className="text-gray-600 max-w-2xl">
-        AEOBRO turns your brand facts into centralized machine-readable profiles.
+        AEOBRO optimizes your content to be picked up and displayed by AI.
       </p>
       <p className="text-gray-600 mb-4 max-w-2xl">
         Structured, efficient, trusted, and always up-to-date.
