@@ -1,3 +1,4 @@
+// app/api/auth/[...nextauth]/route.ts
 import NextAuth from "next-auth";
 import EmailProvider from "next-auth/providers/email";
 import type { NextAuthOptions } from "next-auth";
@@ -7,14 +8,15 @@ import { resend, FROM, authEmailHtml, welcomeHtml } from "@/lib/email";
 // import { PrismaAdapter } from "@next-auth/prisma-adapter";
 // import { prisma } from "@/lib/prisma";
 
-export const authOptions: NextAuthOptions = {
+// IMPORTANT: Do NOT export this from a route file.
+const authOptions: NextAuthOptions = {
   // adapter: PrismaAdapter(prisma),
   providers: [
     EmailProvider({
       async sendVerificationRequest({ identifier, url }) {
         const { host } = new URL(url);
         await resend.emails.send({
-          from: FROM.login,               // 👈 login@aeobro.com
+          from: FROM.login, // login@aeobro.com
           to: identifier,
           subject: `Sign in to ${host}`,
           html: authEmailHtml(url, host),
@@ -30,23 +32,24 @@ export const authOptions: NextAuthOptions = {
   ],
   session: { strategy: "jwt" },
   pages: {
-    signIn: "/signin",   // keep if you have a custom sign-in page
+    signIn: "/signin", // keep if you have a custom sign-in page
   },
   // Send welcome email on first user creation
   events: {
     async createUser({ user }) {
       if (!user?.email) return;
       await resend.emails.send({
-        from: FROM.welcome,              // 👈 welcome@aeobro.com
+        from: FROM.welcome, // welcome@aeobro.com
         to: user.email,
         subject: "Welcome to AEOBRO",
         html: welcomeHtml(),
-        text: "Welcome to AEOBRO! Open your dashboard: https://aeobro.vercel.app/dashboard",
+        text:
+          "Welcome to AEOBRO! Open your dashboard: https://aeobro.vercel.app/dashboard",
       });
     },
   },
   // (Optional) tighten security or enrich tokens here
-  // callbacks: {...},
+  // callbacks: { ... },
   theme: { colorScheme: "light" },
 };
 
