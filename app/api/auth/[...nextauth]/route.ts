@@ -4,46 +4,32 @@ import { PrismaAdapter } from "@next-auth/prisma-adapter";
 import { prisma } from "@/lib/prisma";
 import { resend, FROM, authEmailHtml, welcomeHtml } from "@/lib/email";
 
-/**
- * Utility: robust logger that always prints in prod and dev
- */
+/** tiny logger */
 const log = (level: "info" | "warn" | "error", msg: string, meta?: unknown) => {
-  const entry = { level, msg, ...(meta ? { meta } : {}) };
+  const payload = { level, msg, ...(meta ? { meta } : {}) };
   try {
-    // Prefer Vercel/log drains if present
-    console[level === "error" ? "error" : level](JSON.stringify(entry));
+    console[level === "error" ? "error" : level](JSON.stringify(payload));
   } catch {
-    // Fallback
     console.log(level.toUpperCase(), msg, meta ?? "");
   }
 };
 
-/**
- * Send magic-link (verification) through Resend with hardening
- */
+/** send magic-link with resilience */
 async function sendMagicLinkEmail(identifier: string, url: string) {
   const { host } = new URL(url);
   try {
     const resp = await resend.emails.send({
-      from: FROM.login, // e.g. "login@aeobro.com"
+      from: FROM.login, // e.g. "AEObro <login@aeobro.com>"
       to: identifier,
       subject: `Sign in to ${host}`,
       html: authEmailHtml(url, host),
       text: `Sign in to ${host}\n${url}\n`,
-      headers: {
-        "X-Entity-Ref-ID": `auth-${Date.now()}`,
-      },
+      headers: { "X-Entity-Ref-ID": `auth-${Date.now()}` },
     });
-
-    log("info", "Auth email sent via Resend", { to: identifier, id: resp?.id });
-    return resp;
+    log("info", "Auth email sent", { to: identifier, id: resp?.id });
   } catch (err: any) {
-    // Don’t throw — NextAuth will surface a generic error; we want specifics in logs.
-    log("error", "Failed to send auth email via Resend", {
-      to: identifier,
-      err: err?.message ?? err,
-    });
-    // Best-effort retry once for transient 5xx
+    log("error", "Auth email failed", { to: identifier, err: err?.message ?? String(err) });
+    // optional: retry on 5xx
     const code = err?.statusCode || err?.code;
     if (code && String(code).startsWith("5")) {
       try {
@@ -53,117 +39,80 @@ async function sendMagicLinkEmail(identifier: string, url: string) {
           subject: `Sign in to ${host}`,
           html: authEmailHtml(url, host),
           text: `Sign in to ${host}\n${url}\n`,
-          headers: {
-            "X-Entity-Ref-ID": `auth-retry-${Date.now()}`,
-          },
+          headers: { "X-Entity-Ref-ID": `auth-retry-${Date.now()}` },
         });
-        log("warn", "Auth email retry succeeded", { to: identifier, id: retry?.id });
-        return retry;
+        log("warn", "Auth email retry success", { to: identifier, id: retry?.id });
       } catch (retryErr: any) {
-        log("error", "Auth email retry failed", {
-          to: identifier,
-          err: retryErr?.message ?? retryErr,
-        });
+        log("error", "Auth email retry failed", { to: identifier, err: retryErr?.message ?? String(retryErr) });
       }
     }
-    // allow flow to continue; NextAuth will still show “Check your email” page
-    return null;
   }
 }
 
-/**
- * One-time Welcome Email guard
- * Requires a boolean/timestamp field on User: welcomeSentAt (nullable Date)
- */
-async function sendWelcomeIfFirstTime(userId: string, email: string) {
+/** send welcome once after emailVerified using DB flag */
+async function sendWelcomeIfFirstTime(userId: string, email?: string | null) {
+  if (!email) return; // bail if no email
   try {
     const user = await prisma.user.findUnique({
       where: { id: userId },
-      select: { id: true, email: true, emailVerified: true, welcomeSentAt: true },
+      select: { id: true, emailVerified: true, welcomeSentAt: true },
     });
-
-    if (!user) {
-      log("warn", "Welcome skip: user not found", { userId, email });
-      return;
-    }
-    // Only after verified email
+    if (!user) return;
     if (!user.emailVerified) {
-      log("info", "Welcome deferred until emailVerified", { userId, email });
+      log("info", "Welcome deferred until emailVerified", { userId });
       return;
     }
     if (user.welcomeSentAt) {
-      log("info", "Welcome already sent; skipping", { userId, email, at: user.welcomeSentAt });
+      log("info", "Welcome already sent; skipping", { userId, at: user.welcomeSentAt });
       return;
     }
 
-    // Attempt send (with minimal retry)
     const resp = await resend.emails.send({
-      from: FROM.welcome ?? FROM.login, // allow separate mailbox; fallback to login@
+      from: FROM.welcome ?? FROM.login,
       to: email,
       subject: "Welcome to AEObro 👋",
       html: welcomeHtml(),
       text: "Welcome to AEObro!",
-      headers: {
-        "X-Entity-Ref-ID": `welcome-${userId}-${Date.now()}`,
-      },
+      headers: { "X-Entity-Ref-ID": `welcome-${userId}-${Date.now()}` },
     });
-    log("info", "Welcome email sent", { userId, email, id: resp?.id });
+    log("info", "Welcome email sent", { userId, id: resp?.id });
 
-    // Mark as sent
     await prisma.user.update({
       where: { id: userId },
       data: { welcomeSentAt: new Date() },
       select: { id: true },
     });
   } catch (err: any) {
-    log("error", "Failed to send/mark welcome email", {
-      userId,
-      email,
-      err: err?.message ?? err,
-    });
-    // Do not throw; never block sign-in on welcome failure
+    log("error", "Welcome send/mark failed", { userId, err: err?.message ?? String(err) });
   }
 }
 
 export const authOptions: NextAuthOptions = {
   adapter: PrismaAdapter(prisma),
-  session: { strategy: "database" }, // ensures consistent user presence for events
+  session: { strategy: "database" }, // durable sessions + reliable callbacks
   providers: [
     EmailProvider({
-      maxAge: 24 * 60 * 60, // 24h magic-link validity
+      maxAge: 24 * 60 * 60,
       async sendVerificationRequest({ identifier, url }) {
         await sendMagicLinkEmail(identifier, url);
       },
     }),
   ],
   callbacks: {
-    /**
-     * Triggered on every signIn. We use it to best-effort send welcome once a user is verified.
-     * This runs after a magic-link login, so emailVerified should be set by NextAuth + Adapter.
-     */
     async signIn({ user }) {
-      // fire-and-forget; don’t await to keep sign-in snappy
-      sendWelcomeIfFirstTime(user.id, user.email ?? "");
+      // fire-and-forget; never block login
+      sendWelcomeIfFirstTime(user.id, user.email);
       return true;
     },
   },
   events: {
-    /**
-     * Optional: if you’d rather send welcome on first account creation,
-     * keep this too. The signIn callback above is more reliable when
-     * email verification timing is racy.
-     */
     async createUser({ user }) {
-      // Try to send welcome, but signIn will also guard and mark once.
-      sendWelcomeIfFirstTime(user.id, user.email ?? "");
+      // extra safety: if signIn race happens, this also tries (guarded by DB flag)
+      sendWelcomeIfFirstTime(user.id, user.email);
     },
   },
-  pages: {
-    // Optional: your custom pages, if any
-  },
-  // Make errors visible in logs
   debug: process.env.NODE_ENV !== "production",
 };
 
-const authHandler = NextAuth(authOptions);
-export { authHandler as GET, authHandler as POST };
+const handler = NextAuth(authOptions);
+export { handler as GET, handler as POST };
