@@ -1,10 +1,11 @@
-import NextAuth, { NextAuthOptions } from "next-auth";
+// app/api/auth/[...nextauth]/route.ts
+import NextAuth, { type NextAuthOptions } from "next-auth";
 import EmailProvider from "next-auth/providers/email";
-import { PrismaAdapter } from "@next-auth/prisma-adapter";
+import { PrismaAdapter } from "@auth/prisma-adapter"; // ✅ correct package
 import { prisma } from "@/lib/prisma";
 import { resend, FROM, authEmailHtml, welcomeHtml } from "@/lib/email";
 
-/** tiny logger */
+/** small structured logger */
 const log = (level: "info" | "warn" | "error", msg: string, meta?: unknown) => {
   const payload = { level, msg, ...(meta ? { meta } : {}) };
   try {
@@ -29,7 +30,7 @@ async function sendMagicLinkEmail(identifier: string, url: string) {
     log("info", "Auth email sent", { to: identifier, id: resp?.id });
   } catch (err: any) {
     log("error", "Auth email failed", { to: identifier, err: err?.message ?? String(err) });
-    // optional: retry on 5xx
+    // optional single retry on 5xx
     const code = err?.statusCode || err?.code;
     if (code && String(code).startsWith("5")) {
       try {
@@ -51,7 +52,7 @@ async function sendMagicLinkEmail(identifier: string, url: string) {
 
 /** send welcome once after emailVerified using DB flag */
 async function sendWelcomeIfFirstTime(userId: string, email?: string | null) {
-  if (!email) return; // bail if no email
+  if (!email) return; // never send to empty
   try {
     const user = await prisma.user.findUnique({
       where: { id: userId },
@@ -89,7 +90,7 @@ async function sendWelcomeIfFirstTime(userId: string, email?: string | null) {
 
 export const authOptions: NextAuthOptions = {
   adapter: PrismaAdapter(prisma),
-  session: { strategy: "database" }, // durable sessions + reliable callbacks
+  session: { strategy: "database" },
   providers: [
     EmailProvider({
       maxAge: 24 * 60 * 60,
@@ -100,14 +101,14 @@ export const authOptions: NextAuthOptions = {
   ],
   callbacks: {
     async signIn({ user }) {
-      // fire-and-forget; never block login
+      // fire-and-forget; do not block login
       sendWelcomeIfFirstTime(user.id, user.email);
       return true;
     },
   },
   events: {
     async createUser({ user }) {
-      // extra safety: if signIn race happens, this also tries (guarded by DB flag)
+      // extra safety in case of timing races
       sendWelcomeIfFirstTime(user.id, user.email);
     },
   },
