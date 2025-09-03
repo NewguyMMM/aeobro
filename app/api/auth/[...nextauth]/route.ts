@@ -1,7 +1,7 @@
 // app/api/auth/[...nextauth]/route.ts
 import NextAuth, { type NextAuthOptions } from "next-auth";
 import EmailProvider from "next-auth/providers/email";
-import { PrismaAdapter } from "@auth/prisma-adapter"; // correct adapter
+import { PrismaAdapter } from "@auth/prisma-adapter";
 import { prisma } from "@/lib/prisma";
 import { resend, FROM, authEmailHtml, welcomeHtml } from "@/lib/email";
 
@@ -15,11 +15,11 @@ const log = (level: "info" | "warn" | "error", msg: string, meta?: unknown) => {
   }
 };
 
-/** send magic-link with resilience */
+/** send magic-link with resilience (Resend SDK v3: { data, error }) */
 async function sendMagicLinkEmail(identifier: string, url: string) {
   const { host } = new URL(url);
   try {
-    const resp = await resend.emails.send({
+    const { data, error } = await resend.emails.send({
       from: FROM.login, // e.g. "AEObro <login@aeobro.com>"
       to: identifier,
       subject: `Sign in to ${host}`,
@@ -27,25 +27,26 @@ async function sendMagicLinkEmail(identifier: string, url: string) {
       text: `Sign in to ${host}\n${url}\n`,
       headers: { "X-Entity-Ref-ID": `auth-${Date.now()}` },
     });
-    log("info", "Auth email sent", { to: identifier, id: resp?.id });
+
+    if (error) throw new Error(error.message ?? String(error));
+    log("info", "Auth email sent", { to: identifier, id: data?.id });
   } catch (err: any) {
     log("error", "Auth email failed", { to: identifier, err: err?.message ?? String(err) });
-    // optional single retry on 5xx
-    const code = err?.statusCode || err?.code;
-    if (code && String(code).startsWith("5")) {
-      try {
-        const retry = await resend.emails.send({
-          from: FROM.login,
-          to: identifier,
-          subject: `Sign in to ${host}`,
-          html: authEmailHtml(url, host),
-          text: `Sign in to ${host}\n${url}\n`,
-          headers: { "X-Entity-Ref-ID": `auth-retry-${Date.now()}` },
-        });
-        log("warn", "Auth email retry success", { to: identifier, id: retry?.id });
-      } catch (retryErr: any) {
-        log("error", "Auth email retry failed", { to: identifier, err: retryErr?.message ?? String(retryErr) });
-      }
+
+    // optional: retry once on 5xx-like cases (Resend doesn't always expose status; keep lightweight)
+    try {
+      const { data: retryData, error: retryError } = await resend.emails.send({
+        from: FROM.login,
+        to: identifier,
+        subject: `Sign in to ${host}`,
+        html: authEmailHtml(url, host),
+        text: `Sign in to ${host}\n${url}\n`,
+        headers: { "X-Entity-Ref-ID": `auth-retry-${Date.now()}` },
+      });
+      if (retryError) throw new Error(retryError.message ?? String(retryError));
+      log("warn", "Auth email retry success", { to: identifier, id: retryData?.id });
+    } catch (retryErr: any) {
+      log("error", "Auth email retry failed", { to: identifier, err: retryErr?.message ?? String(retryErr) });
     }
   }
 }
@@ -68,7 +69,7 @@ async function sendWelcomeIfFirstTime(userId: string, email?: string | null) {
       return;
     }
 
-    const resp = await resend.emails.send({
+    const { data, error } = await resend.emails.send({
       from: FROM.welcome ?? FROM.login,
       to: email,
       subject: "Welcome to AEObro 👋",
@@ -76,7 +77,8 @@ async function sendWelcomeIfFirstTime(userId: string, email?: string | null) {
       text: "Welcome to AEObro!",
       headers: { "X-Entity-Ref-ID": `welcome-${userId}-${Date.now()}` },
     });
-    log("info", "Welcome email sent", { userId, id: resp?.id });
+    if (error) throw new Error(error.message ?? String(error));
+    log("info", "Welcome email sent", { userId, id: data?.id });
 
     await prisma.user.update({
       where: { id: userId },
@@ -88,7 +90,7 @@ async function sendWelcomeIfFirstTime(userId: string, email?: string | null) {
   }
 }
 
-// NOTE: not exported — keep this local to avoid Next.js Route export error
+// Keep local; do not export (Next.js Route files allow only specific exports)
 const authOptions: NextAuthOptions = {
   adapter: PrismaAdapter(prisma),
   session: { strategy: "database" },
