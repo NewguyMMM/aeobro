@@ -5,6 +5,21 @@ import { PrismaAdapter } from "@auth/prisma-adapter";
 import { prisma } from "@/lib/prisma";
 import { resend, FROM, authEmailHtml, welcomeHtml } from "@/lib/email";
 
+/** ensure the magic-link host/protocol match NEXTAUTH_URL */
+function forceAppOrigin(inputUrl: string): string {
+  const appBase = process.env.NEXTAUTH_URL || "http://localhost:3000";
+  try {
+    const fixed = new URL(inputUrl);
+    const base = new URL(appBase);
+    fixed.protocol = base.protocol;
+    fixed.host = base.host; // <- forces your domain (e.g., aeobro.vercel.app)
+    return fixed.toString();
+  } catch {
+    // Fallback to original if parsing somehow fails
+    return inputUrl;
+  }
+}
+
 /** small structured logger */
 const log = (level: "info" | "warn" | "error", msg: string, meta?: unknown) => {
   const payload = { level, msg, ...(meta ? { meta } : {}) };
@@ -17,14 +32,17 @@ const log = (level: "info" | "warn" | "error", msg: string, meta?: unknown) => {
 
 /** send magic-link with resilience (Resend SDK v3: { data, error }) */
 async function sendMagicLinkEmail(identifier: string, url: string) {
-  const { host } = new URL(url);
+  // Force the app origin so links never point to Supabase or any other host
+  const fixedUrl = forceAppOrigin(url);
+  const { host } = new URL(fixedUrl);
+
   try {
     const { data, error } = await resend.emails.send({
       from: FROM.login, // e.g. "AEObro <login@aeobro.com>"
       to: identifier,
       subject: `Sign in to ${host}`,
-      html: authEmailHtml(url, host),
-      text: `Sign in to ${host}\n${url}\n`,
+      html: authEmailHtml(fixedUrl, host),
+      text: `Sign in to ${host}\n${fixedUrl}\n`,
       headers: { "X-Entity-Ref-ID": `auth-${Date.now()}` },
     });
 
@@ -39,8 +57,8 @@ async function sendMagicLinkEmail(identifier: string, url: string) {
         from: FROM.login,
         to: identifier,
         subject: `Sign in to ${host}`,
-        html: authEmailHtml(url, host),
-        text: `Sign in to ${host}\n${url}\n`,
+        html: authEmailHtml(fixedUrl, host),
+        text: `Sign in to ${host}\n${fixedUrl}\n`,
         headers: { "X-Entity-Ref-ID": `auth-retry-${Date.now()}` },
       });
       if (retryError) throw new Error(retryError.message ?? String(retryError));
@@ -98,7 +116,9 @@ const authOptions: NextAuthOptions = {
     EmailProvider({
       maxAge: 24 * 60 * 60,
       async sendVerificationRequest({ identifier, url }) {
-        await sendMagicLinkEmail(identifier, url);
+        // Use the same helper here for clarity (sendMagicLinkEmail also forces it)
+        const fixed = forceAppOrigin(url);
+        await sendMagicLinkEmail(identifier, fixed);
       },
     }),
   ],
