@@ -1,7 +1,7 @@
 // app/api/auth/[...nextauth]/route.ts
 import NextAuth, { type NextAuthOptions } from "next-auth";
 import EmailProvider from "next-auth/providers/email";
-import { PrismaAdapter } from "@auth/prisma-adapter"; // ✅ correct package
+import { PrismaAdapter } from "@auth/prisma-adapter"; // correct adapter
 import { prisma } from "@/lib/prisma";
 import { resend, FROM, authEmailHtml, welcomeHtml } from "@/lib/email";
 
@@ -88,7 +88,8 @@ async function sendWelcomeIfFirstTime(userId: string, email?: string | null) {
   }
 }
 
-export const authOptions: NextAuthOptions = {
+// NOTE: not exported — keep this local to avoid Next.js Route export error
+const authOptions: NextAuthOptions = {
   adapter: PrismaAdapter(prisma),
   session: { strategy: "database" },
   providers: [
