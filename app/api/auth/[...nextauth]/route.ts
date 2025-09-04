@@ -36,9 +36,13 @@ async function sendMagicLinkEmail(identifier: string, url: string) {
   const fixedUrl = forceAppOrigin(url);
   const { host } = new URL(fixedUrl);
 
+  // 🔎 Log the exact link we are emailing (view in Vercel → Logs)
+  log("info", "Auth link", { fixedUrl });
+
   try {
     const { data, error } = await resend.emails.send({
-      from: FROM.login, // e.g. "AEObro <login@aeobro.com>"
+      // ✅ Safe "from" fallback to avoid missing EMAIL_FROM
+      from: process.env.EMAIL_FROM || "AEObro <noreply@aeobro.com>",
       to: identifier,
       subject: `Sign in to ${host}`,
       html: authEmailHtml(fixedUrl, host),
@@ -54,7 +58,7 @@ async function sendMagicLinkEmail(identifier: string, url: string) {
     // optional: retry once on 5xx-like cases (Resend doesn't always expose status; keep lightweight)
     try {
       const { data: retryData, error: retryError } = await resend.emails.send({
-        from: FROM.login,
+        from: process.env.EMAIL_FROM || "AEObro <noreply@aeobro.com>",
         to: identifier,
         subject: `Sign in to ${host}`,
         html: authEmailHtml(fixedUrl, host),
@@ -88,7 +92,7 @@ async function sendWelcomeIfFirstTime(userId: string, email?: string | null) {
     }
 
     const { data, error } = await resend.emails.send({
-      from: FROM.welcome ?? FROM.login,
+      from: process.env.EMAIL_FROM || FROM.welcome || "AEObro <noreply@aeobro.com>",
       to: email,
       subject: "Welcome to AEObro 👋",
       html: welcomeHtml(),
