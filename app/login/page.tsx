@@ -13,10 +13,10 @@ export default function EmailLoginForm() {
     setBusy(true);
     setMessage(null);
     try {
-      // This triggers NextAuth Email provider → Resend → your template
-      await signIn("email", { email, redirect: false });
+      // Add callbackUrl so the verified magic-link goes to your app (not back to /login)
+      await signIn("email", { email, callbackUrl: "/dashboard", redirect: false });
       setMessage("Check your email for the sign-in link.");
-    } catch (err) {
+    } catch {
       setMessage("Something went wrong. Please try again.");
     } finally {
       setBusy(false);
