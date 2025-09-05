@@ -1,13 +1,21 @@
+// lib/email.ts
 import { Resend } from "resend";
 
 export const resend = new Resend(process.env.RESEND_API_KEY);
 
+/**
+ * From-addresses for different email types.
+ * You can still override these with env vars if you want separate mailboxes.
+ */
 export const FROM = {
   login: process.env.EMAIL_FROM_LOGIN || "AEOBRO <login@aeobro.com>",
   welcome: process.env.EMAIL_FROM_WELCOME || "AEOBRO <welcome@aeobro.com>",
   updates: process.env.EMAIL_FROM_UPDATES || "AEOBRO <updates@aeobro.com>",
 };
 
+/**
+ * Authentication (magic-link) email HTML
+ */
 export function authEmailHtml(url: string, host: string) {
   return `
     <div style="font-family: Arial, Helvetica, sans-serif; font-size:16px; line-height:1.5;">
@@ -26,13 +34,26 @@ export function authEmailHtml(url: string, host: string) {
   `;
 }
 
+/**
+ * Welcome email HTML
+ * - Button now uses NEXTAUTH_URL and points to /login (NextAuth entry).
+ * - Change cta to "/dashboard" if you prefer dropping users into an authenticated area
+ *   (make sure unauthenticated visits to /dashboard redirect to /login).
+ */
 export function welcomeHtml() {
+  const base = process.env.NEXTAUTH_URL || "http://localhost:3000";
+
+  // Choose ONE destination. Default to /login to avoid legacy auth pages.
+  const cta = `${base}/login`;
+  // If you prefer to point straight into the app (and guard the route), use:
+  // const cta = `${base}/dashboard`;
+
   return `
     <div style="font-family: Arial, Helvetica, sans-serif; font-size:16px; line-height:1.6;">
       <h2>Welcome to AEOBRO</h2>
       <p>You're in. Create your AI Profile and help AI find you.</p>
       <p>
-        <a href="https://aeobro.vercel.app/dashboard"
+        <a href="${cta}"
            style="display:inline-block;padding:12px 18px;border-radius:8px;background:#111;color:#fff;text-decoration:none;">
            Go to Dashboard
         </a>
