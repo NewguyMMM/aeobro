@@ -20,8 +20,13 @@ model User {
   accounts      Account[]
   sessions      Session[]
 
-  // Optional back-reference to the 1:1 Profile
+  // Optional 1:1 Profile
   profile       Profile?
+
+  // ✅ New back-relations for verification flows
+  domainClaims      DomainClaim[]
+  platformAccounts  PlatformAccount[]
+  bioCodes          BioCode[]
 }
 
 model Account {
@@ -40,7 +45,7 @@ model Account {
   oauth_token_secret String? @db.Text
   oauth_token        String? @db.Text
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade)
 
   @@unique([provider, providerAccountId])
 }
@@ -51,7 +56,7 @@ model Session {
   userId       String
   expires      DateTime
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade)
 }
 
 model VerificationToken {
@@ -79,4 +84,70 @@ model Profile {
 
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+}
+
+// ===============================
+// ✅ NEW: Verification models
+// ===============================
+
+model DomainClaim {
+  id             String      @id @default(cuid())
+  userId         String
+  domain         String      @unique
+  txtToken       String      // random token user publishes in DNS TXT
+  emailIssued    String?     // the domain email we sent verification to
+  emailToken     String?     // click-through token we emailed
+  dnsVerified    Boolean     @default(false)
+  emailVerified  Boolean     @default(false)
+  status         ClaimStatus @default(PENDING)
+  verifiedAt     DateTime?
+
+  user           User        @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@index([userId])
+}
+
+model PlatformAccount {
+  id         String       @id @default(cuid())
+  userId     String
+  provider   String       // 'google'|'instagram'|'tiktok'|'substack'|'etsy'|'youtube'
+  externalId String       // stable platform id (e.g., Google sub, YouTube channel id)
+  handle     String?
+  url        String?
+  status     VerifyStatus @default(PENDING)
+  verifiedAt DateTime?
+
+  user       User         @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  // Enables: where: { provider_externalId: { provider, externalId } }
+  @@unique([provider, externalId])
+  @@index([userId])
+}
+
+model BioCode {
+  id         String       @id @default(cuid())
+  userId     String
+  platform   String       // 'instagram'|'tiktok'|'substack'|'etsy'|'youtube'
+  profileUrl String
+  code       String       // randomized phrase user must place in bio
+  status     VerifyStatus @default(PENDING)
+  verifiedAt DateTime?
+
+  user       User         @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@index([userId])
+  @@index([platform])
+}
+
+enum ClaimStatus {
+  PENDING
+  PARTIAL    // e.g., DNS ok but email not yet
+  VERIFIED
+  FAILED
+}
+
+enum VerifyStatus {
+  PENDING
+  VERIFIED
+  FAILED
 }
