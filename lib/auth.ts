@@ -1,7 +1,7 @@
 // lib/auth.ts
 import type { NextAuthOptions } from "next-auth";
 import EmailProvider from "next-auth/providers/email";
-import { PrismaAdapter } from "@auth/prisma-adapter";
+import { PrismaAdapter } from "@next-auth/prisma-adapter"; // ✅ v4 namespace
 import { prisma } from "@/lib/prisma";
 import { resend, FROM, authEmailHtml, welcomeHtml } from "@/lib/email";
 
@@ -107,7 +107,7 @@ async function sendWelcomeIfFirstTime(userId: string, email?: string | null) {
 
 export const authOptions: NextAuthOptions = {
   adapter: PrismaAdapter(prisma),
-  session: { strategy: "database" },
+  session: { strategy: "database" }, // uses your Session model; fine for your /dashboard flow
   providers: [
     EmailProvider({
       maxAge: 24 * 60 * 60,
@@ -117,6 +117,9 @@ export const authOptions: NextAuthOptions = {
       },
     }),
   ],
+  pages: {
+    signIn: "/login", // ensure your custom login route is used
+  },
   callbacks: {
     async signIn({ user }) {
       // fire-and-forget; do not block login
