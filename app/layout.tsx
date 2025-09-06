@@ -9,7 +9,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <Providers>
           <header className="border-b">
             <div className="container flex items-center justify-between py-4">
-              <a href="/" className="font-bold text-xl">AEOBRO</a>
+              <a href="/" className="font-bold text-xl">
+                AEO<span className="text-sky-500">BRO</span>
+              </a>
               <nav className="flex gap-4">
                 <a href="/pricing">Pricing</a>
                 <a href="/faq">FAQ</a>
