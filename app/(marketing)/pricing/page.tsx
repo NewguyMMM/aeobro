@@ -95,4 +95,66 @@ export default function PricingPage() {
           <div className="inline-flex items-center gap-2 rounded-full bg-black text-white text-xs px-3 py-1 mb-3">
             Most popular
           </div>
-          <h3 className="text-xl font-s
+          <h3 className="text-xl font-semibold mb-1">Pro — $49/mo</h3>
+          <ul className="text-sm text-gray-700 space-y-2 my-4">
+            <li>For official businesses</li>
+            <li>Domain verification (DNS or @domain email)</li>
+            <li>Exports: <strong>Organization/LocalBusiness</strong></li>
+            <li>FAQ & Service markup</li>
+            <li>10 links + images · Change history</li>
+          </ul>
+          {!proReady && (
+            <p className="text-[11px] text-red-600 mb-2">
+              Not configured: set <code>NEXT_PUBLIC_STRIPE_PRICE_PRO</code> in Vercel.
+            </p>
+          )}
+          <button
+            onClick={() => startCheckout(PRICES.PRO, setLoadingPro)}
+            disabled={loadingPro || !proReady}
+            className="w-full rounded-lg bg-black text-white py-3 font-semibold hover:opacity-90 transition disabled:opacity-60 flex justify-center"
+          >
+            {loadingPro ? <Spinner /> : 'Start Pro'}
+          </button>
+          <p className="text-[11px] text-gray-500 mt-2">Renews monthly. Cancel anytime.</p>
+        </div>
+
+        {/* Business */}
+        <div className="rounded-2xl border p-6 shadow-sm bg-white">
+          <h3 className="text-xl font-semibold mb-1">Business — $199/mo</h3>
+          <ul className="text-sm text-gray-700 space-y-2 my-4">
+            <li>All Pro features</li>
+            <li>Multi-location (10) & team seats (3)</li>
+            <li>Bulk import + webhooks</li>
+            <li>Advanced analytics</li>
+          </ul>
+          {!businessReady && (
+            <p className="text-[11px] text-red-600 mb-2">
+              Not configured: set <code>NEXT_PUBLIC_STRIPE_PRICE_BUSINESS</code> in Vercel.
+            </p>
+          )}
+          <button
+            onClick={() => startCheckout(PRICES.BUSINESS, setLoadingBusiness)}
+            disabled={loadingBusiness || !businessReady}
+            className="w-full rounded-lg bg-black text-white py-3 font-semibold hover:opacity-90 transition disabled:opacity-60 flex justify-center"
+          >
+            {loadingBusiness ? <Spinner /> : 'Start Business'}
+          </button>
+          <p className="text-[11px] text-gray-500 mt-2">Renews monthly. Cancel anytime.</p>
+        </div>
+      </div>
+
+      <div className="mt-12 text-sm text-gray-700">
+        <p>
+          <strong>Creators (Lite)</strong> verify with a platform handle; <strong>Businesses (Pro+)</strong> verify with a domain.
+          Without verification, profiles remain drafts and do not publish externally.
+        </p>
+      </div>
+
+      <div className="mt-6 text-sm">
+        <a href="/faq" className="text-gray-700 underline underline-offset-4 hover:no-underline">
+          Questions? Read the FAQ →
+        </a>
+      </div>
+    </main>
+  );
+}
