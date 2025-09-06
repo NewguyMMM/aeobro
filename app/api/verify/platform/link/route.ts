@@ -1,22 +1,35 @@
+// app/api/verify/platform/link/route.ts
+export const runtime = "nodejs";
+
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth-server";
 import { prisma } from "@/lib/prisma";
 
 export async function POST(req: Request) {
   const session = await auth();
-  if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  // TS-safe extraction of the id we inject in the NextAuth session callback
+  const userId = (session as any)?.user?.id as string | undefined;
+  if (!userId) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
 
   // The user has just signed in with Google (via a client flow) and we have their identity in the session.
   // Pull the provider account info from your existing account linking table if you use the NextAuth Adapter.
   // If you're not using the Adapter, you can accept a payload with the provider's external id.
 
   const { provider, externalId, handle, url } = await req.json();
-  if (!provider || !externalId) return NextResponse.json({ error: "Missing provider/externalId" }, { status: 400 });
+  if (!provider || !externalId) {
+    return NextResponse.json(
+      { error: "Missing provider/externalId" },
+      { status: 400 }
+    );
+  }
 
   const pa = await prisma.platformAccount.upsert({
     where: { provider_externalId: { provider, externalId } },
     create: {
-      userId: session.user.id,
+      userId,
       provider,
       externalId,
       handle: handle || null,
@@ -25,7 +38,7 @@ export async function POST(req: Request) {
       verifiedAt: new Date(),
     },
     update: {
-      userId: session.user.id,
+      userId,
       handle: handle || null,
       url: url || null,
       status: "VERIFIED",
