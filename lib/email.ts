@@ -1,11 +1,11 @@
 // lib/email.ts
 import { Resend } from "resend";
 
-export const resend = new Resend(process.env.RESEND_API_KEY);
+export const resend = new Resend(process.env.RESEND_API_KEY!);
 
 /**
  * From-addresses for different email types.
- * You can still override these with env vars if you want separate mailboxes.
+ * You can override with env vars if you want separate mailboxes.
  */
 export const FROM = {
   login: process.env.EMAIL_FROM_LOGIN || "AEOBRO <login@aeobro.com>",
@@ -16,7 +16,13 @@ export const FROM = {
 /**
  * Authentication (magic-link) email HTML
  */
-export function authEmailHtml(url: string, host: string) {
+export function authEmailHtml({
+  url,
+  host,
+}: {
+  url: string;
+  host: string;
+}) {
   return `
     <div style="font-family: Arial, Helvetica, sans-serif; font-size:16px; line-height:1.5;">
       <h2>Sign in to ${host}</h2>
@@ -36,16 +42,14 @@ export function authEmailHtml(url: string, host: string) {
 
 /**
  * Welcome email HTML
- * - Button now uses NEXTAUTH_URL and points to /login (NextAuth entry).
- * - Change cta to "/dashboard" if you prefer dropping users into an authenticated area
- *   (make sure unauthenticated visits to /dashboard redirect to /login).
+ * - Defaults to /login (NextAuth entry).
+ * - If you prefer dropping users into the app, change cta to /dashboard.
  */
 export function welcomeHtml() {
   const base = process.env.NEXTAUTH_URL || "http://localhost:3000";
 
-  // Choose ONE destination. Default to /login to avoid legacy auth pages.
   const cta = `${base}/login`;
-  // If you prefer to point straight into the app (and guard the route), use:
+  // Alternative:
   // const cta = `${base}/dashboard`;
 
   return `
