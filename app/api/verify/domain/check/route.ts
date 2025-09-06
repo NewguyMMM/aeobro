@@ -1,5 +1,5 @@
 // app/api/verify/domain/check/route.ts
-export const runtime = "nodejs"; // ensure Node.js runtime for dns/crypto
+export const runtime = "nodejs";
 
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth-server";
@@ -9,7 +9,10 @@ import { resend, FROM } from "@/lib/email";
 
 export async function POST(req: Request) {
   const session = await auth();
-  if (!session?.user?.id) {
+
+  // TS-safe extraction of the id we inject in the NextAuth session callback
+  const userId = (session as any)?.user?.id as string | undefined;
+  if (!userId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -19,7 +22,7 @@ export async function POST(req: Request) {
   }
 
   const claim = await prisma.domainClaim.findUnique({ where: { id: claimId } });
-  if (!claim || claim.userId !== session.user.id) {
+  if (!claim || claim.userId !== userId) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
@@ -39,7 +42,27 @@ export async function POST(req: Request) {
     status = claim.emailVerified ? "VERIFIED" : "PARTIAL";
   }
 
-  // if domain email step is configured, handle here...
+  // Optionally send a domain-email verification link once DNS is OK
+  let emailQueued = false;
+  if (dnsVerified && claim.emailIssued && !claim.emailToken) {
+    const token = randomToken(96);
+    await prisma.domainClaim.update({
+      where: { id: claim.id },
+      data: { emailToken: token },
+    });
+
+    const base = process.env.APP_URL || process.env.NEXTAUTH_URL || "http://localhost:3000";
+    const url = `${base.replace(/\/$/, "")}/api/verify/domain/email-click?token=${token}`;
+
+    const { error } = await resend.emails.send({
+      from: process.env.EMAIL_FROM || FROM.updates || "AEOBRO <noreply@aeobro.com>",
+      to: claim.emailIssued,
+      subject: `Verify ${claim.domain} email for AEOBRO`,
+      html: `<p>Click to verify your domain email for <b>${claim.domain}</b>:</p><p><a href="${url}">${url}</a></p>`,
+      text: `Verify your domain email for ${claim.domain}\n${url}\n`,
+    });
+    if (!error) emailQueued = true;
+  }
 
   const updated = await prisma.domainClaim.update({
     where: { id: claim.id },
@@ -50,5 +73,9 @@ export async function POST(req: Request) {
     },
   });
 
-  return NextResponse.json({ status: updated.status, dnsVerified });
+  return NextResponse.json({
+    status: updated.status,
+    dnsVerified,
+    emailQueued,
+  });
 }
