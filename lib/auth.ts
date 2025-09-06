@@ -24,7 +24,6 @@ function forceAppOrigin(inputUrl: string): string {
 const log = (level: "info" | "warn" | "error", msg: string, meta?: unknown) => {
   const payload = { level, msg, ...(meta ? { meta } : {}) };
   try {
-    // route "error" to console.error for Vercel log levels
     (level === "error" ? console.error : level === "warn" ? console.warn : console.log)(
       JSON.stringify(payload)
     );
@@ -37,8 +36,6 @@ const log = (level: "info" | "warn" | "error", msg: string, meta?: unknown) => {
 async function sendMagicLinkEmail(identifier: string, url: string) {
   const fixedUrl = forceAppOrigin(url);
   const { host } = new URL(fixedUrl);
-
-  log("info", "Auth link", { fixedUrl });
 
   const sendOnce = async (tag: string) => {
     const { data, error } = await resend.emails.send({
@@ -76,14 +73,8 @@ async function sendWelcomeIfFirstTime(userId: string, email?: string | null) {
       select: { id: true, emailVerified: true, welcomeSentAt: true },
     });
     if (!user) return;
-    if (!user.emailVerified) {
-      log("info", "Welcome deferred until emailVerified", { userId });
-      return;
-    }
-    if (user.welcomeSentAt) {
-      log("info", "Welcome already sent; skipping", { userId, at: user.welcomeSentAt });
-      return;
-    }
+    if (!user.emailVerified) return;
+    if (user.welcomeSentAt) return;
 
     const { data, error } = await resend.emails.send({
       from: process.env.EMAIL_FROM || FROM.welcome || "AEOBRO <noreply@aeobro.com>",
@@ -94,7 +85,6 @@ async function sendWelcomeIfFirstTime(userId: string, email?: string | null) {
       headers: { "X-Entity-Ref-ID": `welcome-${userId}-${Date.now()}` },
     });
     if (error) throw new Error(error.message ?? String(error));
-    log("info", "Welcome email sent", { userId, id: data?.id });
 
     await prisma.user.update({
       where: { id: userId },
@@ -111,7 +101,7 @@ const scopes =
   "https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/userinfo.email";
 
 export const authOptions: NextAuthOptions = {
-  // Keep PrismaAdapter for accounts/users; use JWT sessions for easier `session.user.id`
+  // Persist users/accounts via Prisma; use JWT sessions so session.user.id is easy to read
   adapter: PrismaAdapter(prisma),
   session: { strategy: "jwt" },
 
@@ -122,7 +112,6 @@ export const authOptions: NextAuthOptions = {
         await sendMagicLinkEmail(identifier, url);
       },
     }),
-
     GoogleProvider({
       clientId: process.env.GOOGLE_CLIENT_ID!,
       clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
