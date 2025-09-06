@@ -1,13 +1,30 @@
 // app/dashboard/page.tsx
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
+import { prisma } from "@/lib/prisma";
 import { redirect } from "next/navigation";
+import dynamic from "next/dynamic";
+
+const ProfileEditor = dynamic(() => import("@/components/ProfileEditor"), { ssr: false });
 
 export default async function DashboardPage() {
   const session = await getServerSession(authOptions);
-  if (!session) {
+  if (!session?.user?.email) {
     redirect("/login");
   }
+
+  // Look up the signed-in user and their profile
+  const user = await prisma.user.findUnique({
+    where: { email: session.user!.email! },
+    select: { id: true, email: true },
+  });
+  if (!user) {
+    redirect("/login");
+  }
+
+  const profile = await prisma.profile.findUnique({
+    where: { userId: user.id },
+  });
 
   return (
     <div className="container mx-auto px-4 py-12">
@@ -23,20 +40,13 @@ export default async function DashboardPage() {
         </form>
       </header>
 
+      <p className="text-gray-600 mb-8">
+        Signed in as <strong>{user.email}</strong>
+      </p>
+
       <section className="rounded-2xl border p-8 bg-white shadow-sm">
-        <p className="text-gray-600 mb-6">
-          Signed in as <strong>{session.user?.email}</strong>
-        </p>
-        <h2 className="text-xl font-semibold mb-4">Profile editor</h2>
-        <p className="text-gray-600 mb-6">
-          Here’s where you’ll add your brand facts: who you are, links, location,
-          FAQs, and more. This will generate your verified JSON-LD + public facts bundle.
-        </p>
-        <button className="px-5 py-3 rounded-xl bg-black text-white hover:bg-gray-900">
-          Add your first fact
-        </button>
+        <ProfileEditor initial={profile as any} />
       </section>
     </div>
   );
 }
-
