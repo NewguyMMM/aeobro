@@ -1,7 +1,7 @@
 // lib/auth.ts
 import type { NextAuthOptions } from "next-auth";
 import EmailProvider from "next-auth/providers/email";
-import { PrismaAdapter } from "@next-auth/prisma-adapter"; // ✅ v4 namespace
+import { PrismaAdapter } from "@auth/prisma-adapter"; // ✅ matches your package.json
 import { prisma } from "@/lib/prisma";
 import { resend, FROM, authEmailHtml, welcomeHtml } from "@/lib/email";
 
