@@ -10,7 +10,7 @@ export default function Home() {
         AEOBRO optimizes your content to be picked up and displayed by AI.
       </p>
       <p className="text-gray-600 mb-4 max-w-2xl">
-        Structured, efficient, trusted, and always up-to-date.
+        Structured, efficient, trusted, and kept current in one place.
       </p>
 
       {/* Secondary credibility booster */}
