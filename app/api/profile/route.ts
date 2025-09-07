@@ -7,7 +7,7 @@ import { z } from "zod";
 
 /* ----------------------- helpers ----------------------- */
 
-// A URL schema that allows empty, normalizes protocol, and enforces MAX length
+// URL schema that allows empty, normalizes protocol, and enforces MAX length
 const urlMaybeEmptyMax = (maxLen: number) =>
   z
     .string()
@@ -91,7 +91,14 @@ const ProfileSchema = z.object({
   location: z.string().trim().max(120).optional().nullable(),
   website: urlMaybeEmpty200.optional().nullable().or(z.literal("")).default(""),
   bio: z.string().trim().max(2000).optional().nullable(),
-  links: z.array(LinkItem).max(20).optional().default([]),
+
+  // ✅ accept null, coerce to []
+  links: z
+    .array(LinkItem)
+    .max(20)
+    .optional()
+    .nullable()
+    .transform((v) => v ?? []),
 
   // new fields
   legalName: z.string().trim().max(160).optional().nullable(),
@@ -108,7 +115,13 @@ const ProfileSchema = z.object({
   hours: z.string().trim().max(160).optional().nullable(),
 
   certifications: z.string().trim().max(2000).optional().nullable(),
-  press: z.array(PressItem).optional().default([]),
+
+  // ✅ accept null, coerce to []
+  press: z
+    .array(PressItem)
+    .optional()
+    .nullable()
+    .transform((v) => v ?? []),
 
   logoUrl: urlMaybeEmpty300.optional().nullable(),
   imageUrls: z.array(urlMaybeEmpty300).optional().default([]),
@@ -193,7 +206,7 @@ export async function PUT(req: NextRequest) {
     hours: emptyToNull(d.hours),
 
     certifications: emptyToNull(d.certifications),
-    press: d.press?.length ? d.press : [],
+    press: d.press ?? [],
 
     logoUrl: emptyToNull(d.logoUrl),
     imageUrls: (d.imageUrls ?? []).filter(Boolean),
