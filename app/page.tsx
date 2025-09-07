@@ -22,7 +22,7 @@ export default function Home() {
         {/* Primary CTA — bigger & bolder */}
         <a
           href="/dashboard"
-          className="px-6 py-4 rounded-xl bg-black text-white font-semibold text-lg hover:bg-gray-900"
+          className="px-6 py-4 rounded-xl bg-black text-white font-semibold text-lg hover:bg-gray-900 transition-colors duration-200"
         >
           Create your AI Profile
         </a>
@@ -30,7 +30,7 @@ export default function Home() {
         {/* Secondary CTA */}
         <a
           href="/pricing"
-          className="px-6 py-4 rounded-xl border font-medium text-lg hover:bg-gray-50"
+          className="px-6 py-4 rounded-xl border font-medium text-lg hover:bg-gray-50 transition-colors duration-200"
         >
           See pricing
         </a>
