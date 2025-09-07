@@ -42,6 +42,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <a href="/terms">Terms</a>
               <a href="/aup">AUP</a>
               <a href="/disputes">Disputes</a>
+              <a href="/cancel">Cancel subscription</a>
             </div>
           </footer>
         </Providers>
