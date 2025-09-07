@@ -1,4 +1,4 @@
-export default ()=> (<section className='container py-16'><h1 className='text-4xl font-extrabold'>Terms</h1><p className='mt-6'>No ranking guarantees. No impersonation. Follow laws.</p></section>);// app/(marketing)/terms/page.tsx
+// app/(marketing)/terms/page.tsx
 import React from "react";
 
 export default function Page() {
