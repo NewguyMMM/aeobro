@@ -28,16 +28,8 @@ export default async function DashboardPage() {
 
   return (
     <div className="container mx-auto px-4 py-12">
-      <header className="flex justify-between items-center mb-10">
+      <header className="mb-10">
         <h1 className="text-3xl font-bold">Your AI Profile</h1>
-        <form method="post" action="/api/auth/signout">
-          <button
-            className="px-4 py-2 rounded-lg border hover:bg-gray-50"
-            type="submit"
-          >
-            Sign out
-          </button>
-        </form>
       </header>
 
       <p className="text-gray-600 mb-8">
