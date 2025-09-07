@@ -1,4 +1,6 @@
 // app/(marketing)/faq/page.tsx
+import React from "react";
+
 export default function Page() {
   return (
     <section className="container py-16">
@@ -70,7 +72,9 @@ export default function Page() {
           </p>
 
           <h4 className="font-medium mt-4">For Businesses (Pro and above)</h4>
-          <p className="text-gray-700 mt-2">Verify ownership of your official website/domain by either:</p>
+          <p className="text-gray-700 mt-2">
+            Verify ownership of your official website/domain by either:
+          </p>
           <ul className="list-disc list-inside text-gray-700 mt-2 space-y-1">
             <li>Adding a simple <strong>DNS TXT record</strong> (preferred)</li>
             <li>
@@ -136,4 +140,23 @@ export default function Page() {
             interpreted correctly.
           </p>
           <ul className="list-disc list-inside text-gray-700 mt-2 space-y-1">
-            <li>Your facts are formatted in machine-readable JSON-L
+            <li>Your facts are formatted in machine-readable JSON-LD schema.org.</li>
+            <li>Only verified profiles are published, giving your data higher trust.</li>
+            <li>Your brand or creator identity cannot be impersonated.</li>
+            <li>
+              AI systems (search engines, chatbots, recommendation engines) pull the{" "}
+              <em>right</em> information directly, rather than scraping inconsistently from the open
+              web.
+            </li>
+          </ul>
+          <p className="text-gray-700 mt-2">
+            In short: <strong>
+              AEOBRO makes AI engines see your profile as the official source of truth —
+              something a normal website page alone cannot guarantee.
+            </strong>
+          </p>
+        </div>
+      </div>
+    </section>
+  );
+}
