@@ -22,7 +22,7 @@ type LinkItem  = { label: string; url: string };
 type PressItem = { title: string; url: string };
 
 type Profile = {
-  // your original fields (kept for backward-compat)
+  // original fields
   displayName?: string | null;
   tagline?: string | null;
   location?: string | null;
@@ -30,14 +30,14 @@ type Profile = {
   bio?: string | null;
   links?: LinkItem[] | null;
 
-  // new, high-signal fields
+  // new fields
   legalName?: string | null;
   entityType?: EntityType | null;
 
-  serviceArea?: string[] | null; // regions
+  serviceArea?: string[] | null;
   foundedYear?: number | null;
   teamSize?: number | null;
-  languages?: string[] | null;   // e.g., ["English","Spanish"]
+  languages?: string[] | null;
   pricingModel?: "Free" | "Subscription" | "One-time" | "Custom" | null;
   hours?: string | null;
 
@@ -56,7 +56,6 @@ function normalizeUrl(value: string): string {
   if (!v) return "";
   return /^https?:\/\//i.test(v) ? v : `https://${v}`;
 }
-
 function isValidUrl(u: string): boolean {
   if (!u) return true; // allow empty
   try {
@@ -66,7 +65,6 @@ function isValidUrl(u: string): boolean {
     return false;
   }
 }
-
 function toCsv(arr?: string[] | null): string {
   return (arr ?? []).join(", ");
 }
@@ -75,10 +73,8 @@ function fromCsv(s: string): string[] {
     .split(",")
     .map((t) => t.trim())
     .filter(Boolean);
-  // de-dup
   return Array.from(new Set(parts));
 }
-
 function toNum(input: string): number | undefined {
   if (!input) return undefined;
   const n = parseInt(input, 10);
@@ -123,9 +119,7 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
   // ---- Branding & media
   const [logoUrl, setLogoUrl] = React.useState(initial?.logoUrl ?? "");
   const [imageUrls, setImageUrls] = React.useState<string[]>(
-    initial?.imageUrls && initial.imageUrls.length
-      ? initial.imageUrls
-      : ["", "", ""]
+    initial?.imageUrls && initial.imageUrls.length ? initial.imageUrls : ["", "", ""]
   );
 
   // ---- Platforms & links
@@ -136,6 +130,57 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
   // ---- UI
   const [saving, setSaving] = React.useState(false);
   const [msg, setMsg]       = React.useState<string | null>(null);
+  const prefilledRef = React.useRef(false); // ensure we prefill only once
+
+  /** ---- Prefill from API on mount (does not overwrite user typing) ---- */
+  React.useEffect(() => {
+    if (prefilledRef.current) return;
+    prefilledRef.current = true;
+
+    (async () => {
+      try {
+        const res = await fetch("/api/profile", { cache: "no-store" });
+        if (!res.ok) return;
+        const data: Profile | null = await res.json();
+
+        if (!data) return;
+
+        // Identity
+        if (data.displayName != null) setDisplayName(data.displayName || "");
+        if (data.legalName != null)   setLegalName(data.legalName || "");
+        if (data.entityType)          setEntityType(data.entityType);
+
+        // Story
+        if (data.tagline != null) setTagline(data.tagline || "");
+        if (data.bio != null)     setBio(data.bio || "");
+
+        // Anchors
+        if (data.website != null)     setWebsite(data.website || "");
+        if (data.location != null)    setLocation(data.location || "");
+        if (data.serviceArea)         setServiceArea(toCsv(data.serviceArea));
+
+        // Trust & authority
+        if (data.foundedYear != null) setFoundedYear(String(data.foundedYear || ""));
+        if (data.teamSize != null)    setTeamSize(String(data.teamSize || ""));
+        if (data.languages)           setLanguages(toCsv(data.languages));
+        if (data.pricingModel)        setPricingModel(data.pricingModel);
+        if (data.hours != null)       setHours(data.hours || "");
+
+        if (data.certifications != null) setCertifications(data.certifications || "");
+        if (data.press)                  setPress(data.press);
+
+        // Branding
+        if (data.logoUrl != null)     setLogoUrl(data.logoUrl || "");
+        if (data.imageUrls && data.imageUrls.length) setImageUrls(data.imageUrls);
+
+        // Platforms & links
+        if (data.handles) setHandles(data.handles);
+        if (data.links)   setLinks(data.links);
+      } catch {
+        // silent fail is fine for prefill
+      }
+    })();
+  }, []);
 
   /** ---- Save ---- */
   async function save() {
