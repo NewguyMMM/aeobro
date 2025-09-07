@@ -5,7 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { redirect } from "next/navigation";
 import dynamic from "next/dynamic";
 
-// Client components (SSR disabled)
+// Keep the dynamic import, but ensure the file below does NOT render any local footer/links.
 const ProfileEditor = dynamic(() => import("@/components/ProfileEditor"), { ssr: false });
 
 export default async function DashboardPage() {
@@ -37,25 +37,10 @@ export default async function DashboardPage() {
         Signed in as <strong>{user.email}</strong>
       </p>
 
+      {/* Single editor section – no extra legal links here */}
       <section className="rounded-2xl border p-8 bg-white shadow-sm">
         <ProfileEditor initial={profile as any} />
       </section>
-
-      {/* Footer */}
-      <footer className="mt-16 text-center text-sm text-gray-500">
-        <nav className="inline-flex items-center gap-4">
-          <a href="/privacy" className="hover:underline">Privacy</a>
-          <a href="/terms" className="hover:underline">Terms</a>
-          <a href="/aup" className="hover:underline">AUP</a>
-          <a href="/disputes" className="hover:underline">Disputes</a>
-          {/* Link-styled POST to cancel at period end */}
-          <form method="post" action="/api/stripe/cancel-subscription" className="inline">
-            <button type="submit" className="hover:underline text-gray-500">
-              Cancel subscription
-            </button>
-          </form>
-        </nav>
-      </footer>
     </div>
   );
 }
