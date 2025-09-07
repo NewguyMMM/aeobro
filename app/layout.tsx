@@ -13,13 +13,19 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 AEO<span className="text-sky-500">BRO</span>
               </a>
               <nav className="flex gap-4">
-                <a href="/pricing" className="px-3 py-2">
+                <a
+                  href="/pricing"
+                  className="px-3 py-2 transition-colors duration-200 hover:text-sky-500"
+                >
                   Pricing
                 </a>
-                <a href="/faq" className="px-3 py-2">
+                <a
+                  href="/faq"
+                  className="px-3 py-2 transition-colors duration-200 hover:text-sky-500"
+                >
                   FAQ
                 </a>
-                <a className="btn" href="/audit">
+                <a className="btn transition-colors duration-200" href="/audit">
                   Audit
                 </a>
                 <AuthButton />
