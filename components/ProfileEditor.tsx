@@ -664,12 +664,15 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
           type="button"
           onClick={save}
           disabled={saving}
-          className="px-4 py-2 rounded-lg bg-black text-white disabled:opacity-60"
+          className="px-4 py-2 rounded-lg bg-black text-white hover:bg-gray-900 transition-colors duration-200 disabled:opacity-60"
         >
           {saving ? "Saving…" : "Save profile"}
         </button>
         {msg && <span className="text-sm text-gray-600">{msg}</span>}
       </div>
+
+      {/* NOTE: No legal/footer links are rendered here.
+         The only footer row lives in app/layout.tsx */}
     </div>
   );
 }
