@@ -4,7 +4,10 @@ import React from "react";
 export default function Page() {
   return (
     <section className="container py-16">
-      <h1 className="text-4xl font-extrabold mb-10">FAQ</h1>
+      <h1 className="text-4xl font-extrabold mb-10">
+        <span>AEO</span>
+        <span className="text-blue-600">BRO</span> FAQ
+      </h1>
 
       <div className="space-y-8">
         <div className="card">
