@@ -672,7 +672,7 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
       </div>
 
       {/* NOTE: No legal/footer links are rendered here.
-         The only footer row lives in app/layout.tsx */}
+          The only footer row lives in app/layout.tsx */}
     </div>
   );
 }
