@@ -6,7 +6,7 @@ export default function Page() {
     <section className="container py-16">
       <h1 className="text-4xl font-extrabold mb-10">
         <span>AEO</span>
-        <span className="text-blue-600">BRO</span> FAQ
+        <span className="text-primary">BRO</span> FAQ
       </h1>
 
       <div className="space-y-8">
