@@ -5,7 +5,12 @@ import { prisma } from "@/lib/prisma";
 import { redirect } from "next/navigation";
 import dynamic from "next/dynamic";
 
+// Client components (SSR disabled)
 const ProfileEditor = dynamic(() => import("@/components/ProfileEditor"), { ssr: false });
+const CancelSubscriptionButton = dynamic(
+  () => import("@/components/CancelSubscriptionButton"),
+  { ssr: false }
+);
 
 export default async function DashboardPage() {
   const session = await getServerSession(authOptions);
@@ -38,6 +43,11 @@ export default async function DashboardPage() {
 
       <section className="rounded-2xl border p-8 bg-white shadow-sm">
         <ProfileEditor initial={profile as any} />
+      </section>
+
+      {/* Billing actions */}
+      <section className="mt-10">
+        <CancelSubscriptionButton />
       </section>
     </div>
   );
