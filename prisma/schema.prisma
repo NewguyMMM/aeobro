@@ -72,22 +72,46 @@ model Profile {
   userId      String   @unique
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade)
 
+  // -------- Core identity --------
   displayName String?
+  legalName   String?
+  entityType  String?   // "Business" | "Local Service" | "Organization" | "Creator / Person"
+
+  // -------- Story --------
   tagline     String?
-  location    String?
-  website     String?
   bio         String?
 
-  // Note: Prisma doesn't allow @default on Json in the schema.
-  // The SQL migration sets DEFAULT '[]'::jsonb at the database level.
-  links       Json
+  // -------- Anchors --------
+  website     String?
+  location    String?
+  serviceArea String[]  // ["NJ","NY","PA"]
+
+  // -------- Trust & authority --------
+  foundedYear Int?
+  teamSize    Int?
+  languages   String[]  // ["English","Spanish"]
+  pricingModel String?
+  hours       String?
+
+  certifications String?
+
+  // -------- Media & authority signals --------
+  press      Json?      // [{ title, url }]
+  logoUrl    String?
+  imageUrls  String[]   // up to 3 urls
+
+  // -------- Platforms & extra links --------
+  handles    Json?      // { youtube, tiktok, ... }
+  // Note: Prisma can't set a default for Json in schema; you previously set DB default via SQL.
+  // Making this nullable avoids 500s if API sends null; API also coerces to [].
+  links      Json?
 
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 }
 
 // ===============================
-// ✅ NEW: Verification models
+// ✅ Verification models (unchanged)
 // ===============================
 
 model DomainClaim {
@@ -141,7 +165,7 @@ model BioCode {
 
 enum ClaimStatus {
   PENDING
-  PARTIAL    // e.g., DNS ok but email not yet
+  PARTIAL
   VERIFIED
   FAILED
 }
