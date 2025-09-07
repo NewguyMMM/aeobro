@@ -23,7 +23,7 @@ model User {
   // Optional 1:1 Profile
   profile       Profile?
 
-  // ✅ New back-relations for verification flows
+  // ✅ Verification back-relations
   domainClaims      DomainClaim[]
   platformAccounts  PlatformAccount[]
   bioCodes          BioCode[]
@@ -84,12 +84,12 @@ model Profile {
   // -------- Anchors --------
   website     String?
   location    String?
-  serviceArea String[]  // ["NJ","NY","PA"]
+  serviceArea String[]  @default([]) // ✅ default empty array
 
   // -------- Trust & authority --------
   foundedYear Int?
   teamSize    Int?
-  languages   String[]  // ["English","Spanish"]
+  languages   String[]  @default([]) // ✅ default empty array
   pricingModel String?
   hours       String?
 
@@ -98,29 +98,27 @@ model Profile {
   // -------- Media & authority signals --------
   press      Json?      // [{ title, url }]
   logoUrl    String?
-  imageUrls  String[]   // up to 3 urls
+  imageUrls  String[]   @default([]) // ✅ default empty array
 
   // -------- Platforms & extra links --------
   handles    Json?      // { youtube, tiktok, ... }
-  // Note: Prisma can't set a default for Json in schema; you previously set DB default via SQL.
-  // Making this nullable avoids 500s if API sends null; API also coerces to [].
-  links      Json?
+  links      Json?      // [{ label, url }]
 
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 }
 
 // ===============================
-// ✅ Verification models (unchanged)
+// ✅ Verification models
 // ===============================
 
 model DomainClaim {
   id             String      @id @default(cuid())
   userId         String
   domain         String      @unique
-  txtToken       String      // random token user publishes in DNS TXT
-  emailIssued    String?     // the domain email we sent verification to
-  emailToken     String?     // click-through token we emailed
+  txtToken       String
+  emailIssued    String?
+  emailToken     String?
   dnsVerified    Boolean     @default(false)
   emailVerified  Boolean     @default(false)
   status         ClaimStatus @default(PENDING)
@@ -135,7 +133,7 @@ model PlatformAccount {
   id         String       @id @default(cuid())
   userId     String
   provider   String       // 'google'|'instagram'|'tiktok'|'substack'|'etsy'|'youtube'
-  externalId String       // stable platform id (e.g., Google sub, YouTube channel id)
+  externalId String
   handle     String?
   url        String?
   status     VerifyStatus @default(PENDING)
@@ -143,7 +141,6 @@ model PlatformAccount {
 
   user       User         @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade)
 
-  // Enables: where: { provider_externalId: { provider, externalId } }
   @@unique([provider, externalId])
   @@index([userId])
 }
@@ -151,9 +148,9 @@ model PlatformAccount {
 model BioCode {
   id         String       @id @default(cuid())
   userId     String
-  platform   String       // 'instagram'|'tiktok'|'substack'|'etsy'|'youtube'
+  platform   String
   profileUrl String
-  code       String       // randomized phrase user must place in bio
+  code       String
   status     VerifyStatus @default(PENDING)
   verifiedAt DateTime?
 
