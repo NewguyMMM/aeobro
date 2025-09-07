@@ -159,6 +159,36 @@ export default function Page() {
             </strong>
           </p>
         </div>
+
+        {/* NEW FAQ ITEMS */}
+        <div className="card">
+          <h3 className="font-semibold">How do I cancel?</h3>
+          <p className="text-gray-700 mt-2">
+            Click the <strong>Cancel subscription</strong> button in your billing settings. Canceling
+            stops future renewals, and your service continues until the end of your current billing
+            period.
+          </p>
+        </div>
+
+        <div className="card">
+          <h3 className="font-semibold">How does AEOBRO handle refunds?</h3>
+          <p className="text-gray-700 mt-2">
+            There are <strong>no refunds</strong>. If your profile is taken down or frozen during an
+            investigation, no refunds will be issued. You may cancel at any time; cancellation stops
+            renewals, and your service continues until the end of the current billing period.
+          </p>
+        </div>
+
+        <div className="card">
+          <h3 className="font-semibold">What happens to my profile if I cancel my subscription?</h3>
+          <p className="text-gray-700 mt-2">
+            After your subscription lapses, you will <strong>lose</strong> access to premium features
+            and editing. Your public profile will no longer be published (and therefore won’t be
+            crawlable by machines). We retain your profile data for <strong>90 days</strong> so you
+            can reactivate. After 90 days with no reactivation, the profile may be permanently
+            deleted per our retention policy.
+          </p>
+        </div>
       </div>
     </section>
   );
