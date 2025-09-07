@@ -1,34 +1,38 @@
 // app/api/profile/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";            // ✅ keep your existing auth import
+import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { z } from "zod";
 
 /* ----------------------- helpers ----------------------- */
 
-const urlMaybeEmpty = z
-  .string()
-  .trim()
-  .max(300)
-  .optional()
-  .nullable()
-  .transform((v) => (v ?? "").trim())
-  .refine((v) => {
-    if (!v) return true; // allow empty
-    try {
-      // normalize missing protocol to https://
-      const s = /^https?:\/\//i.test(v) ? v : `https://${v}`;
-      new URL(s);
-      return true;
-    } catch {
-      return false;
-    }
-  }, "Must be a valid URL")
-  .transform((v) => {
-    if (!v) return "";
-    return /^https?:\/\//i.test(v) ? v : `https://${v}`;
-  });
+// A URL schema that allows empty, normalizes protocol, and enforces MAX length
+const urlMaybeEmptyMax = (maxLen: number) =>
+  z
+    .string()
+    .trim()
+    .max(maxLen)
+    .optional()
+    .nullable()
+    .transform((v) => (v ?? "").trim())
+    .refine((v) => {
+      if (!v) return true; // allow empty
+      try {
+        const s = /^https?:\/\//i.test(v) ? v : `https://${v}`;
+        new URL(s);
+        return true;
+      } catch {
+        return false;
+      }
+    }, "Must be a valid URL")
+    .transform((v) => {
+      if (!v) return "";
+      return /^https?:\/\//i.test(v) ? v : `https://${v}`;
+    });
+
+const urlMaybeEmpty200 = urlMaybeEmptyMax(200);
+const urlMaybeEmpty300 = urlMaybeEmptyMax(300);
 
 const csvOrArray = z
   .union([z.string(), z.array(z.string())])
@@ -39,7 +43,7 @@ const csvOrArray = z
     if (Array.isArray(v)) {
       return v.map(String).map((s) => s.trim()).filter(Boolean);
     }
-    return v
+    return String(v)
       .split(",")
       .map((s) => s.trim())
       .filter(Boolean);
@@ -57,35 +61,35 @@ const intNullable = z
 
 const LinkItem = z.object({
   label: z.string().trim().max(60).optional().default(""),
-  url: urlMaybeEmpty.default(""),
+  url: urlMaybeEmpty300.default(""),
 });
 
 const PressItem = z.object({
   title: z.string().trim().max(120).optional().default(""),
-  url: urlMaybeEmpty.default(""),
+  url: urlMaybeEmpty300.default(""),
 });
 
 const PlatformHandles = z
   .object({
-    youtube: urlMaybeEmpty.optional(),
-    tiktok: urlMaybeEmpty.optional(),
-    instagram: urlMaybeEmpty.optional(),
-    substack: urlMaybeEmpty.optional(),
-    etsy: urlMaybeEmpty.optional(),
-    x: urlMaybeEmpty.optional(),
-    linkedin: urlMaybeEmpty.optional(),
-    facebook: urlMaybeEmpty.optional(),
-    github: urlMaybeEmpty.optional(),
+    youtube: urlMaybeEmpty300.optional(),
+    tiktok: urlMaybeEmpty300.optional(),
+    instagram: urlMaybeEmpty300.optional(),
+    substack: urlMaybeEmpty300.optional(),
+    etsy: urlMaybeEmpty300.optional(),
+    x: urlMaybeEmpty300.optional(),
+    linkedin: urlMaybeEmpty300.optional(),
+    facebook: urlMaybeEmpty300.optional(),
+    github: urlMaybeEmpty300.optional(),
   })
   .partial()
   .optional();
 
 const ProfileSchema = z.object({
-  // original fields (kept for backward-compat)
+  // original fields
   displayName: z.string().trim().max(120).optional().nullable(),
   tagline: z.string().trim().max(160).optional().nullable(),
   location: z.string().trim().max(120).optional().nullable(),
-  website: urlMaybeEmpty.max(200).optional().nullable().or(z.literal("")).default(""),
+  website: urlMaybeEmpty200.optional().nullable().or(z.literal("")).default(""),
   bio: z.string().trim().max(2000).optional().nullable(),
   links: z.array(LinkItem).max(20).optional().default([]),
 
@@ -96,18 +100,18 @@ const ProfileSchema = z.object({
     .optional()
     .nullable(),
 
-  serviceArea: csvOrArray, // ["NJ","NY"]  or "NJ, NY"
+  serviceArea: csvOrArray,
   foundedYear: intNullable,
   teamSize: intNullable,
-  languages: csvOrArray,   // ["English","Spanish"] or "English, Spanish"
+  languages: csvOrArray,
   pricingModel: z.enum(["Free", "Subscription", "One-time", "Custom"]).optional().nullable(),
   hours: z.string().trim().max(160).optional().nullable(),
 
   certifications: z.string().trim().max(2000).optional().nullable(),
   press: z.array(PressItem).optional().default([]),
 
-  logoUrl: urlMaybeEmpty.optional().nullable(),
-  imageUrls: z.array(urlMaybeEmpty).optional().default([]),
+  logoUrl: urlMaybeEmpty300.optional().nullable(),
+  imageUrls: z.array(urlMaybeEmpty300).optional().default([]),
 
   handles: PlatformHandles,
 });
@@ -128,7 +132,6 @@ export async function GET() {
 
   const profile = await prisma.profile.findUnique({ where: { userId: user.id } });
 
-  // Return a sane default shape so the client can prefill gracefully
   return NextResponse.json(
     profile ?? {
       userId: user.id,
@@ -171,9 +174,6 @@ export async function PUT(req: NextRequest) {
 
   const d = parsed.data;
 
-  // Build payload exactly as your Prisma model expects.
-  // NOTE: This assumes your `Profile` model has the fields from our earlier proposal:
-  // strings, string[] for serviceArea/languages/imageUrls, and Json for links/press/handles.
   const payload = {
     displayName: emptyToNull(d.displayName),
     legalName: emptyToNull(d.legalName),
