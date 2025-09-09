@@ -132,7 +132,7 @@ export const authOptions: NextAuthOptions = {
       return session;
     },
     async signIn({ user }) {
-      // fire-and-forget; do not block login
+      // fire-and-forget
       sendWelcomeIfFirstTime(user.id, user.email);
       return true;
     },
