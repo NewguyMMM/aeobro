@@ -9,15 +9,17 @@ import { redirect } from "next/navigation";
 import ProfileEditor from "@/components/ProfileEditor";
 import { toKebab } from "@/lib/slug";
 
+// System-reserved slugs
 const RESERVED = new Set([
   "admin","api","app","auth","dashboard","login","logout","sign-in","sign-up",
   "pricing","privacy","terms","faq","cancel","success","audit","disputes",
   "p","profile","profiles","user","users","me","settings","static","_next"
 ]);
 
-async function ensureUniqueSlug(base: string) {
-  const root0 = toKebab(base) || "user";
-  const root = RESERVED.has(root0) ? `${root0}-1` : root0;
+async function ensureUniqueSlug(baseRaw: string) {
+  const base0 = toKebab(baseRaw || "");
+  const root = RESERVED.has(base0) || !base0 ? (base0 ? `${base0}-1` : "user") : base0;
+
   let i = 0;
   // eslint-disable-next-line no-constant-condition
   while (true) {
@@ -28,8 +30,9 @@ async function ensureUniqueSlug(base: string) {
   }
 }
 
-const asArray = <T,>(v: any): T[] => (Array.isArray(v) ? (v as T[]) : []);
-const asObject = <T extends object>(v: any): T =>
+// helpers to coerce Prisma JSON fields safely into client shapes
+const asArray = <T,>(v: unknown): T[] => (Array.isArray(v) ? (v as T[]) : []);
+const asObject = <T extends object>(v: unknown): T =>
   v && typeof v === "object" ? (v as T) : ({} as T);
 
 export default async function DashboardPage() {
@@ -42,6 +45,7 @@ export default async function DashboardPage() {
   });
   if (!user) redirect("/login");
 
+  // Create profile if absent; ensure it has a slug
   let profile = await prisma.profile.findUnique({ where: { userId: user.id } });
 
   if (!profile) {
@@ -56,6 +60,7 @@ export default async function DashboardPage() {
     profile = await prisma.profile.update({ where: { userId: user.id }, data: { slug } });
   }
 
+  // Shape data for the client component
   const clientInitial = {
     displayName: profile.displayName,
     legalName: profile.legalName,
@@ -82,6 +87,7 @@ export default async function DashboardPage() {
   return (
     <div className="container py-8">
       <h1 className="text-2xl font-semibold mb-6">Your AI Profile</h1>
+      {/* Server → Client boundary */}
       <ProfileEditor initial={clientInitial as any} />
     </div>
   );
