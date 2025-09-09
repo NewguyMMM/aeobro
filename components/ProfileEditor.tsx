@@ -3,6 +3,7 @@
 
 import * as React from "react";
 import { toKebab } from "@/lib/slug";
+import { useToast } from "@/components/Toast";
 
 /** -------- Types -------- */
 type EntityType = "Business" | "Local Service" | "Organization" | "Creator / Person";
@@ -94,6 +95,8 @@ function debounce<T extends (...args: any[]) => any>(fn: T, ms = 400) {
 
 /** -------- Component -------- */
 export default function ProfileEditor({ initial }: { initial: Profile | null }) {
+  const toast = useToast();
+
   // ---- Core identity
   const [displayName, setDisplayName] = React.useState(initial?.displayName ?? "");
   const [legalName, setLegalName] = React.useState(initial?.legalName ?? "");
@@ -139,13 +142,14 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
   const [linkDraft, setLinkDraft] = React.useState<LinkItem>({ label: "", url: "" });
 
   // ---- NEW: Slug UX
-  const [slug, setSlug] = React.useState<string>(toKebab(initial?.slug || initial?.displayName || initial?.legalName || ""));
+  const [slug, setSlug] = React.useState<string>(
+    toKebab(initial?.slug || initial?.displayName || initial?.legalName || "")
+  );
   const [slugAvail, setSlugAvail] = React.useState<"idle" | "checking" | "ok" | "taken">("idle");
   const userTouchedSlug = React.useRef(false);
 
   // ---- UI
   const [saving, setSaving] = React.useState(false);
-  const [msg, setMsg] = React.useState<string | null>(null);
   const [savedSlug, setSavedSlug] = React.useState<string | null>(null); // for Copy URL + redirect
   const prefilledRef = React.useRef(false); // ensure we prefill only once
 
@@ -242,7 +246,6 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
   /** ---- Save ---- */
   async function save() {
     setSaving(true);
-    setMsg(null);
     setSavedSlug(null);
     try {
       if (!displayName.trim()) throw new Error("Display name is required.");
@@ -328,27 +331,26 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
         json?.profile?.slug || json?.slug || payload.slug || toKebab(displayName || legalName || "");
 
       if (!finalSlug) {
-        setMsg("Saved ✓");
+        toast("Saved ✓", "success");
         return;
       }
 
       setSavedSlug(finalSlug);
-      setMsg("Saved ✓ — copying URL…");
 
-      // Copy to clipboard, then auto-redirect
+      // Copy to clipboard, toast, then auto-redirect
       const publicUrl = `${window.location.origin}/p/${finalSlug}`;
       try {
         await navigator.clipboard.writeText(publicUrl);
-        setMsg("Saved ✓ — URL copied. Redirecting…");
+        toast("Saved ✓ — URL copied. Redirecting…", "success");
       } catch {
-        setMsg("Saved ✓ — Redirecting…");
+        toast("Saved ✓ — Redirecting…", "success");
       }
 
       setTimeout(() => {
         window.location.assign(publicUrl);
       }, 1200);
     } catch (e: any) {
-      setMsg(e?.message || "Save failed. Please try again.");
+      toast(e?.message || "Save failed. Please try again.", "error");
     } finally {
       setSaving(false);
     }
@@ -357,8 +359,12 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
   async function copyUrl() {
     if (!savedSlug) return;
     const url = `${window.location.origin}/p/${savedSlug}`;
-    await navigator.clipboard.writeText(url);
-    setMsg("URL copied to clipboard.");
+    try {
+      await navigator.clipboard.writeText(url);
+      toast("URL copied to clipboard.", "success");
+    } catch {
+      toast("Could not copy URL.", "error");
+    }
   }
 
   /** ---- Small UI helpers ---- */
@@ -846,8 +852,6 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
             Copy URL
           </button>
         ) : null}
-
-        {msg && <span className="text-sm text-gray-600">{msg}</span>}
       </div>
 
       {/* NOTE: No legal/footer links are rendered here.
