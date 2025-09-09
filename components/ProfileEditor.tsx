@@ -2,6 +2,7 @@
 "use client";
 
 import * as React from "react";
+import { toKebab } from "@/lib/slug";
 
 /** -------- Types -------- */
 type EntityType = "Business" | "Local Service" | "Organization" | "Creator / Person";
@@ -12,13 +13,13 @@ type PlatformHandles = {
   instagram?: string;
   substack?: string;
   etsy?: string;
-  x?: string;           // Twitter / X
+  x?: string; // Twitter / X
   linkedin?: string;
   facebook?: string;
   github?: string;
 };
 
-type LinkItem  = { label: string; url: string };
+type LinkItem = { label: string; url: string };
 type PressItem = { title: string; url: string };
 
 type Profile = {
@@ -48,6 +49,9 @@ type Profile = {
   imageUrls?: string[] | null;
 
   handles?: PlatformHandles | null;
+
+  // NEW: public slug
+  slug?: string | null;
 };
 
 /** -------- Utils -------- */
@@ -80,33 +84,40 @@ function toNum(input: string): number | undefined {
   const n = parseInt(input, 10);
   return Number.isFinite(n) ? n : undefined;
 }
+function debounce<T extends (...args: any[]) => any>(fn: T, ms = 400) {
+  let t: any;
+  return (...args: Parameters<T>) => {
+    clearTimeout(t);
+    t = setTimeout(() => fn(...args), ms);
+  };
+}
 
 /** -------- Component -------- */
 export default function ProfileEditor({ initial }: { initial: Profile | null }) {
   // ---- Core identity
   const [displayName, setDisplayName] = React.useState(initial?.displayName ?? "");
-  const [legalName, setLegalName]       = React.useState(initial?.legalName ?? "");
-  const [entityType, setEntityType]     = React.useState<EntityType | "">(
+  const [legalName, setLegalName] = React.useState(initial?.legalName ?? "");
+  const [entityType, setEntityType] = React.useState<EntityType | "">(
     (initial?.entityType as EntityType) ?? ""
   );
 
   // ---- Story
   const [tagline, setTagline] = React.useState(initial?.tagline ?? "");
-  const [bio, setBio]         = React.useState(initial?.bio ?? "");
+  const [bio, setBio] = React.useState(initial?.bio ?? "");
 
   // ---- Anchors
-  const [website, setWebsite]     = React.useState(initial?.website ?? "");
-  const [location, setLocation]   = React.useState(initial?.location ?? "");
+  const [website, setWebsite] = React.useState(initial?.website ?? "");
+  const [location, setLocation] = React.useState(initial?.location ?? "");
   const [serviceArea, setServiceArea] = React.useState(toCsv(initial?.serviceArea));
 
   // ---- Trust & Authority
   const [foundedYear, setFoundedYear] = React.useState(
     initial?.foundedYear ? String(initial.foundedYear) : ""
   );
-  const [teamSize, setTeamSize]       = React.useState(
+  const [teamSize, setTeamSize] = React.useState(
     initial?.teamSize ? String(initial.teamSize) : ""
   );
-  const [languages, setLanguages]     = React.useState(toCsv(initial?.languages));
+  const [languages, setLanguages] = React.useState(toCsv(initial?.languages));
   const [pricingModel, setPricingModel] = React.useState<
     "Free" | "Subscription" | "One-time" | "Custom" | ""
   >((initial?.pricingModel as any) ?? "");
@@ -124,12 +135,18 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
 
   // ---- Platforms & links
   const [handles, setHandles] = React.useState<PlatformHandles>(initial?.handles ?? {});
-  const [links, setLinks]     = React.useState<LinkItem[]>(initial?.links ?? []);
+  const [links, setLinks] = React.useState<LinkItem[]>(initial?.links ?? []);
   const [linkDraft, setLinkDraft] = React.useState<LinkItem>({ label: "", url: "" });
+
+  // ---- NEW: Slug UX
+  const [slug, setSlug] = React.useState<string>(toKebab(initial?.slug || initial?.displayName || initial?.legalName || ""));
+  const [slugAvail, setSlugAvail] = React.useState<"idle" | "checking" | "ok" | "taken">("idle");
+  const userTouchedSlug = React.useRef(false);
 
   // ---- UI
   const [saving, setSaving] = React.useState(false);
-  const [msg, setMsg]       = React.useState<string | null>(null);
+  const [msg, setMsg] = React.useState<string | null>(null);
+  const [savedSlug, setSavedSlug] = React.useState<string | null>(null); // for Copy URL + redirect
   const prefilledRef = React.useRef(false); // ensure we prefill only once
 
   /** ---- Prefill from API on mount (does not overwrite user typing) ---- */
@@ -142,54 +159,94 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
         const res = await fetch("/api/profile", { cache: "no-store" });
         if (!res.ok) return;
         const data: Profile | null = await res.json();
-
         if (!data) return;
 
         // Identity
         if (data.displayName != null) setDisplayName(data.displayName || "");
-        if (data.legalName != null)   setLegalName(data.legalName || "");
-        if (data.entityType)          setEntityType(data.entityType);
+        if (data.legalName != null) setLegalName(data.legalName || "");
+        if (data.entityType) setEntityType(data.entityType);
 
         // Story
         if (data.tagline != null) setTagline(data.tagline || "");
-        if (data.bio != null)     setBio(data.bio || "");
+        if (data.bio != null) setBio(data.bio || "");
 
         // Anchors
-        if (data.website != null)     setWebsite(data.website || "");
-        if (data.location != null)    setLocation(data.location || "");
-        if (data.serviceArea)         setServiceArea(toCsv(data.serviceArea));
+        if (data.website != null) setWebsite(data.website || "");
+        if (data.location != null) setLocation(data.location || "");
+        if (data.serviceArea) setServiceArea(toCsv(data.serviceArea));
 
         // Trust & authority
         if (data.foundedYear != null) setFoundedYear(String(data.foundedYear || ""));
-        if (data.teamSize != null)    setTeamSize(String(data.teamSize || ""));
-        if (data.languages)           setLanguages(toCsv(data.languages));
-        if (data.pricingModel)        setPricingModel(data.pricingModel);
-        if (data.hours != null)       setHours(data.hours || "");
+        if (data.teamSize != null) setTeamSize(String(data.teamSize || ""));
+        if (data.languages) setLanguages(toCsv(data.languages));
+        if (data.pricingModel) setPricingModel(data.pricingModel);
+        if (data.hours != null) setHours(data.hours || "");
 
         if (data.certifications != null) setCertifications(data.certifications || "");
-        if (data.press)                  setPress(data.press);
+        if (data.press) setPress(data.press);
 
         // Branding
-        if (data.logoUrl != null)     setLogoUrl(data.logoUrl || "");
+        if (data.logoUrl != null) setLogoUrl(data.logoUrl || "");
         if (data.imageUrls && data.imageUrls.length) setImageUrls(data.imageUrls);
 
         // Platforms & links
         if (data.handles) setHandles(data.handles);
-        if (data.links)   setLinks(data.links);
+        if (data.links) setLinks(data.links);
+
+        // Slug
+        if (data.slug != null && !userTouchedSlug.current) {
+          setSlug(toKebab(data.slug || data.displayName || data.legalName || ""));
+        }
       } catch {
         // silent fail is fine for prefill
       }
     })();
   }, []);
 
+  /** ---- Auto-suggest slug from displayName/legalName unless user edits manually ---- */
+  React.useEffect(() => {
+    if (userTouchedSlug.current) return;
+    const suggestion = toKebab(displayName || legalName || "");
+    if (suggestion) setSlug(suggestion);
+  }, [displayName, legalName]);
+
+  /** ---- Debounced availability check ---- */
+  const debouncedCheckSlug = React.useMemo(
+    () =>
+      debounce(async (candidate: string) => {
+        if (!candidate) {
+          setSlugAvail("idle");
+          return;
+        }
+        try {
+          setSlugAvail("checking");
+          const res = await fetch("/api/profile/ensure-unique-slug", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ base: candidate }),
+          });
+          const json = await res.json();
+          if (json?.slug && json.slug === candidate) setSlugAvail("ok");
+          else setSlugAvail("taken");
+        } catch {
+          setSlugAvail("idle");
+        }
+      }, 400),
+    []
+  );
+
+  React.useEffect(() => {
+    if (slug) debouncedCheckSlug(slug);
+  }, [slug, debouncedCheckSlug]);
+
   /** ---- Save ---- */
   async function save() {
     setSaving(true);
     setMsg(null);
+    setSavedSlug(null);
     try {
-      if (!displayName.trim()) {
-        throw new Error("Display name is required.");
-      }
+      if (!displayName.trim()) throw new Error("Display name is required.");
+
       // Website optional, but validate if present
       if (website && !isValidUrl(normalizeUrl(website))) {
         throw new Error("Website must be a valid URL (https://example.com).");
@@ -236,7 +293,9 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
         hours: hours.trim() || null,
 
         certifications: certifications.trim() || null,
-        press: press.length ? press.map(p => ({ title: p.title.trim(), url: normalizeUrl(p.url) })) : null,
+        press: press.length
+          ? press.map((p) => ({ title: p.title.trim(), url: normalizeUrl(p.url) }))
+          : null,
 
         // branding
         logoUrl: logoUrl ? normalizeUrl(logoUrl) : null,
@@ -244,7 +303,11 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
 
         // platforms & links
         handles,
-        links: links.length ? links.map(l => ({ label: (l.label||"").trim(), url: normalizeUrl(l.url||"") })) : null,
+        links:
+          links.length ? links.map((l) => ({ label: (l.label || "").trim(), url: normalizeUrl(l.url || "") })) : null,
+
+        // NEW: public slug (server will validate & ensure uniqueness anyway)
+        slug: toKebab(slug),
       };
 
       const res = await fetch("/api/profile", {
@@ -253,12 +316,37 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
         body: JSON.stringify(payload),
       });
 
+      const json = await res.json().catch(() => null);
+
       if (!res.ok) {
-        const text = await res.text().catch(() => "");
-        throw new Error(text || `Save failed (HTTP ${res.status}).`);
+        const text = (json && (json.error || json.message)) || `Save failed (HTTP ${res.status}).`;
+        throw new Error(text);
       }
 
-      setMsg("Saved ✓");
+      // Server returns either the profile or { ok, profile }
+      const finalSlug: string | undefined =
+        json?.profile?.slug || json?.slug || payload.slug || toKebab(displayName || legalName || "");
+
+      if (!finalSlug) {
+        setMsg("Saved ✓");
+        return;
+      }
+
+      setSavedSlug(finalSlug);
+      setMsg("Saved ✓ — copying URL…");
+
+      // Copy to clipboard, then auto-redirect
+      const publicUrl = `${window.location.origin}/p/${finalSlug}`;
+      try {
+        await navigator.clipboard.writeText(publicUrl);
+        setMsg("Saved ✓ — URL copied. Redirecting…");
+      } catch {
+        setMsg("Saved ✓ — Redirecting…");
+      }
+
+      setTimeout(() => {
+        window.location.assign(publicUrl);
+      }, 1200);
     } catch (e: any) {
       setMsg(e?.message || "Save failed. Please try again.");
     } finally {
@@ -266,10 +354,17 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
     }
   }
 
+  async function copyUrl() {
+    if (!savedSlug) return;
+    const url = `${window.location.origin}/p/${savedSlug}`;
+    await navigator.clipboard.writeText(url);
+    setMsg("URL copied to clipboard.");
+  }
+
   /** ---- Small UI helpers ---- */
   const input = "w-full border rounded-lg px-3 py-2";
   const label = "text-sm font-medium text-gray-700";
-  const row   = "grid gap-2";
+  const row = "grid gap-2";
 
   return (
     <div className="max-w-2xl grid gap-8">
@@ -278,7 +373,9 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
         <h2 className="text-lg font-semibold">Identity</h2>
 
         <div className={row}>
-          <label className={label} htmlFor="displayName">Display name *</label>
+          <label className={label} htmlFor="displayName">
+            Display name *
+          </label>
           <input
             id="displayName"
             className={input}
@@ -291,7 +388,9 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className={row}>
-            <label className={label} htmlFor="legalName">Legal/brand name (if different)</label>
+            <label className={label} htmlFor="legalName">
+              Legal/brand name (if different)
+            </label>
             <input
               id="legalName"
               className={input}
@@ -302,7 +401,9 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
             />
           </div>
           <div className={row}>
-            <label className={label} htmlFor="entityType">Entity type</label>
+            <label className={label} htmlFor="entityType">
+              Entity type
+            </label>
             <select
               id="entityType"
               className={input}
@@ -317,6 +418,46 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
             </select>
           </div>
         </div>
+
+        {/* NEW: Slug */}
+        <div className={row}>
+          <label className={label} htmlFor="slug">
+            Public URL slug
+          </label>
+          <div className="flex items-center gap-2">
+            <input
+              id="slug"
+              className={input + " font-mono"}
+              placeholder="kings-anesthesia"
+              value={slug}
+              onChange={(e) => {
+                userTouchedSlug.current = true;
+                setSlug(toKebab(e.target.value));
+              }}
+              maxLength={80}
+            />
+            <span
+              className={
+                slugAvail === "ok"
+                  ? "text-green-600 text-sm"
+                  : slugAvail === "taken"
+                  ? "text-red-600 text-sm"
+                  : "text-gray-500 text-sm"
+              }
+            >
+              {slugAvail === "ok"
+                ? "✓ available"
+                : slugAvail === "taken"
+                ? "× taken"
+                : slugAvail === "checking"
+                ? "…"
+                : ""}
+            </span>
+          </div>
+          <p className="text-xs text-gray-500">
+            Public page will be <code>/p/{slug || "your-slug"}</code>
+          </p>
+        </div>
       </section>
 
       {/* Tagline & Bio */}
@@ -324,7 +465,9 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
         <h2 className="text-lg font-semibold">Tagline & Bio</h2>
 
         <div className={row}>
-          <label className={label} htmlFor="tagline">Tagline</label>
+          <label className={label} htmlFor="tagline">
+            Tagline
+          </label>
           <input
             id="tagline"
             className={input}
@@ -336,7 +479,9 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
         </div>
 
         <div className={row}>
-          <label className={label} htmlFor="bio">Bio / About</label>
+          <label className={label} htmlFor="bio">
+            Bio / About
+          </label>
           <textarea
             id="bio"
             className={input}
@@ -355,7 +500,9 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className={row}>
-            <label className={label} htmlFor="website">Website</label>
+            <label className={label} htmlFor="website">
+              Website
+            </label>
             <input
               id="website"
               className={input}
@@ -370,7 +517,9 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
           </div>
 
           <div className={row}>
-            <label className={label} htmlFor="location">Location (address or city/state)</label>
+            <label className={label} htmlFor="location">
+              Location (address or city/state)
+            </label>
             <input
               id="location"
               className={input}
@@ -383,7 +532,9 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
         </div>
 
         <div className={row}>
-          <label className={label} htmlFor="serviceArea">Service area (comma-separated regions)</label>
+          <label className={label} htmlFor="serviceArea">
+            Service area (comma-separated regions)
+          </label>
           <input
             id="serviceArea"
             className={input}
@@ -401,7 +552,9 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <div className={row}>
-            <label className={label} htmlFor="foundedYear">Founded / started (year)</label>
+            <label className={label} htmlFor="foundedYear">
+              Founded / started (year)
+            </label>
             <input
               id="foundedYear"
               className={input}
@@ -413,7 +566,9 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
             />
           </div>
           <div className={row}>
-            <label className={label} htmlFor="teamSize">Team size</label>
+            <label className={label} htmlFor="teamSize">
+              Team size
+            </label>
             <input
               id="teamSize"
               className={input}
@@ -425,7 +580,9 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
             />
           </div>
           <div className={row}>
-            <label className={label} htmlFor="pricingModel">Pricing model</label>
+            <label className={label} htmlFor="pricingModel">
+              Pricing model
+            </label>
             <select
               id="pricingModel"
               className={input}
@@ -443,7 +600,9 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className={row}>
-            <label className={label} htmlFor="languages">Languages served (comma-separated)</label>
+            <label className={label} htmlFor="languages">
+              Languages served (comma-separated)
+            </label>
             <input
               id="languages"
               className={input}
@@ -454,7 +613,9 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
             />
           </div>
           <div className={row}>
-            <label className={label} htmlFor="hours">Hours of operation</label>
+            <label className={label} htmlFor="hours">
+              Hours of operation
+            </label>
             <input
               id="hours"
               className={input}
@@ -467,7 +628,9 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
         </div>
 
         <div className={row}>
-          <label className={label} htmlFor="certs">Certifications / licenses / awards (optional)</label>
+          <label className={label} htmlFor="certs">
+            Certifications / licenses / awards (optional)
+          </label>
           <textarea
             id="certs"
             className={input}
@@ -539,7 +702,9 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
         <h2 className="text-lg font-semibold">Branding & Media</h2>
 
         <div className={row}>
-          <label className={label} htmlFor="logoUrl">Logo URL</label>
+          <label className={label} htmlFor="logoUrl">
+            Logo URL
+          </label>
           <input
             id="logoUrl"
             className={input}
@@ -553,7 +718,9 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           {imageUrls.map((u, i) => (
             <div className={row} key={i}>
-              <label className={label} htmlFor={`img${i}`}>Image {i + 1} URL</label>
+              <label className={label} htmlFor={`img${i}`}>
+                Image {i + 1} URL
+              </label>
               <input
                 id={`img${i}`}
                 className={input}
@@ -668,6 +835,18 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
         >
           {saving ? "Saving…" : "Save profile"}
         </button>
+
+        {/* Copy URL appears after successful save */}
+        {savedSlug ? (
+          <button
+            type="button"
+            onClick={copyUrl}
+            className="px-3 py-2 border rounded-lg"
+          >
+            Copy URL
+          </button>
+        ) : null}
+
         {msg && <span className="text-sm text-gray-600">{msg}</span>}
       </div>
 
