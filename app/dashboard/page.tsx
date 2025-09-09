@@ -18,7 +18,6 @@ async function ensureUniqueSlug(base: string) {
   const root = RESERVED.has(root0) ? `${root0}-1` : root0;
 
   let i = 0;
-  // Probe until we find a free slug
   while (true) {
     const candidate = i === 0 ? root : `${root}-${i}`;
     const taken = await prisma.profile.findUnique({ where: { slug: candidate } });
@@ -27,52 +26,82 @@ async function ensureUniqueSlug(base: string) {
   }
 }
 
+// Narrow helpers for coercing Prisma JsonValue -> concrete shapes the client expects
+const asArray = <T,>(v: any): T[] => (Array.isArray(v) ? (v as T[]) : []);
+const asObject = <T extends object>(v: any): T => ((v && typeof v === "object") ? (v as T) : ({} as T));
+
 export default async function DashboardPage() {
   const session = await getServerSession(authOptions);
-  if (!session?.user?.email) {
-    redirect("/login");
-  }
+  if (!session?.user?.email) redirect("/login");
 
   const user = await prisma.user.findUnique({
     where: { email: session.user.email! },
     select: { id: true, name: true, email: true },
   });
-  if (!user) {
-    redirect("/login");
-  }
+  if (!user) redirect("/login");
 
-  // Get or create profile
+  // Get/create profile and guarantee there is a slug
   let profile = await prisma.profile.findUnique({ where: { userId: user.id } });
 
-  // First-time users: create with a valid, unique slug
   if (!profile) {
     const base = user.name || user.email!.split("@")[0] || "user";
     const slug = await ensureUniqueSlug(base);
-
     profile = await prisma.profile.create({
       data: {
         userId: user.id,
         displayName: user.name ?? null,
-        slug, // required
+        slug,
       },
     });
   } else if (!profile.slug) {
-    // Backfill slug if an older row exists without one
-    const base =
-      profile.displayName || user.name || user.email!.split("@")[0] || "user";
+    const base = profile.displayName || user.name || user.email!.split("@")[0] || "user";
     const slug = await ensureUniqueSlug(base);
-    profile = await prisma.profile.update({
-      where: { userId: user.id },
-      data: { slug },
-    });
+    profile = await prisma.profile.update({ where: { userId: user.id }, data: { slug } });
   }
 
-  // Render the client editor with the server-fetched initial data
+  // Convert Prisma row into the "initial" shape ProfileEditor expects
+  const clientInitial = {
+    // identity
+    displayName: profile.displayName,
+    legalName: profile.legalName,
+    entityType: profile.entityType as any,
+
+    // story
+    tagline: profile.tagline,
+    bio: profile.bio,
+
+    // anchors
+    website: profile.website,
+    location: profile.location,
+    serviceArea: asArray<string>(profile.serviceArea),
+
+    // trust
+    foundedYear: profile.foundedYear,
+    teamSize: profile.teamSize,
+    languages: asArray<string>(profile.languages),
+    pricingModel: profile.pricingModel as any,
+    hours: profile.hours,
+
+    certifications: profile.certifications,
+    press: asArray<{ title: string; url: string }>(profile.press),
+
+    // branding
+    logoUrl: profile.logoUrl,
+    imageUrls: asArray<string>(profile.imageUrls),
+
+    // platforms & links
+    handles: asObject<Record<string, string>>(profile.handles),
+    links: asArray<{ label: string; url: string }>(profile.links),
+
+    // public slug used by the editor for copy/redirect
+    slug: profile.slug,
+  };
+
   return (
     <div className="container py-8">
       <h1 className="text-2xl font-semibold mb-6">Your AI Profile</h1>
       {/* Server -> Client boundary */}
-      <ProfileEditor initial={profile} />
+      <ProfileEditor initial={clientInitial as any} />
     </div>
   );
 }
