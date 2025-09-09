@@ -39,7 +39,9 @@ async function sendMagicLinkEmail(identifier: string, url: string) {
 
   const sendOnce = async (tag: string) => {
     const { data, error } = await resend.emails.send({
-      from: process.env.EMAIL_FROM || FROM.login || "AEOBRO <noreply@aeobro.com>",
+      // TIP: while your domain warms up, use a guaranteed sender:
+      // from: "onboarding@resend.dev",
+      from: process.env.EMAIL_FROM || FROM.login || "onboarding@resend.dev",
       to: identifier,
       subject: `Sign in to ${host}`,
       html: authEmailHtml({ url: fixedUrl, host }),
@@ -77,7 +79,7 @@ async function sendWelcomeIfFirstTime(userId: string, email?: string | null) {
     if (user.welcomeSentAt) return;
 
     const { data, error } = await resend.emails.send({
-      from: process.env.EMAIL_FROM || FROM.welcome || "AEOBRO <noreply@aeobro.com>",
+      from: process.env.EMAIL_FROM || FROM.welcome || "onboarding@resend.dev",
       to: email,
       subject: "Welcome to AEOBRO 👋",
       html: welcomeHtml(),
@@ -132,7 +134,7 @@ export const authOptions: NextAuthOptions = {
       return session;
     },
     async signIn({ user }) {
-      // fire-and-forget
+      // fire-and-forget; do not block login
       sendWelcomeIfFirstTime(user.id, user.email);
       return true;
     },
