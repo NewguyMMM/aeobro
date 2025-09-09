@@ -101,7 +101,6 @@ const scopes =
   "https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/userinfo.email";
 
 export const authOptions: NextAuthOptions = {
-  // Persist users/accounts via Prisma; use JWT sessions so session.user.id is easy to read
   adapter: PrismaAdapter(prisma),
   session: { strategy: "jwt" },
 
@@ -116,21 +115,15 @@ export const authOptions: NextAuthOptions = {
       clientId: process.env.GOOGLE_CLIENT_ID!,
       clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
       authorization: {
-        params: {
-          scope: scopes,
-          prompt: "consent",
-        },
+        params: { scope: scopes, prompt: "consent" },
       },
       checks: ["pkce", "state"],
     }),
   ],
 
-  pages: {
-    signIn: "/login",
-  },
+  pages: { signIn: "/login" },
 
   callbacks: {
-    // Ensure session has user.id for server routes
     async session({ session, token }) {
       if (token?.sub) {
         // @ts-expect-error augment at runtime
