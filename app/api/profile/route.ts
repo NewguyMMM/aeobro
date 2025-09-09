@@ -8,32 +8,14 @@ import { toKebab } from "@/lib/slug";
 
 /* ----------------------- helpers ----------------------- */
 
-// Reserve obvious system paths
-const RESERVED = new Set([
-  "admin","api","app","auth","dashboard","login","logout","sign-in","sign-up",
-  "pricing","privacy","terms","faq","aup","cancel","success","audit","disputes",
-  "p","profile","profiles","user","users","me","settings","static","_next"
-]);
-
-async function ensureUniqueSlug(baseRaw: string) {
-  const base0 = toKebab(baseRaw || "");
-  let root = base0 && !RESERVED.has(base0) ? base0 : "user";
-  if (RESERVED.has(root)) root = `${root}-1`;
-
-  let candidate = root;
-  let i = 1;
-  // Try up to 200 suffixes; extremely unlikely to loop that far
-  while (true) {
-    const hit = await prisma.profile.findUnique({ where: { slug: candidate } });
-    if (!hit) return candidate;
-    i += 1;
-    candidate = `${root}-${i}`;
-  }
-}
-
 // URL schema that allows empty, normalizes protocol, and enforces MAX length
 const urlMaybeEmptyMax = (maxLen: number) =>
-  z.string().trim().max(maxLen).optional().nullable()
+  z
+    .string()
+    .trim()
+    .max(maxLen)
+    .optional()
+    .nullable()
     .transform((v) => (v ?? "").trim())
     .refine((v) => {
       if (!v) return true; // allow empty
@@ -53,19 +35,66 @@ const urlMaybeEmptyMax = (maxLen: number) =>
 const urlMaybeEmpty200 = urlMaybeEmptyMax(200);
 const urlMaybeEmpty300 = urlMaybeEmptyMax(300);
 
-const csvOrArray = z.union([z.string(), z.array(z.string())]).optional().nullable()
+const csvOrArray = z
+  .union([z.string(), z.array(z.string())])
+  .optional()
+  .nullable()
   .transform((v) => {
     if (!v) return [] as string[];
-    if (Array.isArray(v)) return v.map(String).map((s) => s.trim()).filter(Boolean);
-    return String(v).split(",").map((s) => s.trim()).filter(Boolean);
+    if (Array.isArray(v)) {
+      return v.map(String).map((s) => s.trim()).filter(Boolean);
+    }
+    return String(v)
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
   });
 
-const intNullable = z.union([z.string(), z.number(), z.null(), z.undefined()])
+const intNullable = z
+  .union([z.string(), z.number(), z.null(), z.undefined()])
   .transform((v) => {
     if (v === null || v === undefined || v === "") return null;
     const n = typeof v === "number" ? v : parseInt(String(v), 10);
     return Number.isFinite(n) ? n : null;
   });
+
+/* ---------- slug helpers ---------- */
+
+const RESERVED = new Set([
+  "admin","api","app","auth","dashboard","login","logout","sign-in","sign-up",
+  "pricing","privacy","terms","faq","cancel","success","audit","disputes",
+  "p","profile","profiles","user","users","me","settings","static","_next"
+]);
+
+async function ensureUniqueSlug(baseRaw: string, current?: string): Promise<string> {
+  let base = toKebab(baseRaw || "");
+  if (!base) base = "user";
+  const root = RESERVED.has(base) ? "user" : base;
+
+  // unchanged -> keep
+  if (current && current === root) return root;
+
+  // try root
+  const existingRoot = await prisma.profile.findUnique({
+    where: { slug: root },
+    select: { slug: true },
+  });
+  if (!existingRoot) return root;
+
+  // try -1, -2, ...
+  for (let i = 1; i <= 500; i++) {
+    const candidate = `${root}-${i}`;
+    if (candidate.length > 80) break;
+    const hit = await prisma.profile.findUnique({
+      where: { slug: candidate },
+      select: { slug: true },
+    });
+    if (!hit) return candidate;
+  }
+
+  // last-resort suffix
+  return `${root}-${Math.random().toString(36).slice(2, 6)}`;
+}
 
 /* ----------------------- schemas ----------------------- */
 
@@ -79,17 +108,20 @@ const PressItem = z.object({
   url: urlMaybeEmpty300.default(""),
 });
 
-const PlatformHandles = z.object({
-  youtube: urlMaybeEmpty300.optional(),
-  tiktok: urlMaybeEmpty300.optional(),
-  instagram: urlMaybeEmpty300.optional(),
-  substack: urlMaybeEmpty300.optional(),
-  etsy: urlMaybeEmpty300.optional(),
-  x: urlMaybeEmpty300.optional(),
-  linkedin: urlMaybeEmpty300.optional(),
-  facebook: urlMaybeEmpty300.optional(),
-  github: urlMaybeEmpty300.optional(),
-}).partial().optional();
+const PlatformHandles = z
+  .object({
+    youtube: urlMaybeEmpty300.optional(),
+    tiktok: urlMaybeEmpty300.optional(),
+    instagram: urlMaybeEmpty300.optional(),
+    substack: urlMaybeEmpty300.optional(),
+    etsy: urlMaybeEmpty300.optional(),
+    x: urlMaybeEmpty300.optional(),
+    linkedin: urlMaybeEmpty300.optional(),
+    facebook: urlMaybeEmpty300.optional(),
+    github: urlMaybeEmpty300.optional(),
+  })
+  .partial()
+  .optional();
 
 const ProfileSchema = z.object({
   // original fields
@@ -99,23 +131,26 @@ const ProfileSchema = z.object({
   website: urlMaybeEmpty200.optional().nullable().or(z.literal("")).default(""),
   bio: z.string().trim().max(2000).optional().nullable(),
 
-  // arrays default
+  // ✅ accept null, coerce to []
   links: z.array(LinkItem).max(20).optional().nullable().transform((v) => v ?? []),
 
   // new fields
   legalName: z.string().trim().max(160).optional().nullable(),
-  entityType: z.enum(["Business","Local Service","Organization","Creator / Person"]).optional().nullable(),
+  entityType: z
+    .enum(["Business", "Local Service", "Organization", "Creator / Person"])
+    .optional()
+    .nullable(),
 
   serviceArea: csvOrArray,
   foundedYear: intNullable,
   teamSize: intNullable,
   languages: csvOrArray,
-  pricingModel: z.enum(["Free","Subscription","One-time","Custom"]).optional().nullable(),
+  pricingModel: z.enum(["Free", "Subscription", "One-time", "Custom"]).optional().nullable(),
   hours: z.string().trim().max(160).optional().nullable(),
 
   certifications: z.string().trim().max(2000).optional().nullable(),
 
-  // arrays default
+  // ✅ accept null, coerce to []
   press: z.array(PressItem).optional().nullable().transform((v) => v ?? []),
 
   logoUrl: urlMaybeEmpty300.optional().nullable(),
@@ -123,11 +158,11 @@ const ProfileSchema = z.object({
 
   handles: PlatformHandles,
 
-  // incoming slug (optional) — server still validates/normalizes
+  // NEW: allow client to propose a slug
   slug: z.string().trim().max(80).optional().nullable(),
 });
 
-/* ----------------------- GET: fetch or auto-create ----------------------- */
+/* ----------------------- handlers ----------------------- */
 
 export async function GET() {
   const session = await getServerSession(authOptions);
@@ -137,30 +172,24 @@ export async function GET() {
 
   const user = await prisma.user.findUnique({
     where: { email: session.user.email },
-    select: { id: true, name: true, email: true },
+    select: { id: true },
   });
   if (!user) return NextResponse.json({ error: "No user" }, { status: 404 });
 
-  let profile = await prisma.profile.findUnique({ where: { userId: user.id } });
+  const profile = await prisma.profile.findUnique({ where: { userId: user.id } });
 
-  // ✅ Auto-create a minimal profile with a guaranteed-unique slug
-  if (!profile) {
-    const base = session.user.name
-      || user.name
-      || (session.user.email ?? user.email ?? "").split("@")[0]
-      || "user";
-
-    const slug = await ensureUniqueSlug(base);
-
-    profile = await prisma.profile.create({
-      data: { userId: user.id, slug },
-    });
-  }
-
-  return NextResponse.json(profile);
+  return NextResponse.json(
+    profile ?? {
+      userId: user.id,
+      links: [],
+      press: [],
+      imageUrls: [],
+      serviceArea: [],
+      languages: [],
+      handles: {},
+    }
+  );
 }
-
-/* ----------------------- PUT: upsert with validation ----------------------- */
 
 export async function PUT(req: NextRequest) {
   const session = await getServerSession(authOptions);
@@ -170,7 +199,7 @@ export async function PUT(req: NextRequest) {
 
   const user = await prisma.user.findUnique({
     where: { email: session.user.email },
-    select: { id: true, name: true, email: true },
+    select: { id: true },
   });
   if (!user) return NextResponse.json({ error: "No user" }, { status: 404 });
 
@@ -191,28 +220,16 @@ export async function PUT(req: NextRequest) {
 
   const d = parsed.data;
 
-  // Normalize/validate slug (server-side)
-  let incoming = toKebab(d.slug || "");
-  if (!incoming) {
-    // pick a base from displayName/legal/email, then ensure uniqueness
-    const base =
-      d.displayName ||
-      d.legalName ||
-      session.user.name ||
-      (session.user.email ?? "").split("@")[0] ||
-      "user";
-    incoming = await ensureUniqueSlug(base);
-  } else {
-    if (RESERVED.has(incoming)) {
-      return NextResponse.json({ error: "Slug is reserved" }, { status: 400 });
-    }
-    // If the same user already owns this slug, allow; otherwise enforce uniqueness
-    const clash = await prisma.profile.findUnique({ where: { slug: incoming } });
-    const mine = await prisma.profile.findUnique({ where: { userId: user.id } });
-    if (clash && clash.id !== mine?.id) {
-      return NextResponse.json({ error: "Slug already taken" }, { status: 409 });
-    }
-  }
+  // read existing (for slug keep/compare)
+  const existing = await prisma.profile.findUnique({
+    where: { userId: user.id },
+    select: { slug: true },
+  });
+
+  const proposedSlug =
+    (d.slug ?? d.displayName ?? d.legalName ?? "").toString();
+
+  const finalSlug = await ensureUniqueSlug(proposedSlug, existing?.slug);
 
   const payload = {
     displayName: emptyToNull(d.displayName),
@@ -241,17 +258,24 @@ export async function PUT(req: NextRequest) {
     handles: d.handles ?? {},
     links: d.links ?? [],
 
-    // ✅ always persist a non-null slug
-    slug: incoming,
+    // ✅ always include slug for Prisma create/update
+    slug: finalSlug,
   };
 
-  const saved = await prisma.profile.upsert({
-    where: { userId: user.id },
-    update: payload,
-    create: { userId: user.id, ...payload },
-  });
-
-  return NextResponse.json(saved);
+  try {
+    const saved = await prisma.profile.upsert({
+      where: { userId: user.id },
+      update: payload,
+      create: { userId: user.id, ...payload },
+    });
+    return NextResponse.json(saved);
+  } catch (err: any) {
+    // surface a helpful message while keeping 500
+    return NextResponse.json(
+      { error: "Save failed", message: err?.message ?? "Unknown error" },
+      { status: 500 }
+    );
+  }
 }
 
 /* ----------------------- utils ----------------------- */
