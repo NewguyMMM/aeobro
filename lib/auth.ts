@@ -4,7 +4,11 @@ import EmailProvider from "next-auth/providers/email";
 import GoogleProvider from "next-auth/providers/google";
 import { PrismaAdapter } from "@auth/prisma-adapter";
 import { prisma } from "@/lib/prisma";
-import { resend, FROM, authEmailHtml, welcomeHtml } from "@/lib/email";
+import { resend, authEmailHtml, welcomeHtml } from "@/lib/email";
+
+/** Prefer Resend's warmed sender unless you explicitly override via env */
+const FROM_LOGIN = (process.env.EMAIL_FROM ?? "onboarding@resend.dev").trim();
+const FROM_WELCOME = (process.env.WELCOME_FROM ?? FROM_LOGIN).trim();
 
 /** Ensure the magic-link host/protocol match NEXTAUTH_URL */
 function forceAppOrigin(inputUrl: string): string {
@@ -39,9 +43,7 @@ async function sendMagicLinkEmail(identifier: string, url: string) {
 
   const sendOnce = async (tag: string) => {
     const { data, error } = await resend.emails.send({
-      // TIP: while your domain warms up, use a guaranteed sender:
-      // from: "onboarding@resend.dev",
-      from: process.env.EMAIL_FROM || FROM.login || "onboarding@resend.dev",
+      from: FROM_LOGIN, // warmed sender by default
       to: identifier,
       subject: `Sign in to ${host}`,
       html: authEmailHtml({ url: fixedUrl, host }),
@@ -79,7 +81,7 @@ async function sendWelcomeIfFirstTime(userId: string, email?: string | null) {
     if (user.welcomeSentAt) return;
 
     const { data, error } = await resend.emails.send({
-      from: process.env.EMAIL_FROM || FROM.welcome || "onboarding@resend.dev",
+      from: FROM_WELCOME, // warmed/login sender by default unless WELCOME_FROM set
       to: email,
       subject: "Welcome to AEOBRO 👋",
       html: welcomeHtml(),
@@ -116,9 +118,7 @@ export const authOptions: NextAuthOptions = {
     GoogleProvider({
       clientId: process.env.GOOGLE_CLIENT_ID!,
       clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
-      authorization: {
-        params: { scope: scopes, prompt: "consent" },
-      },
+      authorization: { params: { scope: scopes, prompt: "consent" } },
       checks: ["pkce", "state"],
     }),
   ],
