@@ -4,6 +4,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { z } from "zod";
+import { toKebab, isSlugAllowed } from "@/lib/slug";
 
 /* ----------------------- helpers ----------------------- */
 
@@ -127,7 +128,26 @@ const ProfileSchema = z.object({
   imageUrls: z.array(urlMaybeEmpty300).optional().default([]),
 
   handles: PlatformHandles,
+
+  // NEW: optional client-provided slug base (server will finalize)
+  slug: z.string().trim().max(80).optional().nullable(),
 });
+
+/* ----------------------- slug helpers ----------------------- */
+
+async function ensureUniqueSlug(base: string, excludeId?: string | null) {
+  const start = toKebab(base || "profile");
+  for (let i = 0; i < 200; i++) {
+    const candidate = i === 0 ? start : `${start}-${i + 1}`;
+    if (!isSlugAllowed(candidate)) continue;
+    const exists = await prisma.profile.findFirst({
+      where: { slug: candidate, ...(excludeId ? { NOT: { id: excludeId } } : {}) },
+      select: { id: true },
+    });
+    if (!exists) return candidate;
+  }
+  throw new Error("No available slug variants");
+}
 
 /* ----------------------- handlers ----------------------- */
 
@@ -187,7 +207,22 @@ export async function PUT(req: NextRequest) {
 
   const d = parsed.data;
 
+  // Compute a legal, unique slug
+  const existing = await prisma.profile.findUnique({
+    where: { userId: user.id },
+    select: { id: true },
+  });
+
+  const requestedBase = toKebab(d.slug || d.displayName || d.legalName || "profile");
+  const legalBase = isSlugAllowed(requestedBase)
+    ? requestedBase
+    : toKebab(d.displayName || d.legalName || "profile");
+
+  const finalSlug = await ensureUniqueSlug(legalBase, existing?.id);
+
   const payload = {
+    slug: finalSlug, // ✅ REQUIRED on create; also set on update to keep in sync
+
     displayName: emptyToNull(d.displayName),
     legalName: emptyToNull(d.legalName),
     entityType: emptyToNull(d.entityType),
@@ -213,14 +248,17 @@ export async function PUT(req: NextRequest) {
 
     handles: d.handles ?? {},
     links: d.links ?? [],
+
+    userId: user.id,
   };
 
   const saved = await prisma.profile.upsert({
     where: { userId: user.id },
     update: payload,
-    create: { userId: user.id, ...payload },
+    create: payload, // includes slug, satisfying Prisma types & DB NOT NULL
   });
 
+  // Return the profile object (your client handles both wrapped and unwrapped)
   return NextResponse.json(saved);
 }
 
