@@ -72,6 +72,9 @@ model Profile {
   userId      String   @unique
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade)
 
+  // -------- Routing / Public URL --------
+  slug        String   @unique // ✅ required for /p/[slug] public page
+
   // -------- Core identity --------
   displayName String?
   legalName   String?
