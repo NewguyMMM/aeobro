@@ -6,7 +6,8 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import ProfileEditor from "@/components/ProfileEditor";
-import PublicProfileLink from "@/components/PublicProfileLink";
+// Use RELATIVE path because PublicProfileLink is in app/components/
+import PublicProfileLink from "../components/PublicProfileLink";
 
 export default async function DashboardPage() {
   const session = await getServerSession(authOptions);
