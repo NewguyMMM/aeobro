@@ -1,5 +1,5 @@
 // app/api/profile/route.ts
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
@@ -178,8 +178,12 @@ export async function GET() {
 
   const profile = await prisma.profile.findUnique({ where: { userId: user.id } });
 
-  return NextResponse.json(
-    profile ?? {
+  // Provide both shapes:
+  // - data.profile   → for PublicProfileLink
+  // - spread fields  → backward-compat for any code reading top-level fields
+  const payload =
+    profile ??
+    {
       userId: user.id,
       links: [],
       press: [],
@@ -187,11 +191,12 @@ export async function GET() {
       serviceArea: [],
       languages: [],
       handles: {},
-    }
-  );
+    };
+
+  return NextResponse.json({ profile: payload, ...payload });
 }
 
-export async function PUT(req: NextRequest) {
+export async function PUT(req: Request) {
   const session = await getServerSession(authOptions);
   if (!session?.user?.email) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -213,7 +218,7 @@ export async function PUT(req: NextRequest) {
   const parsed = ProfileSchema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json(
-      { error: "Validation failed", details: parsed.error.format() },
+      { ok: false, error: "VALIDATION", details: parsed.error.format() },
       { status: 400 }
     );
   }
@@ -226,9 +231,7 @@ export async function PUT(req: NextRequest) {
     select: { slug: true },
   });
 
-  const proposedSlug =
-    (d.slug ?? d.displayName ?? d.legalName ?? "").toString();
-
+  const proposedSlug = (d.slug ?? d.displayName ?? d.legalName ?? "").toString();
   const finalSlug = await ensureUniqueSlug(proposedSlug, existing?.slug);
 
   const payload = {
@@ -268,14 +271,32 @@ export async function PUT(req: NextRequest) {
       update: payload,
       create: { userId: user.id, ...payload },
     });
-    return NextResponse.json(saved);
+
+    // Return both shapes for compatibility
+    return NextResponse.json({ ok: true, profile: saved, ...saved });
   } catch (err: any) {
-    // surface a helpful message while keeping 500
+    // Friendlier duplicate-slug handling
+    if (
+      err?.code === "P2002" &&
+      (err?.meta?.target?.includes?.("slug") || err?.meta?.target?.includes?.("Profile_slug_key"))
+    ) {
+      return NextResponse.json(
+        { ok: false, error: "SLUG_TAKEN", message: "That public URL is already taken. Please choose another." },
+        { status: 409 }
+      );
+    }
+
+    console.error("Profile save failed:", err);
     return NextResponse.json(
-      { error: "Save failed", message: err?.message ?? "Unknown error" },
+      { ok: false, error: "INTERNAL", message: "Failed to save profile." },
       { status: 500 }
     );
   }
+}
+
+// Optional: Some clients might POST instead of PUT; support both.
+export async function POST(req: Request) {
+  return PUT(req);
 }
 
 /* ----------------------- utils ----------------------- */
