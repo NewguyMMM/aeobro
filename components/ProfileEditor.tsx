@@ -5,6 +5,11 @@ import * as React from "react";
 import { toKebab } from "@/lib/slug";
 import { useToast } from "@/components/Toast";
 
+// NEW: helper UI components
+import EntityTypeHelp from "@/components/EntityTypeHelp";
+import LogoUploader from "@/components/LogoUploader";
+import LinkTypeSelect from "@/components/LinkTypeSelect";
+
 /** -------- Types -------- */
 type EntityType = "Business" | "Local Service" | "Organization" | "Creator / Person";
 
@@ -214,7 +219,7 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
     if (suggestion) setSlug(suggestion);
   }, [displayName, legalName]);
 
-  /** ---- Debounced availability check ---- */
+  /** ---- Debounced availability check (keeps your existing endpoint) ---- */
   const debouncedCheckSlug = React.useMemo(
     () =>
       debounce(async (candidate: string) => {
@@ -307,7 +312,12 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
         // platforms & links
         handles,
         links:
-          links.length ? links.map((l) => ({ label: (l.label || "").trim(), url: normalizeUrl(l.url || "") })) : null,
+          links.length
+            ? links.map((l) => ({
+                label: (l.label || "").trim(),
+                url: normalizeUrl(l.url || ""),
+              }))
+            : null,
 
         // NEW: public slug (server will validate & ensure uniqueness anyway)
         slug: toKebab(slug),
@@ -408,7 +418,7 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
           </div>
           <div className={row}>
             <label className={label} htmlFor="entityType">
-              Entity type
+              Entity type <EntityTypeHelp />
             </label>
             <select
               id="entityType"
@@ -428,7 +438,7 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
         {/* NEW: Slug */}
         <div className={row}>
           <label className={label} htmlFor="slug">
-            Public URL slug
+            Public URL slug <span className="text-gray-500">(human-readable part of a URL)</span>
           </label>
           <div className="flex items-center gap-2">
             <input
@@ -707,18 +717,26 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
       <section className="grid gap-4">
         <h2 className="text-lg font-semibold">Branding & Media</h2>
 
+        {/* NEW: Drag-and-drop logo upload with fallback manual URL */}
         <div className={row}>
-          <label className={label} htmlFor="logoUrl">
-            Logo URL
+          <label className={label} htmlFor="logoUploader">
+            Logo
           </label>
-          <input
-            id="logoUrl"
-            className={input}
-            placeholder="https://cdn.example.com/logo.png"
+          <LogoUploader
             value={logoUrl}
-            onChange={(e) => setLogoUrl(e.target.value)}
-            maxLength={300}
+            onChange={(url) => setLogoUrl(url)}
           />
+          <div className="grid gap-2">
+            <label className="text-xs text-gray-600">Or paste a logo URL</label>
+            <input
+              id="logoUrl"
+              className={input}
+              placeholder="https://cdn.example.com/logo.png"
+              value={logoUrl}
+              onChange={(e) => setLogoUrl(e.target.value)}
+              maxLength={300}
+            />
+          </div>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -778,15 +796,24 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
         <h2 className="text-lg font-semibold">Links</h2>
 
         <div className="grid gap-3">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <input
-              className={input}
-              placeholder="Label (e.g., Reviews)"
-              value={linkDraft.label}
-              onChange={(e) => setLinkDraft({ ...linkDraft, label: e.target.value })}
-              maxLength={60}
-            />
-            <div className="flex gap-2">
+          <div className="grid grid-cols-1 sm:grid-cols-[1fr,1fr,auto] gap-3 items-start">
+            <div className="grid gap-2">
+              <label className={label}>Label</label>
+              <div className="flex gap-2">
+                <input
+                  className={input}
+                  placeholder="Label (e.g., Reviews)"
+                  value={linkDraft.label}
+                  onChange={(e) => setLinkDraft({ ...linkDraft, label: e.target.value })}
+                  maxLength={60}
+                />
+                {/* NEW: quick-pick label types */}
+                <LinkTypeSelect onPick={(lbl) => setLinkDraft((d) => ({ ...d, label: lbl }))} />
+              </div>
+            </div>
+
+            <div className="grid gap-2">
+              <label className={label}>URL</label>
               <input
                 className={input}
                 placeholder="https://link.com"
@@ -794,6 +821,10 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
                 onChange={(e) => setLinkDraft({ ...linkDraft, url: e.target.value })}
                 maxLength={300}
               />
+            </div>
+
+            <div className="grid gap-2">
+              <label className="opacity-0 select-none">Add</label>
               <button
                 type="button"
                 className="px-3 py-2 border rounded-lg"
