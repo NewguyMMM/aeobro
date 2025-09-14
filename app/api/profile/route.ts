@@ -13,7 +13,6 @@ function emptyToNull<T extends string | null | undefined>(v: T): string | null {
   return s === "" ? null : s;
 }
 
-// URL schema that allows empty, normalizes protocol, and enforces MAX length
 const urlMaybeEmptyMax = (maxLen: number) =>
   z
     .string()
@@ -23,7 +22,7 @@ const urlMaybeEmptyMax = (maxLen: number) =>
     .nullable()
     .transform((v) => (v ?? "").trim())
     .refine((v) => {
-      if (!v) return true; // allow empty
+      if (!v) return true;
       try {
         const s = /^https?:\/\//i.test(v) ? v : `https://${v}`;
         new URL(s);
@@ -68,31 +67,44 @@ const RESERVED = new Set([
 
 function safeBaseSlug(input: string) {
   let base = toKebab(input || "");
-  if (!base) base = "profile";               // avoid empty
-  if (RESERVED.has(base)) base = "profile";   // avoid reserved "user" etc.
+  if (!base) base = "profile";
+  if (RESERVED.has(base)) base = "profile";
   return base;
 }
 
-async function ensureUniqueSlug(baseRaw: string, current?: string): Promise<string> {
+function randomSuffix(len = 4) {
+  return Math.random().toString(36).slice(2, 2 + len);
+}
+
+/** Try DB-backed uniqueness, but never throw; fall back to a local unique slug. */
+async function getUniqueSlugSafely(baseRaw: string, current?: string): Promise<string> {
   const root = safeBaseSlug(baseRaw);
 
-  // unchanged -> keep
+  // Keep existing unchanged
   if (current && current === root) return root;
 
-  // try root
-  const hitRoot = await prisma.profile.findUnique({ where: { slug: root }, select: { slug: true } });
-  if (!hitRoot) return root;
+  try {
+    const hitRoot = await prisma.profile.findUnique({
+      where: { slug: root },
+      select: { slug: true },
+    });
+    if (!hitRoot) return root;
 
-  // try -1, -2, ...
-  for (let i = 1; i <= 500; i++) {
-    const candidate = `${root}-${i}`;
-    if (candidate.length > 80) break;
-    const hit = await prisma.profile.findUnique({ where: { slug: candidate }, select: { slug: true } });
-    if (!hit) return candidate;
+    for (let i = 1; i <= 500; i++) {
+      const candidate = `${root}-${i}`;
+      if (candidate.length > 80) break;
+      const hit = await prisma.profile.findUnique({
+        where: { slug: candidate },
+        select: { slug: true },
+      });
+      if (!hit) return candidate;
+    }
+    // fallback with random
+    return `${root}-${randomSuffix()}`;
+  } catch {
+    // If the lookup fails for any reason (schema mismatch, etc.), still return a safe slug.
+    return `${root}-${randomSuffix()}`;
   }
-
-  // last-resort suffix
-  return `${root}-${Math.random().toString(36).slice(2, 6)}`;
 }
 
 /* ----------------------- schemas ----------------------- */
@@ -123,18 +135,15 @@ const PlatformHandles = z
   .optional();
 
 const ProfileSchema = z.object({
-  // original fields
   displayName: z.string().trim().max(120).optional().nullable(),
   tagline: z.string().trim().max(160).optional().nullable(),
   location: z.string().trim().max(120).optional().nullable(),
   website: urlMaybeEmpty200.optional().nullable().or(z.literal("")).default(""),
   bio: z.string().trim().max(2000).optional().nullable(),
 
-  // arrays / collections
   links: z.array(LinkItem).max(20).optional().nullable().transform((v) => v ?? []),
   press: z.array(PressItem).optional().nullable().transform((v) => v ?? []),
 
-  // new fields
   legalName: z.string().trim().max(160).optional().nullable(),
   entityType: z
     .enum(["Business", "Local Service", "Organization", "Creator / Person"])
@@ -155,10 +164,9 @@ const ProfileSchema = z.object({
 
   handles: PlatformHandles,
 
-  // allow client to propose a slug
   slug: z.string().trim().max(80).optional().nullable(),
 
-  // 🔄 Legacy top-level socials (merged into handles)
+  // Legacy top-level socials accepted & merged into handles
   youtubeUrl: urlMaybeEmpty300.optional(),
   tiktokUrl: urlMaybeEmpty300.optional(),
   instagramUrl: urlMaybeEmpty300.optional(),
@@ -203,13 +211,11 @@ export async function GET() {
       handles: {},
     };
 
-  // Provide both shapes: { profile } and spread for any older client code.
   return NextResponse.json({ profile: payload, ...payload });
 }
 
 /* ----------------------- PUT/POST ----------------------- */
 
-// Merge legacy top-level social fields into a single `handles` object
 function mergeHandles(d: z.infer<typeof ProfileSchema>) {
   const h = { ...(d.handles ?? {}) } as Record<string, string | undefined>;
   const legacy: Record<string, string | undefined> = {
@@ -226,7 +232,6 @@ function mergeHandles(d: z.infer<typeof ProfileSchema>) {
   for (const [k, v] of Object.entries(legacy)) {
     if (v && v.trim()) h[k] = v;
   }
-  // Strip empties
   for (const k of Object.keys(h)) {
     if (!h[k]) delete h[k];
   }
@@ -260,8 +265,11 @@ async function upsertProfile(req: Request) {
     select: { slug: true },
   });
 
-  const proposedSlug = (d.slug ?? d.displayName ?? d.legalName ?? "").toString();
-  const finalSlug = await ensureUniqueSlug(proposedSlug, existing?.slug);
+  // 🔒 Never throws; falls back to profile-xxxx on DB hiccups
+  const finalSlug = await getUniqueSlugSafely(
+    (d.slug ?? d.displayName ?? d.legalName ?? "").toString(),
+    existing?.slug
+  );
 
   const payload = {
     displayName: emptyToNull(d.displayName),
@@ -302,42 +310,31 @@ async function upsertProfile(req: Request) {
 
     return NextResponse.json({ ok: true, profile: saved, ...saved });
   } catch (err: any) {
-    // Duplicate slug → 409
+    const code = err?.code || err?.name || "UNKNOWN";
+    const message = err?.message || "Failed to save profile.";
+
+    // Unique constraint on slug → 409
     if (
-      err?.code === "P2002" &&
+      code === "P2002" &&
       (err?.meta?.target?.includes?.("slug") || err?.meta?.target?.includes?.("Profile_slug_key"))
     ) {
       return NextResponse.json(
-        { ok: false, error: "SLUG_TAKEN", message: "That public URL is already taken. Please choose another." },
+        { ok: false, error: "SLUG_TAKEN", errorCode: code, message: "That public URL is already taken. Please choose another." },
         { status: 409 }
       );
     }
 
-    // Schema mismatch (column/table missing) → 400 with hint
-    const msg: string = err?.message ?? "";
-    if (msg.includes("does not exist") || msg.includes("Unknown column") || err?.code === "P2021") {
+    // Unknown arg / schema mismatch → 400 with details
+    if (typeof message === "string" && (message.includes("Unknown arg") || message.includes("does not exist"))) {
       return NextResponse.json(
-        {
-          ok: false,
-          error: "SCHEMA_MISMATCH",
-          message:
-            "Your database schema is missing one or more profile fields. Re-run Prisma migrations to add the latest columns.",
-          details: msg,
-        },
-        { status: 400 }
-      );
-    }
-
-    if (typeof err?.message === "string" && err.message.includes("Unknown arg")) {
-      return NextResponse.json(
-        { ok: false, error: "UNKNOWN_ARG", message: err.message },
+        { ok: false, error: "SCHEMA_MISMATCH", errorCode: code, message },
         { status: 400 }
       );
     }
 
     console.error("Profile save failed:", err);
     return NextResponse.json(
-      { ok: false, error: "INTERNAL", message: "Failed to save profile." },
+      { ok: false, error: "INTERNAL", errorCode: code, message },
       { status: 500 }
     );
   }
