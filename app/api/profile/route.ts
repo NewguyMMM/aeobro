@@ -6,7 +6,29 @@ import { prisma } from "@/lib/prisma";
 import { z } from "zod";
 import { toKebab } from "@/lib/slug";
 
+export const runtime = "nodejs";          // ensure Node (Prisma not supported on Edge)
+export const dynamic = "force-dynamic";   // don’t cache API responses
+
 /* ----------------------- helpers ----------------------- */
+
+function jsonError(status: number, errorCode: string, message: string, extra?: any) {
+  return NextResponse.json({ ok: false, errorCode, message, ...extra }, { status });
+}
+
+async function requireUserId() {
+  try {
+    const session = await getServerSession(authOptions);
+    if (!session?.user?.email) return { err: jsonError(401, "UNAUTHORIZED", "Unauthorized") };
+    const user = await prisma.user.findUnique({
+      where: { email: session.user.email },
+      select: { id: true },
+    });
+    if (!user) return { err: jsonError(401, "UNAUTHORIZED", "Unauthorized") };
+    return { userId: user.id };
+  } catch (e: any) {
+    return { err: jsonError(500, "AUTH_FAILURE", e?.message || "Auth resolution failed") };
+  }
+}
 
 // URL schema that allows empty, normalizes protocol, and enforces MAX length
 const urlMaybeEmptyMax = (maxLen: number) =>
@@ -41,13 +63,8 @@ const csvOrArray = z
   .nullable()
   .transform((v) => {
     if (!v) return [] as string[];
-    if (Array.isArray(v)) {
-      return v.map(String).map((s) => s.trim()).filter(Boolean);
-    }
-    return String(v)
-      .split(",")
-      .map((s) => s.trim())
-      .filter(Boolean);
+    if (Array.isArray(v)) return v.map(String).map((s) => s.trim()).filter(Boolean);
+    return String(v).split(",").map((s) => s.trim()).filter(Boolean);
   });
 
 const intNullable = z
@@ -162,141 +179,117 @@ const ProfileSchema = z.object({
   slug: z.string().trim().max(80).optional().nullable(),
 });
 
-/* ----------------------- handlers ----------------------- */
+/* ----------------------- GET ----------------------- */
 
 export async function GET() {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.email) {
-    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+  const auth = await requireUserId();
+  if ("err" in auth) return auth.err;
+
+  try {
+    const profile = await prisma.profile.findUnique({ where: { userId: auth.userId } });
+
+    const payload =
+      profile ?? {
+        userId: auth.userId,
+        links: [],
+        press: [],
+        imageUrls: [],
+        serviceArea: [],
+        languages: [],
+        handles: {},
+      };
+
+    // Return both shapes for compatibility
+    return NextResponse.json({ ok: true, profile: payload, ...payload });
+  } catch (e: any) {
+    console.error("GET /api/profile failed:", e);
+    return jsonError(500, "DB_READ_FAILED", e?.message || "Failed to load profile");
   }
-
-  const user = await prisma.user.findUnique({
-    where: { email: session.user.email },
-    select: { id: true },
-  });
-  if (!user) return NextResponse.json({ ok: false, error: "No user" }, { status: 404 });
-
-  const profile = await prisma.profile.findUnique({ where: { userId: user.id } });
-
-  const payload =
-    profile ??
-    {
-      userId: user.id,
-      links: [],
-      press: [],
-      imageUrls: [],
-      serviceArea: [],
-      languages: [],
-      handles: {},
-    };
-
-  // Keep both shapes for backward-compat
-  return NextResponse.json({ ok: true, profile: payload, ...payload });
 }
 
-export async function PUT(req: Request) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.email) {
-    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
-  }
+/* ----------------------- PUT/POST ----------------------- */
 
-  const user = await prisma.user.findUnique({
-    where: { email: session.user.email },
-    select: { id: true },
-  });
-  if (!user) return NextResponse.json({ ok: false, error: "No user" }, { status: 404 });
+export async function PUT(req: Request) {
+  const auth = await requireUserId();
+  if ("err" in auth) return auth.err;
 
   let body: unknown;
   try {
     body = await req.json();
   } catch {
-    return NextResponse.json({ ok: false, error: "Invalid JSON" }, { status: 400 });
+    return jsonError(400, "INVALID_JSON", "Invalid JSON");
   }
 
   const parsed = ProfileSchema.safeParse(body);
   if (!parsed.success) {
-    return NextResponse.json(
-      { ok: false, error: "VALIDATION", details: parsed.error.format() },
-      { status: 400 }
-    );
+    return jsonError(400, "VALIDATION", "Validation failed", { details: parsed.error.format() });
   }
 
-  const d = parsed.data;
-
-  // read existing (for slug keep/compare)
-  const existing = await prisma.profile.findUnique({
-    where: { userId: user.id },
-    select: { slug: true },
-  });
-
-  const proposedSlug = (d.slug ?? d.displayName ?? d.legalName ?? "").toString();
-  const finalSlug = await ensureUniqueSlug(proposedSlug, existing?.slug);
-
-  const payload = {
-    displayName: emptyToNull(d.displayName),
-    legalName: emptyToNull(d.legalName),
-    entityType: emptyToNull(d.entityType),
-
-    tagline: emptyToNull(d.tagline),
-    bio: emptyToNull(d.bio),
-
-    website: emptyToNull(d.website),
-    location: emptyToNull(d.location),
-
-    serviceArea: d.serviceArea ?? [],
-    foundedYear: d.foundedYear,
-    teamSize: d.teamSize,
-    languages: d.languages ?? [],
-    pricingModel: emptyToNull(d.pricingModel),
-    hours: emptyToNull(d.hours),
-
-    certifications: emptyToNull(d.certifications),
-    press: d.press ?? [],
-
-    logoUrl: emptyToNull(d.logoUrl),
-    imageUrls: (d.imageUrls ?? []).filter(Boolean),
-
-    handles: d.handles ?? {},
-    links: d.links ?? [],
-
-    // ✅ always include slug for Prisma create/update
-    slug: finalSlug,
-  };
-
   try {
+    const d = parsed.data;
+
+    // read existing (for slug keep/compare)
+    const existing = await prisma.profile.findUnique({
+      where: { userId: auth.userId },
+      select: { slug: true },
+    });
+
+    const proposedSlug = (d.slug ?? d.displayName ?? d.legalName ?? "").toString();
+    const finalSlug = await ensureUniqueSlug(proposedSlug, existing?.slug);
+
+    const payload = {
+      displayName: emptyToNull(d.displayName),
+      legalName: emptyToNull(d.legalName),
+      entityType: emptyToNull(d.entityType),
+
+      tagline: emptyToNull(d.tagline),
+      bio: emptyToNull(d.bio),
+
+      website: emptyToNull(d.website),
+      location: emptyToNull(d.location),
+
+      serviceArea: d.serviceArea ?? [],
+      foundedYear: d.foundedYear,
+      teamSize: d.teamSize,
+      languages: d.languages ?? [],
+      pricingModel: emptyToNull(d.pricingModel),
+      hours: emptyToNull(d.hours),
+
+      certifications: emptyToNull(d.certifications),
+      press: d.press ?? [],
+
+      logoUrl: emptyToNull(d.logoUrl),
+      imageUrls: (d.imageUrls ?? []).filter(Boolean),
+
+      handles: d.handles ?? {},
+      links: d.links ?? [],
+
+      // always include slug for Prisma create/update
+      slug: finalSlug,
+    };
+
     const saved = await prisma.profile.upsert({
-      where: { userId: user.id },
+      where: { userId: auth.userId },
       update: payload,
-      create: { userId: user.id, ...payload },
+      create: { userId: auth.userId, ...payload },
     });
 
     return NextResponse.json({ ok: true, profile: saved, ...saved });
   } catch (err: any) {
-    // Duplicate slug
+    // Friendly duplicate-slug handling
     if (
       err?.code === "P2002" &&
       (err?.meta?.target?.includes?.("slug") || err?.meta?.target?.includes?.("Profile_slug_key"))
     ) {
-      return NextResponse.json(
-        { ok: false, error: "SLUG_TAKEN", message: "That public URL is already taken. Please choose another." },
-        { status: 409 }
-      );
+      return jsonError(409, "SLUG_TAKEN", "That public URL is already taken. Please choose another.");
     }
 
-    // 🔎 Return details to surface the real root cause in DevTools → Response
-    const details = {
-      ok: false,
-      error: "INTERNAL",
-      message: err?.message || "Failed to save profile.",
-      errorCode: err?.code || null,
-      meta: err?.meta ?? null,
-    };
-    console.error("PUT /api/profile failed:", details);
-    return NextResponse.json(details, { status: 500 });
+    console.error("PUT /api/profile failed:", err);
+    return jsonError(500, "DB_WRITE_FAILED", err?.message || "Failed to save profile");
   }
 }
 
-// Support POST as well
+// Some clients use POST—support both.
 export async function POST(req: Request) {
   return PUT(req);
 }
