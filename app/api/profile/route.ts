@@ -8,6 +8,11 @@ import { toKebab } from "@/lib/slug";
 
 /* ----------------------- helpers ----------------------- */
 
+function emptyToNull<T extends string | null | undefined>(v: T): string | null {
+  const s = (v ?? "").toString().trim();
+  return s === "" ? null : s;
+}
+
 // URL schema that allows empty, normalizes protocol, and enforces MAX length
 const urlMaybeEmptyMax = (maxLen: number) =>
   z
@@ -44,10 +49,7 @@ const csvOrArray = z
     if (Array.isArray(v)) {
       return v.map(String).map((s) => s.trim()).filter(Boolean);
     }
-    return String(v)
-      .split(",")
-      .map((s) => s.trim())
-      .filter(Boolean);
+    return String(v).split(",").map((s) => s.trim()).filter(Boolean);
   });
 
 const intNullable = z
@@ -160,31 +162,45 @@ const ProfileSchema = z.object({
 
   // NEW: allow client to propose a slug
   slug: z.string().trim().max(80).optional().nullable(),
+
+  // 🔄 Legacy top-level socials (accepted & merged into `handles`)
+  youtubeUrl: urlMaybeEmpty300.optional(),
+  tiktokUrl: urlMaybeEmpty300.optional(),
+  instagramUrl: urlMaybeEmpty300.optional(),
+  substackUrl: urlMaybeEmpty300.optional(),
+  etsyUrl: urlMaybeEmpty300.optional(),
+  twitterUrl: urlMaybeEmpty300.optional(),
+  linkedinUrl: urlMaybeEmpty300.optional(),
+  facebookUrl: urlMaybeEmpty300.optional(),
+  githubUrl: urlMaybeEmpty300.optional(),
 });
 
-/* ----------------------- handlers ----------------------- */
+/* ----------------------- auth helper ----------------------- */
 
-export async function GET() {
+async function requireUserId() {
   const session = await getServerSession(authOptions);
-  if (!session?.user?.email) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
+  if (!session?.user?.email) return { error: "Unauthorized", status: 401 as const };
   const user = await prisma.user.findUnique({
     where: { email: session.user.email },
     select: { id: true },
   });
-  if (!user) return NextResponse.json({ error: "No user" }, { status: 404 });
+  if (!user) return { error: "Unauthorized", status: 401 as const };
+  return { userId: user.id };
+}
 
-  const profile = await prisma.profile.findUnique({ where: { userId: user.id } });
+/* ----------------------- GET ----------------------- */
 
-  // Provide both shapes:
-  // - data.profile   → for PublicProfileLink
-  // - spread fields  → backward-compat for any code reading top-level fields
+export async function GET() {
+  const auth = await requireUserId();
+  if ("error" in auth) return NextResponse.json({ error: auth.error }, { status: auth.status });
+
+  const profile = await prisma.profile.findUnique({ where: { userId: auth.userId } });
+
+  // Return both shapes for compatibility
   const payload =
     profile ??
     {
-      userId: user.id,
+      userId: auth.userId,
       links: [],
       press: [],
       imageUrls: [],
@@ -196,23 +212,41 @@ export async function GET() {
   return NextResponse.json({ profile: payload, ...payload });
 }
 
-export async function PUT(req: Request) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.email) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+/* ----------------------- PUT/POST ----------------------- */
 
-  const user = await prisma.user.findUnique({
-    where: { email: session.user.email },
-    select: { id: true },
-  });
-  if (!user) return NextResponse.json({ error: "No user" }, { status: 404 });
+// Merge legacy top-level social fields into a single `handles` object
+function mergeHandles(d: z.infer<typeof ProfileSchema>) {
+  const h = { ...(d.handles ?? {}) } as Record<string, string | undefined>;
+  const legacy: Record<string, string | undefined> = {
+    youtube: d.youtubeUrl,
+    tiktok: d.tiktokUrl,
+    instagram: d.instagramUrl,
+    substack: d.substackUrl,
+    etsy: d.etsyUrl,
+    x: d.twitterUrl,
+    linkedin: d.linkedinUrl,
+    facebook: d.facebookUrl,
+    github: d.githubUrl,
+  };
+  for (const [k, v] of Object.entries(legacy)) {
+    if (v && v.trim()) h[k] = v;
+  }
+  // Strip empties
+  for (const k of Object.keys(h)) {
+    if (!h[k]) delete h[k];
+  }
+  return h;
+}
+
+async function upsertProfile(req: Request) {
+  const auth = await requireUserId();
+  if ("error" in auth) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
   let body: unknown;
   try {
     body = await req.json();
   } catch {
-    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+    return NextResponse.json({ ok: false, error: "INVALID_JSON" }, { status: 400 });
   }
 
   const parsed = ProfileSchema.safeParse(body);
@@ -227,7 +261,7 @@ export async function PUT(req: Request) {
 
   // read existing (for slug keep/compare)
   const existing = await prisma.profile.findUnique({
-    where: { userId: user.id },
+    where: { userId: auth.userId },
     select: { slug: true },
   });
 
@@ -258,7 +292,7 @@ export async function PUT(req: Request) {
     logoUrl: emptyToNull(d.logoUrl),
     imageUrls: (d.imageUrls ?? []).filter(Boolean),
 
-    handles: d.handles ?? {},
+    handles: mergeHandles(d),
     links: d.links ?? [],
 
     // ✅ always include slug for Prisma create/update
@@ -267,15 +301,15 @@ export async function PUT(req: Request) {
 
   try {
     const saved = await prisma.profile.upsert({
-      where: { userId: user.id },
+      where: { userId: auth.userId },
       update: payload,
-      create: { userId: user.id, ...payload },
+      create: { userId: auth.userId, ...payload },
     });
 
     // Return both shapes for compatibility
     return NextResponse.json({ ok: true, profile: saved, ...saved });
   } catch (err: any) {
-    // Friendlier duplicate-slug handling
+    // Duplicate slug → 409
     if (
       err?.code === "P2002" &&
       (err?.meta?.target?.includes?.("slug") || err?.meta?.target?.includes?.("Profile_slug_key"))
@@ -283,6 +317,14 @@ export async function PUT(req: Request) {
       return NextResponse.json(
         { ok: false, error: "SLUG_TAKEN", message: "That public URL is already taken. Please choose another." },
         { status: 409 }
+      );
+    }
+
+    // Unknown arg → 400 (usually schema mismatch)
+    if (typeof err?.message === "string" && err.message.includes("Unknown arg")) {
+      return NextResponse.json(
+        { ok: false, error: "UNKNOWN_ARG", message: err.message },
+        { status: 400 }
       );
     }
 
@@ -294,13 +336,10 @@ export async function PUT(req: Request) {
   }
 }
 
-// Optional: Some clients might POST instead of PUT; support both.
-export async function POST(req: Request) {
-  return PUT(req);
+export async function PUT(req: Request) {
+  return upsertProfile(req);
 }
-
-/* ----------------------- utils ----------------------- */
-function emptyToNull<T extends string | null | undefined>(v: T): string | null {
-  const s = (v ?? "").toString().trim();
-  return s === "" ? null : s;
+// Optional: support POST as well.
+export async function POST(req: Request) {
+  return upsertProfile(req);
 }
