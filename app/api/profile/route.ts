@@ -46,9 +46,7 @@ const csvOrArray = z
   .nullable()
   .transform((v) => {
     if (!v) return [] as string[];
-    if (Array.isArray(v)) {
-      return v.map(String).map((s) => s.trim()).filter(Boolean);
-    }
+    if (Array.isArray(v)) return v.map(String).map((s) => s.trim()).filter(Boolean);
     return String(v).split(",").map((s) => s.trim()).filter(Boolean);
   });
 
@@ -68,29 +66,28 @@ const RESERVED = new Set([
   "p","profile","profiles","user","users","me","settings","static","_next"
 ]);
 
+function safeBaseSlug(input: string) {
+  let base = toKebab(input || "");
+  if (!base) base = "profile";               // avoid empty
+  if (RESERVED.has(base)) base = "profile";   // avoid reserved "user" etc.
+  return base;
+}
+
 async function ensureUniqueSlug(baseRaw: string, current?: string): Promise<string> {
-  let base = toKebab(baseRaw || "");
-  if (!base) base = "user";
-  const root = RESERVED.has(base) ? "user" : base;
+  const root = safeBaseSlug(baseRaw);
 
   // unchanged -> keep
   if (current && current === root) return root;
 
   // try root
-  const existingRoot = await prisma.profile.findUnique({
-    where: { slug: root },
-    select: { slug: true },
-  });
-  if (!existingRoot) return root;
+  const hitRoot = await prisma.profile.findUnique({ where: { slug: root }, select: { slug: true } });
+  if (!hitRoot) return root;
 
   // try -1, -2, ...
   for (let i = 1; i <= 500; i++) {
     const candidate = `${root}-${i}`;
     if (candidate.length > 80) break;
-    const hit = await prisma.profile.findUnique({
-      where: { slug: candidate },
-      select: { slug: true },
-    });
+    const hit = await prisma.profile.findUnique({ where: { slug: candidate }, select: { slug: true } });
     if (!hit) return candidate;
   }
 
@@ -133,8 +130,9 @@ const ProfileSchema = z.object({
   website: urlMaybeEmpty200.optional().nullable().or(z.literal("")).default(""),
   bio: z.string().trim().max(2000).optional().nullable(),
 
-  // ✅ accept null, coerce to []
+  // arrays / collections
   links: z.array(LinkItem).max(20).optional().nullable().transform((v) => v ?? []),
+  press: z.array(PressItem).optional().nullable().transform((v) => v ?? []),
 
   // new fields
   legalName: z.string().trim().max(160).optional().nullable(),
@@ -152,18 +150,15 @@ const ProfileSchema = z.object({
 
   certifications: z.string().trim().max(2000).optional().nullable(),
 
-  // ✅ accept null, coerce to []
-  press: z.array(PressItem).optional().nullable().transform((v) => v ?? []),
-
   logoUrl: urlMaybeEmpty300.optional().nullable(),
   imageUrls: z.array(urlMaybeEmpty300).optional().default([]),
 
   handles: PlatformHandles,
 
-  // NEW: allow client to propose a slug
+  // allow client to propose a slug
   slug: z.string().trim().max(80).optional().nullable(),
 
-  // 🔄 Legacy top-level socials (accepted & merged into `handles`)
+  // 🔄 Legacy top-level socials (merged into handles)
   youtubeUrl: urlMaybeEmpty300.optional(),
   tiktokUrl: urlMaybeEmpty300.optional(),
   instagramUrl: urlMaybeEmpty300.optional(),
@@ -196,7 +191,6 @@ export async function GET() {
 
   const profile = await prisma.profile.findUnique({ where: { userId: auth.userId } });
 
-  // Return both shapes for compatibility
   const payload =
     profile ??
     {
@@ -209,6 +203,7 @@ export async function GET() {
       handles: {},
     };
 
+  // Provide both shapes: { profile } and spread for any older client code.
   return NextResponse.json({ profile: payload, ...payload });
 }
 
@@ -242,14 +237,14 @@ async function upsertProfile(req: Request) {
   const auth = await requireUserId();
   if ("error" in auth) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
-  let body: unknown;
+  let raw: unknown;
   try {
-    body = await req.json();
+    raw = await req.json();
   } catch {
     return NextResponse.json({ ok: false, error: "INVALID_JSON" }, { status: 400 });
   }
 
-  const parsed = ProfileSchema.safeParse(body);
+  const parsed = ProfileSchema.safeParse(raw);
   if (!parsed.success) {
     return NextResponse.json(
       { ok: false, error: "VALIDATION", details: parsed.error.format() },
@@ -295,7 +290,6 @@ async function upsertProfile(req: Request) {
     handles: mergeHandles(d),
     links: d.links ?? [],
 
-    // ✅ always include slug for Prisma create/update
     slug: finalSlug,
   };
 
@@ -306,7 +300,6 @@ async function upsertProfile(req: Request) {
       create: { userId: auth.userId, ...payload },
     });
 
-    // Return both shapes for compatibility
     return NextResponse.json({ ok: true, profile: saved, ...saved });
   } catch (err: any) {
     // Duplicate slug → 409
@@ -320,7 +313,21 @@ async function upsertProfile(req: Request) {
       );
     }
 
-    // Unknown arg → 400 (usually schema mismatch)
+    // Schema mismatch (column/table missing) → 400 with hint
+    const msg: string = err?.message ?? "";
+    if (msg.includes("does not exist") || msg.includes("Unknown column") || err?.code === "P2021") {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "SCHEMA_MISMATCH",
+          message:
+            "Your database schema is missing one or more profile fields. Re-run Prisma migrations to add the latest columns.",
+          details: msg,
+        },
+        { status: 400 }
+      );
+    }
+
     if (typeof err?.message === "string" && err.message.includes("Unknown arg")) {
       return NextResponse.json(
         { ok: false, error: "UNKNOWN_ARG", message: err.message },
@@ -339,7 +346,6 @@ async function upsertProfile(req: Request) {
 export async function PUT(req: Request) {
   return upsertProfile(req);
 }
-// Optional: support POST as well.
 export async function POST(req: Request) {
   return upsertProfile(req);
 }
