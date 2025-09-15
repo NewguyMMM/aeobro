@@ -1,113 +1,98 @@
 -- Bring the Profile table up to date with schema.prisma
+-- Only touch "Profile" here. No references to DomainClaim/PlatformAccount/BioCode.
 
--- Add columns if they don't exist
+-- 1) Add columns if they don't exist
 ALTER TABLE "Profile"
-  ADD COLUMN IF NOT EXISTS "slug" TEXT,
-  ADD COLUMN IF NOT EXISTS "displayName" TEXT,
-  ADD COLUMN IF NOT EXISTS "legalName" TEXT,
-  ADD COLUMN IF NOT EXISTS "entityType" TEXT,
-  ADD COLUMN IF NOT EXISTS "tagline" TEXT,
-  ADD COLUMN IF NOT EXISTS "bio" TEXT,
-  ADD COLUMN IF NOT EXISTS "website" TEXT,
-  ADD COLUMN IF NOT EXISTS "location" TEXT,
-  ADD COLUMN IF NOT EXISTS "serviceArea" TEXT[] NOT NULL DEFAULT '{}',
-  ADD COLUMN IF NOT EXISTS "foundedYear" INTEGER,
-  ADD COLUMN IF NOT EXISTS "teamSize" INTEGER,
-  ADD COLUMN IF NOT EXISTS "languages" TEXT[] NOT NULL DEFAULT '{}',
-  ADD COLUMN IF NOT EXISTS "pricingModel" TEXT,
-  ADD COLUMN IF NOT EXISTS "hours" TEXT,
+  ADD COLUMN IF NOT EXISTS "slug"          TEXT,
+  ADD COLUMN IF NOT EXISTS "displayName"   TEXT,
+  ADD COLUMN IF NOT EXISTS "legalName"     TEXT,
+  ADD COLUMN IF NOT EXISTS "entityType"    TEXT,
+  ADD COLUMN IF NOT EXISTS "tagline"       TEXT,
+  ADD COLUMN IF NOT EXISTS "bio"           TEXT,
+  ADD COLUMN IF NOT EXISTS "website"       TEXT,
+  ADD COLUMN IF NOT EXISTS "location"      TEXT,
+  ADD COLUMN IF NOT EXISTS "serviceArea"   TEXT[] NOT NULL DEFAULT '{}',
+  ADD COLUMN IF NOT EXISTS "foundedYear"   INTEGER,
+  ADD COLUMN IF NOT EXISTS "teamSize"      INTEGER,
+  ADD COLUMN IF NOT EXISTS "languages"     TEXT[] NOT NULL DEFAULT '{}',
+  ADD COLUMN IF NOT EXISTS "pricingModel"  TEXT,
+  ADD COLUMN IF NOT EXISTS "hours"         TEXT,
   ADD COLUMN IF NOT EXISTS "certifications" TEXT,
-  ADD COLUMN IF NOT EXISTS "press" JSONB,
-  ADD COLUMN IF NOT EXISTS "logoUrl" TEXT,
-  ADD COLUMN IF NOT EXISTS "imageUrls" TEXT[] NOT NULL DEFAULT '{}',
-  ADD COLUMN IF NOT EXISTS "handles" JSONB,
-  ADD COLUMN IF NOT EXISTS "links" JSONB,
-  ADD COLUMN IF NOT EXISTS "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  ADD COLUMN IF NOT EXISTS "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT NOW();
+  ADD COLUMN IF NOT EXISTS "press"         JSONB,
+  ADD COLUMN IF NOT EXISTS "logoUrl"       TEXT,
+  ADD COLUMN IF NOT EXISTS "imageUrls"     TEXT[] NOT NULL DEFAULT '{}',
+  ADD COLUMN IF NOT EXISTS "handles"       JSONB,
+  ADD COLUMN IF NOT EXISTS "links"         JSONB,
+  ADD COLUMN IF NOT EXISTS "createdAt"     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  ADD COLUMN IF NOT EXISTS "updatedAt"     TIMESTAMPTZ NOT NULL DEFAULT NOW();
 
--- Backfill slug for any existing rows
+-- 2) Backfill slug for existing rows if null/empty
 UPDATE "Profile"
-SET "slug" = COALESCE(
-  NULLIF(
-    regexp_replace(
-      lower(
-        COALESCE(
-          NULLIF("displayName", ''),
-          NULLIF("legalName", ''),
-          'user'
-        )
-      ),
-      '[^a-z0-9]+', '-', 'g'
-    ),
-    ''
-  ),
-  'user'
-)
-WHERE "slug" IS NULL OR "slug" = '';
+SET "slug" = CASE
+  WHEN COALESCE(NULLIF("slug", ''), '') <> '' THEN "slug"
+  WHEN COALESCE(NULLIF("displayName", ''), '') <> '' THEN
+    LOWER(REGEXP_REPLACE("displayName", '[^a-zA-Z0-9]+','-','g'))
+  WHEN COALESCE(NULLIF("legalName", ''), '') <> '' THEN
+    LOWER(REGEXP_REPLACE("legalName", '[^a-zA-Z0-9]+','-','g'))
+  ELSE 'user-' || SUBSTR("id", 1, 8)
+END
+WHERE COALESCE(NULLIF("slug", ''), '') = '';
 
--- Ensure unique slugs by suffixing duplicates
-WITH d AS (
-  SELECT "slug", array_agg(id ORDER BY id) ids
-  FROM "Profile"
-  WHERE "slug" IS NOT NULL
-  GROUP BY "slug"
-  HAVING count(*) > 1
-)
-UPDATE "Profile" p
-SET "slug" = p.slug || '-' || substr(md5(p.id::text),1,4)
-FROM d
-WHERE p.slug = d.slug AND p.id <> d.ids[1];
+-- 3) Ensure slug uniqueness by appending -1, -2, ... if needed
+DO $$
+DECLARE
+  r RECORD;
+  base TEXT;
+  candidate TEXT;
+  i INT;
+BEGIN
+  FOR r IN SELECT "id", "slug" FROM "Profile" WHERE "slug" IS NOT NULL LOOP
+    base := r."slug";
+    candidate := base;
+    i := 1;
+    WHILE EXISTS (SELECT 1 FROM "Profile" p WHERE p."slug" = candidate AND p."id" <> r."id") LOOP
+      candidate := base || '-' || i::TEXT;
+      i := i + 1;
+    END LOOP;
+    IF candidate <> r."slug" THEN
+      UPDATE "Profile" SET "slug" = candidate WHERE "id" = r."id";
+    END IF;
+  END LOOP;
+END $$;
 
--- Make slug not null & enforce uniqueness (Prisma expects this exact index name)
-ALTER TABLE "Profile" ALTER COLUMN "slug" SET NOT NULL;
-
+-- 4) Unique constraint for slug
 DO $$
 BEGIN
   IF NOT EXISTS (
-    SELECT 1
-    FROM pg_class c
-    JOIN pg_namespace n ON n.oid = c.relnamespace
-    WHERE c.relname = 'Profile_slug_key' AND n.nspname = 'public'
+    SELECT 1 FROM pg_indexes WHERE schemaname = 'public' AND indexname = 'Profile_slug_key'
   ) THEN
     CREATE UNIQUE INDEX "Profile_slug_key" ON "Profile"("slug");
   END IF;
 END $$;
 
--- Keep updatedAt fresh
-CREATE OR REPLACE FUNCTION set_updated_at()
-RETURNS TRIGGER AS $$
-BEGIN
-  NEW."updatedAt" = NOW();
-  RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
+-- 5) Make slug NOT NULL (safe now that it's backfilled & unique)
+ALTER TABLE "Profile"
+  ALTER COLUMN "slug" SET NOT NULL;
 
+-- 6) updatedAt trigger (idempotent)
 DO $$
 BEGIN
   IF NOT EXISTS (
-    SELECT 1 FROM pg_trigger WHERE tgname = 'profile_set_updated_at'
+    SELECT 1 FROM pg_proc WHERE proname = 'profile_set_updated_at'
   ) THEN
-    CREATE TRIGGER profile_set_updated_at
-    BEFORE UPDATE ON "Profile"
-    FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+    CREATE FUNCTION public.profile_set_updated_at()
+    RETURNS trigger
+    LANGUAGE plpgsql
+    AS $fn$
+    BEGIN
+      NEW."updatedAt" = NOW();
+      RETURN NEW;
+    END
+    $fn$;
   END IF;
 END $$;
 
--- Make the verification tables tolerant if they already exist but miss newer columns
-ALTER TABLE "DomainClaim"
-  ADD COLUMN IF NOT EXISTS "emailIssued" TEXT,
-  ADD COLUMN IF NOT EXISTS "emailToken" TEXT,
-  ADD COLUMN IF NOT EXISTS "dnsVerified" BOOLEAN NOT NULL DEFAULT false,
-  ADD COLUMN IF NOT EXISTS "emailVerified" BOOLEAN NOT NULL DEFAULT false,
-  ADD COLUMN IF NOT EXISTS "status" TEXT NOT NULL DEFAULT 'PENDING',
-  ADD COLUMN IF NOT EXISTS "verifiedAt" TIMESTAMPTZ;
-
-ALTER TABLE "PlatformAccount"
-  ADD COLUMN IF NOT EXISTS "handle" TEXT,
-  ADD COLUMN IF NOT EXISTS "url" TEXT,
-  ADD COLUMN IF NOT EXISTS "status" TEXT NOT NULL DEFAULT 'PENDING',
-  ADD COLUMN IF NOT EXISTS "verifiedAt" TIMESTAMPTZ;
-
-ALTER TABLE "BioCode"
-  ADD COLUMN IF NOT EXISTS "status" TEXT NOT NULL DEFAULT 'PENDING',
-  ADD COLUMN IF NOT EXISTS "verifiedAt" TIMESTAMPTZ;
+DROP TRIGGER IF EXISTS profile_set_updated_at ON "Profile";
+CREATE TRIGGER profile_set_updated_at
+BEFORE UPDATE ON "Profile"
+FOR EACH ROW EXECUTE FUNCTION public.profile_set_updated_at();
