@@ -6,8 +6,6 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import ProfileEditor from "@/components/ProfileEditor";
-// Use RELATIVE path because PublicProfileLink is in app/components/
-import PublicProfileLink from "../components/PublicProfileLink";
 
 export default async function DashboardPage() {
   const session = await getServerSession(authOptions);
@@ -19,8 +17,8 @@ export default async function DashboardPage() {
     <div className="container py-8">
       <div className="mb-6 flex items-center justify-between">
         <h1 className="text-2xl font-semibold">Your AI Profile</h1>
-        {/* Client-side; shows once /api/profile returns id/slug (and isPublished if you gate it) */}
-        <PublicProfileLink />
+        {/* Removed the extra View link (PublicProfileLink) to avoid duplication.
+            The only entry point is inside ProfileEditor with dirty-state guarding. */}
       </div>
 
       {/* Let the client component fetch /api/profile itself */}
