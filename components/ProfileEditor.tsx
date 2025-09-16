@@ -485,9 +485,8 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
 
   return (
     <div className="max-w-2xl grid gap-8">
-      {/* Header row: View Public + status */}
-      <div className="flex items-center justify-between">
-        <h2 className="text-xl font-semibold">Your AI Profile</h2>
+      {/* Toolbar: status + guarded View link (no duplicate page title) */}
+      <div className="flex items-center justify-end">
         <div className="flex items-center gap-3">
           <span className={`text-xs px-2.5 py-1 rounded-full ${statusClasses}`}>{status}</span>
           <button
@@ -648,7 +647,7 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
             </small>
           </div>
 
-          <div className={row}>
+        <div className={row}>
             <label className={label} htmlFor="location">
               Location (address or city/state)
             </label>
