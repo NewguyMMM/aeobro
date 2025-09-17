@@ -4,7 +4,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { z } from "zod";
-import { toKebab } from "@/lib/slug";
+import { toKebab, isSlugAllowed, RESERVED_SLUGS } from "@/lib/slug";
 
 export const runtime = "nodejs";          // ensure Node (Prisma not supported on Edge)
 export const dynamic = "force-dynamic";   // don’t cache API responses
@@ -77,29 +77,88 @@ const intNullable = z
 
 /* ---------- slug helpers ---------- */
 
-const RESERVED = new Set([
-  "admin","api","app","auth","dashboard","login","logout","sign-in","sign-up",
-  "pricing","privacy","terms","faq","cancel","success","audit","disputes",
-  "p","profile","profiles","user","users","me","settings","static","_next"
-]);
+/** Light map of common US/CA two-letter regions for nicer geo suffixes. Extend as needed. */
+const REGION_MAP: Record<string, string> = {
+  // US states
+  alabama: "al", alaska: "ak", arizona: "az", arkansas: "ar", california: "ca", colorado: "co",
+  connecticut: "ct", delaware: "de", florida: "fl", georgia: "ga", hawaii: "hi", idaho: "id",
+  illinois: "il", indiana: "in", iowa: "ia", kansas: "ks", kentucky: "ky", louisiana: "la",
+  maine: "me", maryland: "md", massachusetts: "ma", michigan: "mi", minnesota: "mn",
+  mississippi: "ms", missouri: "mo", montana: "mt", nebraska: "ne", nevada: "nv",
+  "new hampshire": "nh", "new jersey": "nj", "new mexico": "nm", "new york": "ny",
+  "north carolina": "nc", "north dakota": "nd", ohio: "oh", oklahoma: "ok", oregon: "or",
+  pennsylvania: "pa", "rhode island": "ri", "south carolina": "sc", "south dakota": "sd",
+  tennessee: "tn", texas: "tx", utah: "ut", vermont: "vt", virginia: "va", washington: "wa",
+  "west virginia": "wv", wisconsin: "wi", wyoming: "wy",
+  // Canadian provinces (handful)
+  ontario: "on", quebec: "qc", "british columbia": "bc", alberta: "ab",
+};
 
-async function ensureUniqueSlug(baseRaw: string, current?: string): Promise<string> {
+/** Extract a concise geo suffix from human free-text location. */
+function geoSuffixFromLocation(location?: string | null): string | null {
+  if (!location) return null;
+  const raw = String(location).toLowerCase();
+
+  // Look for explicit 2–3 letter tokens like "NJ", "NYC"
+  const abbrev = raw.match(/\b([a-z]{2,3})\b/gi)?.at(-1);
+  if (abbrev && /^[a-z]{2,3}$/i.test(abbrev)) return toKebab(abbrev);
+
+  // Map long names -> 2-letter codes
+  for (const key of Object.keys(REGION_MAP)) {
+    if (raw.includes(key)) return REGION_MAP[key];
+  }
+
+  // Fallback: last tokenized word
+  const tokens = toKebab(raw).split("-").filter(Boolean);
+  if (tokens.length) {
+    const last = tokens.at(-1)!;
+    if (last.length <= 6) return last; // e.g., "miami", "paris"
+  }
+  return null;
+}
+
+/**
+ * Ensures a unique slug by trying:
+ *  1) root
+ *  2) root-<geo>
+ *  3) root-2, root-3, ...
+ *  4) root-<random>
+ */
+async function ensureUniqueSlug(
+  baseRaw: string,
+  opts: { current?: string | null; location?: string | null } = {}
+): Promise<string> {
   let base = toKebab(baseRaw || "");
   if (!base) base = "user";
-  const root = RESERVED.has(base) ? "user" : base;
+  if (RESERVED_SLUGS.has(base) || !isSlugAllowed(base)) base = "user";
 
-  // unchanged -> keep
-  if (current && current === root) return root;
+  const root = base;
 
-  // try root
+  // If unchanged, keep the current slug (prevents churn)
+  if (opts.current && opts.current === root) return root;
+
+  // Try the root
   const existingRoot = await prisma.profile.findUnique({
     where: { slug: root },
     select: { slug: true },
   });
   if (!existingRoot) return root;
 
-  // try -1, -2, ...
-  for (let i = 1; i <= 500; i++) {
+  // Try a location-aware suffix first (if provided)
+  const geo = geoSuffixFromLocation(opts.location);
+  if (geo) {
+    const candidateGeo = `${root}-${geo}`;
+    if (candidateGeo.length <= 80 && !RESERVED_SLUGS.has(candidateGeo)) {
+      const hitGeo = await prisma.profile.findUnique({
+        where: { slug: candidateGeo },
+        select: { slug: true },
+      });
+      if (!hitGeo) return candidateGeo;
+    }
+  }
+
+  // Try numeric suffixes
+  for (let i = 2; i <= 500; i++) {
     const candidate = `${root}-${i}`;
     if (candidate.length > 80) break;
     const hit = await prisma.profile.findUnique({
@@ -109,7 +168,7 @@ async function ensureUniqueSlug(baseRaw: string, current?: string): Promise<stri
     if (!hit) return candidate;
   }
 
-  // last-resort suffix
+  // Last-resort short random suffix
   return `${root}-${Math.random().toString(36).slice(2, 6)}`;
 }
 
@@ -234,8 +293,12 @@ export async function PUT(req: Request) {
       select: { slug: true },
     });
 
-    const proposedSlug = (d.slug ?? d.displayName ?? d.legalName ?? "").toString();
-    const finalSlug = await ensureUniqueSlug(proposedSlug, existing?.slug);
+    // Prefer displayName, then legalName, then client-proposed slug
+    const proposedBase = (d.displayName ?? d.legalName ?? d.slug ?? "").toString();
+    const finalSlug = await ensureUniqueSlug(proposedBase, {
+      current: existing?.slug ?? null,
+      location: d.location ?? null,
+    });
 
     const payload = {
       displayName: emptyToNull(d.displayName),
