@@ -2,13 +2,13 @@
 "use client";
 
 import * as React from "react";
-import { toKebab } from "@/lib/slug";
 import { useToast } from "@/components/Toast";
 
 // Helper UI components
 import EntityTypeHelp from "@/components/EntityTypeHelp";
 import LogoUploader from "@/components/LogoUploader";
 import LinkTypeSelect from "@/components/LinkTypeSelect";
+import PublicUrlReadonly from "@/components/PublicUrlReadonly";
 
 /** -------- Types -------- */
 type EntityType = "Business" | "Local Service" | "Organization" | "Creator / Person";
@@ -59,7 +59,7 @@ type Profile = {
 
   handles?: PlatformHandles | null;
 
-  // NEW: public slug
+  // public slug (server-generated)
   slug?: string | null;
 };
 
@@ -92,13 +92,6 @@ function toNum(input: string): number | undefined {
   if (!input) return undefined;
   const n = parseInt(input, 10);
   return Number.isFinite(n) ? n : undefined;
-}
-function debounce<T extends (...args: any[]) => any>(fn: T, ms = 400) {
-  let t: any;
-  return (...args: Parameters<T>) => {
-    clearTimeout(t);
-    t = setTimeout(() => fn(...args), ms);
-  };
 }
 
 /** -------- Component -------- */
@@ -152,13 +145,6 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
   const [handles, setHandles] = React.useState<PlatformHandles>(initial?.handles ?? {});
   const [links, setLinks] = React.useState<LinkItem[]>(initial?.links ?? []);
   const [linkDraft, setLinkDraft] = React.useState<LinkItem>({ label: "", url: "" });
-
-  // ---- NEW: Slug UX
-  const [slug, setSlug] = React.useState<string>(
-    toKebab(initial?.slug || initial?.displayName || initial?.legalName || "")
-  );
-  const [slugAvail, setSlugAvail] = React.useState<"idle" | "checking" | "ok" | "taken">("idle");
-  const userTouchedSlug = React.useRef(false);
 
   // ---- UI
   const [saving, setSaving] = React.useState(false);
@@ -215,8 +201,7 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
             }))
           : null,
 
-      // NEW: public slug (server will validate & ensure uniqueness anyway)
-      slug: toKebab(slug),
+      // NOTE: No client-side 'slug'—server generates & de-conflicts it.
     };
   }, [
     displayName,
@@ -238,7 +223,6 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
     imageUrls,
     handles,
     links,
-    slug,
   ]);
 
   /** ---- Prefill from API on mount (does not overwrite user typing) ---- */
@@ -288,17 +272,11 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
         if (data.handles) setHandles(data.handles);
         if (data.links) setLinks(data.links || []);
 
-        // Slug
-        const effective = toKebab(data.slug || data.displayName || data.legalName || "");
-        if (!userTouchedSlug.current) setSlug(effective);
+        // Slug from server (for public URL display / navigation)
         setServerSlug(data.slug || null);
 
         // Initialize lastSaved snapshot for dirty tracking
-        const snapshot = JSON.stringify({
-          ...(buildPayload() as any),
-          // ensure slug snapshot uses the server/effective value
-          slug: effective,
-        });
+        const snapshot = JSON.stringify(buildPayload());
         lastSavedRef.current = snapshot;
         setDirty(false);
       } catch {
@@ -307,42 +285,6 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  /** ---- Auto-suggest slug from displayName/legalName unless user edits manually ---- */
-  React.useEffect(() => {
-    if (userTouchedSlug.current) return;
-    const suggestion = toKebab(displayName || legalName || "");
-    if (suggestion) setSlug(suggestion);
-  }, [displayName, legalName]);
-
-  /** ---- Debounced availability check (keeps your existing endpoint) ---- */
-  const debouncedCheckSlug = React.useMemo(
-    () =>
-      debounce(async (candidate: string) => {
-        if (!candidate) {
-          setSlugAvail("idle");
-          return;
-        }
-        try {
-          setSlugAvail("checking");
-          const res = await fetch("/api/profile/ensure-unique-slug", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ base: candidate }),
-          });
-          const json = await res.json();
-          if (json?.slug && json.slug === candidate) setSlugAvail("ok");
-          else setSlugAvail("taken");
-        } catch {
-          setSlugAvail("idle");
-        }
-      }, 400),
-    []
-  );
-
-  React.useEffect(() => {
-    if (slug) debouncedCheckSlug(slug);
-  }, [slug, debouncedCheckSlug]);
 
   /** ---- Dirty detection on any change ---- */
   React.useEffect(() => {
@@ -396,8 +338,7 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
       }
 
       // Server returns either the profile or { ok, profile }
-      const finalSlug: string | undefined =
-        json?.profile?.slug || json?.slug || payload.slug || toKebab(displayName || legalName || "");
+      const finalSlug: string | undefined = json?.profile?.slug || json?.slug || undefined;
       const finalId: string | undefined = json?.profile?.id || json?.id || profileId || undefined;
 
       if (finalId) setProfileId(finalId);
@@ -407,11 +348,11 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
       }
 
       // Update dirty baseline to current payload
-      lastSavedRef.current = JSON.stringify({ ...payload, slug: finalSlug || payload.slug });
+      lastSavedRef.current = JSON.stringify(payload);
       setDirty(false);
 
       // Copy to clipboard, toast, then auto-redirect to public page (current behavior)
-      const publicUrl = `${window.location.origin}/p/${finalSlug || profileId}`;
+      const publicUrl = `${window.location.origin}/p/${finalSlug || finalId}`;
       try {
         await navigator.clipboard.writeText(publicUrl);
         toast("Saved ✓ — URL copied. Redirecting…", "success");
@@ -444,12 +385,11 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
 
   /** ---- Public path resolver ---- */
   function getPublicPath(): string | null {
-    const liveSlug = savedSlug || serverSlug || toKebab(slug || "");
+    const liveSlug = savedSlug || serverSlug || null;
     const idFallback = profileId || null;
     if (liveSlug) return `/p/${liveSlug}`;
     if (idFallback) return `/p/${idFallback}`;
     return null;
-    // Note: if neither exists yet, we treat as "Not yet published".
   }
 
   /** ---- View public profile with guard if dirty ---- */
@@ -461,7 +401,6 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
   function openPublic() {
     const path = getPublicPath();
     if (!path) {
-      // FIXED: use a valid toast variant for your project
       toast("Not yet published — please Save & Publish first.", "error");
       return;
     }
@@ -550,44 +489,9 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
           </div>
         </div>
 
-        {/* NEW: Slug */}
-        <div className={row}>
-          <label className={label} htmlFor="slug">
-            Public URL slug <span className="text-gray-500">(human-readable part of a URL)</span>
-          </label>
-          <div className="flex items-center gap-2">
-            <input
-              id="slug"
-              className={input + " font-mono"}
-              placeholder="kings-anesthesia"
-              value={slug}
-              onChange={(e) => {
-                userTouchedSlug.current = true;
-                setSlug(toKebab(e.target.value));
-              }}
-              maxLength={80}
-            />
-            <span
-              className={
-                slugAvail === "ok"
-                  ? "text-green-600 text-sm"
-                  : slugAvail === "taken"
-                  ? "text-red-600 text-sm"
-                  : "text-gray-500 text-sm"
-              }
-            >
-              {slugAvail === "ok"
-                ? "✓ available"
-                : slugAvail === "taken"
-                ? "× taken"
-                : slugAvail === "checking"
-                ? "…"
-                : ""}
-            </span>
-          </div>
-          <p className="text-xs text-gray-500">
-            Public page will be <code>/p/{(serverSlug || slug || "your-slug")}</code>
-          </p>
+        {/* Read-only public URL (Option A) */}
+        <div className="mt-2">
+          <PublicUrlReadonly slug={serverSlug} />
         </div>
       </section>
 
@@ -647,7 +551,7 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
             </small>
           </div>
 
-        <div className={row}>
+          <div className={row}>
             <label className={label} htmlFor="location">
               Location (address or city/state)
             </label>
