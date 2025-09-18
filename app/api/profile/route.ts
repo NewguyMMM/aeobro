@@ -7,8 +7,8 @@ import { z } from "zod";
 import { toKebab, isSlugAllowed, RESERVED_SLUGS } from "@/lib/slug";
 import { revalidatePath, revalidateTag } from "next/cache";
 
-export const runtime = "nodejs";          // ensure Node (Prisma not supported on Edge)
-export const dynamic = "force-dynamic";   // don’t cache API responses
+export const runtime = "nodejs";          // Prisma requires Node runtime
+export const dynamic = "force-dynamic";   // don't cache API responses
 
 /* ----------------------- helpers ----------------------- */
 
@@ -79,6 +79,7 @@ const intNullable = z
 /* ---------- slug helpers ---------- */
 
 const REGION_MAP: Record<string, string> = {
+  // US states
   alabama: "al", alaska: "ak", arizona: "az", arkansas: "ar", california: "ca", colorado: "co",
   connecticut: "ct", delaware: "de", florida: "fl", georgia: "ga", hawaii: "hi", idaho: "id",
   illinois: "il", indiana: "in", iowa: "ia", kansas: "ks", kentucky: "ky", louisiana: "la",
@@ -89,6 +90,7 @@ const REGION_MAP: Record<string, string> = {
   pennsylvania: "pa", "rhode island": "ri", "south carolina": "sc", "south dakota": "sd",
   tennessee: "tn", texas: "tx", utah: "ut", vermont: "vt", virginia: "va", washington: "wa",
   "west virginia": "wv", wisconsin: "wi", wyoming: "wy",
+  // Canadian provinces (subset)
   ontario: "on", quebec: "qc", "british columbia": "bc", alberta: "ab",
 };
 
@@ -183,23 +185,31 @@ const ProfileSchema = z.object({
   location: z.string().trim().max(120).optional().nullable(),
   website: urlMaybeEmpty200.optional().nullable().or(z.literal("")).default(""),
   bio: z.string().trim().max(2000).optional().nullable(),
+
   links: z.array(LinkItem).max(20).optional().nullable().transform((v) => v ?? []),
+
   legalName: z.string().trim().max(160).optional().nullable(),
   entityType: z
     .enum(["Business", "Local Service", "Organization", "Creator / Person"])
     .optional()
     .nullable(),
+
   serviceArea: csvOrArray,
   foundedYear: intNullable,
   teamSize: intNullable,
   languages: csvOrArray,
   pricingModel: z.enum(["Free", "Subscription", "One-time", "Custom"]).optional().nullable(),
   hours: z.string().trim().max(160).optional().nullable(),
+
   certifications: z.string().trim().max(2000).optional().nullable(),
   press: z.array(PressItem).optional().nullable().transform((v) => v ?? []),
+
   logoUrl: urlMaybeEmpty300.optional().nullable(),
   imageUrls: z.array(urlMaybeEmpty300).optional().default([]),
+
   handles: PlatformHandles,
+
+  // allow client to propose a slug
   slug: z.string().trim().max(80).optional().nullable(),
 });
 
@@ -211,6 +221,7 @@ export async function GET() {
 
   try {
     const profile = await prisma.profile.findUnique({ where: { userId: auth.userId } });
+
     const payload =
       profile ?? {
         userId: auth.userId,
@@ -250,11 +261,13 @@ export async function PUT(req: Request) {
   try {
     const d = parsed.data;
 
+    // read existing (so we can detect slug changes)
     const existing = await prisma.profile.findUnique({
       where: { userId: auth.userId },
-      select: { slug: true },
+      select: { id: true, slug: true },
     });
 
+    // Prefer displayName, then legalName, then client-proposed slug
     const proposedBase = (d.displayName ?? d.legalName ?? d.slug ?? "").toString();
     const finalSlug = await ensureUniqueSlug(proposedBase, {
       current: existing?.slug ?? null,
@@ -267,20 +280,26 @@ export async function PUT(req: Request) {
       entityType: emptyToNull(d.entityType),
       tagline: emptyToNull(d.tagline),
       bio: emptyToNull(d.bio),
+
       website: emptyToNull(d.website),
       location: emptyToNull(d.location),
+
       serviceArea: d.serviceArea ?? [],
       foundedYear: d.foundedYear,
       teamSize: d.teamSize,
       languages: d.languages ?? [],
       pricingModel: emptyToNull(d.pricingModel),
       hours: emptyToNull(d.hours),
+
       certifications: emptyToNull(d.certifications),
       press: d.press ?? [],
+
       logoUrl: emptyToNull(d.logoUrl),
       imageUrls: (d.imageUrls ?? []).filter(Boolean),
+
       handles: d.handles ?? {},
       links: d.links ?? [],
+
       slug: finalSlug,
     };
 
@@ -288,19 +307,24 @@ export async function PUT(req: Request) {
       where: { userId: auth.userId },
       update: payload,
       create: { userId: auth.userId, ...payload },
+      select: { id: true, slug: true }, // lean return for downstream revalidation
     });
 
     /* ---------- 🔥 Cache invalidation: keep profiles fresh and cheap ---------- */
 
-    // Bust the public profile page (ISR HTML + metadata)
+    // If slug changed, also revalidate the old page to flush any cached HTML to a fresh 404/redirect.
+    const oldSlug = existing?.slug;
+    if (oldSlug && oldSlug !== saved.slug) {
+      revalidatePath(`/p/${oldSlug}`);
+    }
+
+    // Bust the current public profile page (ISR HTML + metadata)
     revalidatePath(`/p/${saved.slug}`);
 
-    // If you render profile data in other pages/route handlers using tagged fetch,
-    // make sure those fetches include: next: { tags: [`profile:${saved.id}`] }
-    // Then this line will refresh *all of them* coherently:
+    // Optional but powerful: if your other routes fetch this profile with next: { tags: [`profile:${id}`] }
     revalidateTag(`profile:${saved.id}`);
 
-    return NextResponse.json({ ok: true, profile: saved, ...saved });
+    return NextResponse.json({ ok: true, slug: saved.slug, id: saved.id });
   } catch (err: any) {
     if (
       err?.code === "P2002" &&
