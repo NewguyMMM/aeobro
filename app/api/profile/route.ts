@@ -5,6 +5,7 @@ import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { z } from "zod";
 import { toKebab, isSlugAllowed, RESERVED_SLUGS } from "@/lib/slug";
+import { revalidatePath, revalidateTag } from "next/cache";
 
 export const runtime = "nodejs";          // ensure Node (Prisma not supported on Edge)
 export const dynamic = "force-dynamic";   // don’t cache API responses
@@ -77,9 +78,7 @@ const intNullable = z
 
 /* ---------- slug helpers ---------- */
 
-/** Light map of common US/CA two-letter regions for nicer geo suffixes. Extend as needed. */
 const REGION_MAP: Record<string, string> = {
-  // US states
   alabama: "al", alaska: "ak", arizona: "az", arkansas: "ar", california: "ca", colorado: "co",
   connecticut: "ct", delaware: "de", florida: "fl", georgia: "ga", hawaii: "hi", idaho: "id",
   illinois: "il", indiana: "in", iowa: "ia", kansas: "ks", kentucky: "ky", louisiana: "la",
@@ -90,40 +89,25 @@ const REGION_MAP: Record<string, string> = {
   pennsylvania: "pa", "rhode island": "ri", "south carolina": "sc", "south dakota": "sd",
   tennessee: "tn", texas: "tx", utah: "ut", vermont: "vt", virginia: "va", washington: "wa",
   "west virginia": "wv", wisconsin: "wi", wyoming: "wy",
-  // Canadian provinces (handful)
   ontario: "on", quebec: "qc", "british columbia": "bc", alberta: "ab",
 };
 
-/** Extract a concise geo suffix from human free-text location. */
 function geoSuffixFromLocation(location?: string | null): string | null {
   if (!location) return null;
   const raw = String(location).toLowerCase();
-
-  // Look for explicit 2–3 letter tokens like "NJ", "NYC"
   const abbrev = raw.match(/\b([a-z]{2,3})\b/gi)?.at(-1);
   if (abbrev && /^[a-z]{2,3}$/i.test(abbrev)) return toKebab(abbrev);
-
-  // Map long names -> 2-letter codes
   for (const key of Object.keys(REGION_MAP)) {
     if (raw.includes(key)) return REGION_MAP[key];
   }
-
-  // Fallback: last tokenized word
   const tokens = toKebab(raw).split("-").filter(Boolean);
   if (tokens.length) {
     const last = tokens.at(-1)!;
-    if (last.length <= 6) return last; // e.g., "miami", "paris"
+    if (last.length <= 6) return last;
   }
   return null;
 }
 
-/**
- * Ensures a unique slug by trying:
- *  1) root
- *  2) root-<geo>
- *  3) root-2, root-3, ...
- *  4) root-<random>
- */
 async function ensureUniqueSlug(
   baseRaw: string,
   opts: { current?: string | null; location?: string | null } = {}
@@ -133,18 +117,14 @@ async function ensureUniqueSlug(
   if (RESERVED_SLUGS.has(base) || !isSlugAllowed(base)) base = "user";
 
   const root = base;
-
-  // If unchanged, keep the current slug (prevents churn)
   if (opts.current && opts.current === root) return root;
 
-  // Try the root
   const existingRoot = await prisma.profile.findUnique({
     where: { slug: root },
     select: { slug: true },
   });
   if (!existingRoot) return root;
 
-  // Try a location-aware suffix first (if provided)
   const geo = geoSuffixFromLocation(opts.location);
   if (geo) {
     const candidateGeo = `${root}-${geo}`;
@@ -157,7 +137,6 @@ async function ensureUniqueSlug(
     }
   }
 
-  // Try numeric suffixes
   for (let i = 2; i <= 500; i++) {
     const candidate = `${root}-${i}`;
     if (candidate.length > 80) break;
@@ -168,7 +147,6 @@ async function ensureUniqueSlug(
     if (!hit) return candidate;
   }
 
-  // Last-resort short random suffix
   return `${root}-${Math.random().toString(36).slice(2, 6)}`;
 }
 
@@ -200,41 +178,28 @@ const PlatformHandles = z
   .optional();
 
 const ProfileSchema = z.object({
-  // original fields
   displayName: z.string().trim().max(120).optional().nullable(),
   tagline: z.string().trim().max(160).optional().nullable(),
   location: z.string().trim().max(120).optional().nullable(),
   website: urlMaybeEmpty200.optional().nullable().or(z.literal("")).default(""),
   bio: z.string().trim().max(2000).optional().nullable(),
-
-  // ✅ accept null, coerce to []
   links: z.array(LinkItem).max(20).optional().nullable().transform((v) => v ?? []),
-
-  // new fields
   legalName: z.string().trim().max(160).optional().nullable(),
   entityType: z
     .enum(["Business", "Local Service", "Organization", "Creator / Person"])
     .optional()
     .nullable(),
-
   serviceArea: csvOrArray,
   foundedYear: intNullable,
   teamSize: intNullable,
   languages: csvOrArray,
   pricingModel: z.enum(["Free", "Subscription", "One-time", "Custom"]).optional().nullable(),
   hours: z.string().trim().max(160).optional().nullable(),
-
   certifications: z.string().trim().max(2000).optional().nullable(),
-
-  // ✅ accept null, coerce to []
   press: z.array(PressItem).optional().nullable().transform((v) => v ?? []),
-
   logoUrl: urlMaybeEmpty300.optional().nullable(),
   imageUrls: z.array(urlMaybeEmpty300).optional().default([]),
-
   handles: PlatformHandles,
-
-  // allow client to propose a slug
   slug: z.string().trim().max(80).optional().nullable(),
 });
 
@@ -246,7 +211,6 @@ export async function GET() {
 
   try {
     const profile = await prisma.profile.findUnique({ where: { userId: auth.userId } });
-
     const payload =
       profile ?? {
         userId: auth.userId,
@@ -258,7 +222,6 @@ export async function GET() {
         handles: {},
       };
 
-    // Return both shapes for compatibility
     return NextResponse.json({ ok: true, profile: payload, ...payload });
   } catch (e: any) {
     console.error("GET /api/profile failed:", e);
@@ -287,13 +250,11 @@ export async function PUT(req: Request) {
   try {
     const d = parsed.data;
 
-    // read existing (for slug keep/compare)
     const existing = await prisma.profile.findUnique({
       where: { userId: auth.userId },
       select: { slug: true },
     });
 
-    // Prefer displayName, then legalName, then client-proposed slug
     const proposedBase = (d.displayName ?? d.legalName ?? d.slug ?? "").toString();
     const finalSlug = await ensureUniqueSlug(proposedBase, {
       current: existing?.slug ?? null,
@@ -304,30 +265,22 @@ export async function PUT(req: Request) {
       displayName: emptyToNull(d.displayName),
       legalName: emptyToNull(d.legalName),
       entityType: emptyToNull(d.entityType),
-
       tagline: emptyToNull(d.tagline),
       bio: emptyToNull(d.bio),
-
       website: emptyToNull(d.website),
       location: emptyToNull(d.location),
-
       serviceArea: d.serviceArea ?? [],
       foundedYear: d.foundedYear,
       teamSize: d.teamSize,
       languages: d.languages ?? [],
       pricingModel: emptyToNull(d.pricingModel),
       hours: emptyToNull(d.hours),
-
       certifications: emptyToNull(d.certifications),
       press: d.press ?? [],
-
       logoUrl: emptyToNull(d.logoUrl),
       imageUrls: (d.imageUrls ?? []).filter(Boolean),
-
       handles: d.handles ?? {},
       links: d.links ?? [],
-
-      // always include slug for Prisma create/update
       slug: finalSlug,
     };
 
@@ -337,9 +290,18 @@ export async function PUT(req: Request) {
       create: { userId: auth.userId, ...payload },
     });
 
+    /* ---------- 🔥 Cache invalidation: keep profiles fresh and cheap ---------- */
+
+    // Bust the public profile page (ISR HTML + metadata)
+    revalidatePath(`/p/${saved.slug}`);
+
+    // If you render profile data in other pages/route handlers using tagged fetch,
+    // make sure those fetches include: next: { tags: [`profile:${saved.id}`] }
+    // Then this line will refresh *all of them* coherently:
+    revalidateTag(`profile:${saved.id}`);
+
     return NextResponse.json({ ok: true, profile: saved, ...saved });
   } catch (err: any) {
-    // Friendly duplicate-slug handling
     if (
       err?.code === "P2002" &&
       (err?.meta?.target?.includes?.("slug") || err?.meta?.target?.includes?.("Profile_slug_key"))
