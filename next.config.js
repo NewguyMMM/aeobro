@@ -1,20 +1,30 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  poweredByHeader: false,
+  compress: true,
 
   // ✅ Image optimization (AVIF/WebP + remote host allowlist)
   images: {
     formats: ["image/avif", "image/webp"],
+    // Helps reduce re-fetching of remote images by the optimizer (in seconds)
+    minimumCacheTTL: 86400, // 1 day; adjust to your update cadence
+
     remotePatterns: [
-      // Add/trim to match where your profile logos/avatars come from
+      // Common CDNs you’re likely to reference in profile fields
       { protocol: "https", hostname: "res.cloudinary.com" },
       { protocol: "https", hostname: "images.unsplash.com" },
       { protocol: "https", hostname: "pbs.twimg.com" },
       { protocol: "https", hostname: "i.imgur.com" },
-      { protocol: "https", hostname: "lh3.googleusercontent.com" }, // Google-hosted avatars
+      { protocol: "https", hostname: "lh3.googleusercontent.com" }, // Google avatars
       { protocol: "https", hostname: "media.licdn.com" },           // LinkedIn images
-      // If you serve your own CDN/domain for images, add it here:
+      { protocol: "https", hostname: "avatars.githubusercontent.com" }, // GitHub avatars
+      { protocol: "https", hostname: "yt3.ggpht.com" },             // YouTube channel avatars
+      { protocol: "https", hostname: "scontent.cdninstagram.com" }, // Instagram CDN
+
+      // If you host images on your own domain/CDN, add it here:
       // { protocol: "https", hostname: "cdn.aeobro.com" },
+      // { protocol: "https", hostname: "aeobro.vercel.app" }, // only if you ever serve images from your app domain
     ],
   },
 
