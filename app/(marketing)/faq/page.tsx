@@ -1,9 +1,121 @@
 // app/(marketing)/faq/page.tsx
 import React from "react";
 
+// ✅ Incremental Static Regeneration (rebuilds this page at most once per hour)
+export const revalidate = 3600;
+
+// ✅ Basic SEO metadata (Next.js App Router)
+export const metadata = {
+  title: "AEOBRO FAQ",
+  description:
+    "Answers about AEOBRO verification, tiers, publishing to AI engines, cancellations, and refunds.",
+  alternates: { canonical: "/faq" },
+} as const;
+
 export default function Page() {
+  // ✅ Structured data for rich results (FAQPage)
+  const faqJsonLd = {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    "mainEntity": [
+      {
+        "@type": "Question",
+        "name": "What is AEOBRO?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "AEOBRO is a machine-readable registry that helps AI systems find verified facts about your brand."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "What does AEOBRO stand for?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "AI Engine Optimization · Business Reach Optimization."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "How do I create an AEOBRO profile?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "Click the “Create my AI Profile” button on aeobro.com."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "What do I need to create an AEOBRO profile? (Short answer)",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "Verification. Creators (Lite) verify with a social media account. Businesses (Pro+) verify with your business domain. Without verification, your profile can exist as a draft, but it won’t publish to AI engines."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "What do I need to create an AEOBRO profile? (Long answer)",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "Every profile must connect to something you control—a social account (creators) or a domain (businesses). Creators verify via YouTube/Google/Instagram/TikTok/Meta. Businesses verify via DNS TXT record or domain email. Verified creators publish Person/Creator schema; verified businesses publish Organization schema including FAQs, services, and locations."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "Why does AEOBRO require verification?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "To prevent impersonation, ensure AI engines see data from verified sources, and give your profile authority and visibility."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "I’m a small business with no website and only a non-business email. Can I still sign up?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "Yes. Lite tier supports platform verification via OAuth (YouTube, TikTok, Instagram, Substack, Etsy) or code-in-bio. Pro requires domain + matching business email. Lite publishes Person/Creator schema; you can upgrade to Organization/LocalBusiness after adding a domain."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "Why use AEOBRO instead of just my own website?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "AEOBRO publishes structured, verified JSON-LD that AI engines prioritize. Regular pages may be inconsistently parsed. Verified profiles reduce impersonation and ensure AI systems pull the right facts."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "How do I cancel?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "Use the “Cancel subscription” button in billing. Service continues until the end of your current billing period; renewals stop."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "How does AEOBRO handle refunds?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "No refunds. If a profile is taken down or frozen during an investigation, refunds are not issued. You may cancel any time; service remains active until the period ends."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "What happens to my profile if I cancel?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "After lapse, premium features and editing are disabled and the public profile is unpublished (no longer crawlable). Data is retained for 90 days for reactivation; after that, it may be deleted per policy."
+        }
+      }
+    ]
+  };
+
   return (
     <section className="container py-16">
+      {/* JSON-LD for FAQ rich results */}
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(faqJsonLd) }}
+      />
       <h1 className="text-4xl font-extrabold mb-10">
         <span>AEO</span>
         <span className="text-primary">BRO</span> FAQ
