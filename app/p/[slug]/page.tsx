@@ -1,11 +1,12 @@
 // app/p/[slug]/page.tsx
 import { prisma } from "@/lib/prisma";
 import { buildProfileSchema } from "@/lib/schema";
-import { getBaseUrl } from "@/lib/getBaseUrl";
+import { getRuntimeBaseUrl } from "@/lib/getBaseUrl";
 import Script from "next/script";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import OptimizedImg from "@/components/OptimizedImg";
+import { unstable_cache } from "next/cache";
 
 type PageProps = { params: { slug: string } };
 
@@ -16,23 +17,41 @@ type PageProps = { params: { slug: string } };
  */
 export const revalidate = 3600;
 
-// Keep this route statically renderable (don’t read cookies/session here)
+// ---- Cached readers (tag-based) ---------------------------------------------
 
-/** SEO metadata (canonical, OG, Twitter) */
+// Narrow read for <head> metadata (fast)
+const getProfileMetaCached = (slug: string) =>
+  unstable_cache(
+    async () => {
+      return prisma.profile.findUnique({
+        where: { slug },
+        select: { displayName: true, tagline: true, logoUrl: true, slug: true },
+      });
+    },
+    // cache key (unique per slug)
+    ["profile:meta", slug],
+    { revalidate, tags: [`profile:${slug}`] }
+  )();
+
+// Full read for the page body
+const getProfileFullCached = (slug: string) =>
+  unstable_cache(
+    async () => {
+      return prisma.profile.findUnique({ where: { slug } });
+    },
+    ["profile:full", slug],
+    { revalidate, tags: [`profile:${slug}`] }
+  )();
+
+// -----------------------------------------------------------------------------
+// SEO metadata (canonical, OG, Twitter)
 export async function generateMetadata(
   { params }: { params: { slug: string } }
 ): Promise<Metadata> {
-  // Lean select for metadata to keep things fast
-  const profile = await prisma.profile.findUnique({
-    where: { slug: params.slug },
-    select: { displayName: true, tagline: true, logoUrl: true },
-  });
+  const profile = await getProfileMetaCached(params.slug);
+  if (!profile) return { title: "Profile not found" };
 
-  if (!profile) {
-    return { title: "Profile not found" };
-  }
-
-  const baseUrl = getBaseUrl();
+  const baseUrl = await getRuntimeBaseUrl();
   const url = `${baseUrl}/p/${params.slug}`;
   const title = profile.displayName ?? "Profile";
   const description = profile.tagline ?? "Public profile";
@@ -50,12 +69,12 @@ export async function generateMetadata(
 export default async function PublicProfilePage({ params }: PageProps) {
   const { slug } = params;
 
-  // Fetch by slug — ensure you have a unique index on Profile.slug
-  const profile = await prisma.profile.findUnique({ where: { slug } });
+  // Cached DB read (ISR + tag)
+  const profile = await getProfileFullCached(slug);
   if (!profile) notFound();
 
-  const baseUrl = getBaseUrl();
-  const schema = buildProfileSchema(profile, baseUrl);
+  const baseUrl = await getRuntimeBaseUrl();
+  const schema = buildProfileSchema(profile as any, baseUrl);
 
   // Human-readable fallbacks (keep simple and robust)
   const displayName =
@@ -76,12 +95,16 @@ export default async function PublicProfilePage({ params }: PageProps) {
     (profile as any).logoUrl ??
     null;
 
-  const sameAs: string[] =
-    Array.isArray((profile as any).links)
-      ? (profile as any).links
-      : Array.isArray((profile as any).socialLinks)
-      ? (profile as any).socialLinks
-      : [];
+  // Links: accept either array of strings or array of objects with {url}
+  const toUrl = (x: any) => (typeof x === "string" ? x : x?.url);
+  const sameAs: string[] = Array.from(
+    new Set(
+      (Array.isArray((profile as any).links) ? (profile as any).links : [])
+        .concat(Array.isArray((profile as any).socialLinks) ? (profile as any).socialLinks : [])
+        .map(toUrl)
+        .filter(Boolean)
+    )
+  );
 
   return (
     <main className="mx-auto max-w-3xl px-6 py-12">
@@ -105,6 +128,7 @@ export default async function PublicProfilePage({ params }: PageProps) {
               priority
               sizes="96px"
               className="h-24 w-24 object-cover"
+              ratio={1}
             />
           </div>
         ) : null}
@@ -141,3 +165,13 @@ export default async function PublicProfilePage({ params }: PageProps) {
     </main>
   );
 }
+
+/**
+ * 🔁 How to purge one profile after edits
+ * Call this in your update API/route action after writing to the DB:
+ *   import { revalidateTag } from "next/cache";
+ *   revalidateTag(`profile:${slug}`); // or use profile ID if you prefer
+ *
+ * This invalidates both the page body and metadata caches for that slug,
+ * so the next request regenerates with fresh data.
+ */
