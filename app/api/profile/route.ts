@@ -274,6 +274,7 @@ export async function PUT(req: Request) {
       location: d.location ?? null,
     });
 
+    // Normalize empties to null; arrays to [] so UI and public page are stable
     const payload = {
       displayName: emptyToNull(d.displayName),
       legalName: emptyToNull(d.legalName),
@@ -313,26 +314,18 @@ export async function PUT(req: Request) {
     /* ---------- 🔥 Cache invalidation aligned to page tags ---------- */
     const oldSlug = existing?.slug;
 
-    // Revalidate the specific HTML/JSON/OG paths
+    // If the slug changed, purge old routes/tags
     if (oldSlug && oldSlug !== saved.slug) {
       revalidatePath(`/p/${oldSlug}`);
       revalidatePath(`/api/profile/${oldSlug}/schema`);
       revalidatePath(`/og/${oldSlug}`);
-      // If you added these:
-      // revalidatePath(`/schema/${oldSlug}`);
-      // revalidatePath(`/api/profile/${oldSlug}`);
-      // Also nuke the old tag variant
       revalidateTag(`profile:${oldSlug}`);
     }
 
+    // Always purge the new/current slug caches
     revalidatePath(`/p/${saved.slug}`);
     revalidatePath(`/api/profile/${saved.slug}/schema`);
     revalidatePath(`/og/${saved.slug}`);
-    // Optional: if you have these routes:
-    // revalidatePath(`/schema/${saved.slug}`);
-    // revalidatePath(`/api/profile/${saved.slug}`);
-
-    // IMPORTANT: your page caches use tag `profile:<slug>` (not ID)
     revalidateTag(`profile:${saved.slug}`);
 
     // Optional: if sitemap lists profiles, refresh it too
