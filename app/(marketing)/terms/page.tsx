@@ -1,14 +1,55 @@
 // app/(marketing)/terms/page.tsx
 import React from "react";
 
+// ✅ Revalidate once/day (adjust if needed)
+export const revalidate = 86400;
+
+// ✅ SEO metadata
+export const metadata = {
+  title: "Terms of Service | AEOBRO",
+  description:
+    "AEOBRO Terms of Service covering cancellations, billing cycles, data retention after cancellation, and refund policy.",
+  alternates: { canonical: "/terms" },
+} as const;
+
 export default function Page() {
+  const jsonLd = {
+    "@context": "https://schema.org",
+    "@type": "WebPage",
+    "name": "Terms of Service",
+    "url": "https://aeobro.com/terms",
+    "description":
+      "AEOBRO Terms of Service, including cancellations, billing cycles, data retention after cancellation, and refunds.",
+    "isPartOf": {
+      "@type": "WebSite",
+      "name": "AEOBRO",
+      "url": "https://aeobro.com"
+    }
+  };
+
+  const breadcrumbLd = {
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    "itemListElement": [
+      { "@type": "ListItem", "position": 1, "name": "Home", "item": "https://aeobro.com/" },
+      { "@type": "ListItem", "position": 2, "name": "Terms of Service", "item": "https://aeobro.com/terms" }
+    ]
+  };
+
   return (
     <section className="container py-16">
-      <h1 className="text-4xl font-extrabold mb-10">Terms of Service</h1>
+      {/* ✅ JSON-LD */}
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbLd) }} />
+
+      <h1 className="text-4xl font-extrabold mb-2">Terms of Service</h1>
+      <p className="text-gray-600 mb-10">
+        Last updated: {new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" })}
+      </p>
 
       <div className="space-y-8">
         <div className="card">
-          <h3 className="font-semibold">Cancellations & Billing Cycle</h3>
+          <h3 className="font-semibold">Cancellations &amp; Billing Cycle</h3>
           <p className="text-gray-700 mt-2">
             Cancellations take effect at the end of the current billing cycle. When you cancel, you
             retain access to paid features until the end of your current billing period. After that
