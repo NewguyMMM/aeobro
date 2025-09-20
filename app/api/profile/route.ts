@@ -312,14 +312,26 @@ export async function PUT(req: Request) {
 
     /* ---------- 🔥 Cache invalidation: keep profiles fresh and cheap ---------- */
 
-    // If slug changed, also revalidate the old page to flush any cached HTML to a fresh 404/redirect.
     const oldSlug = existing?.slug;
+
+    // If slug changed, also revalidate old paths to flush cached HTML/JSON/OG
     if (oldSlug && oldSlug !== saved.slug) {
       revalidatePath(`/p/${oldSlug}`);
+      revalidatePath(`/api/profile/${oldSlug}/schema`);
+      revalidatePath(`/og/${oldSlug}`);
+      // If you created /schema/<slug> file route, you can also:
+      // revalidatePath(`/schema/${oldSlug}`);
+      // If you created /api/profile/<slug> (public JSON), you can also:
+      // revalidatePath(`/api/profile/${oldSlug}`);
     }
 
-    // Bust the current public profile page (ISR HTML + metadata)
+    // Revalidate current paths: HTML page, JSON-LD schema, and OG image
     revalidatePath(`/p/${saved.slug}`);
+    revalidatePath(`/api/profile/${saved.slug}/schema`);
+    revalidatePath(`/og/${saved.slug}`);
+    // Optional extras if you added these routes:
+    // revalidatePath(`/schema/${saved.slug}`);
+    // revalidatePath(`/api/profile/${saved.slug}`);
 
     // Optional but powerful: if your other routes fetch this profile with next: { tags: [`profile:${id}`] }
     revalidateTag(`profile:${saved.id}`);
