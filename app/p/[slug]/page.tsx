@@ -10,17 +10,10 @@ import { unstable_cache } from "next/cache";
 
 type PageProps = { params: { slug: string } };
 
-/**
- * ISR: Cached at the edge; background re-render when stale.
- * Keep using tag-based revalidation from your API with revalidateTag(`profile:${slug}`).
- */
 export const revalidate = 3600;
 
-/* -------------------------------------------------------------------------- */
-/*                              Cached DB readers                              */
-/* -------------------------------------------------------------------------- */
+/* ----------------------------- Cached readers ----------------------------- */
 
-// Narrow fetch for <head> metadata (fast)
 const getProfileMetaCached = (slug: string) =>
   unstable_cache(
     async () => {
@@ -38,7 +31,6 @@ const getProfileMetaCached = (slug: string) =>
     { revalidate, tags: [`profile:${slug}`] }
   )();
 
-// Full fetch for the page body (render all human-visible fields)
 const getProfileFullCached = (slug: string) =>
   unstable_cache(
     async () => {
@@ -51,11 +43,11 @@ const getProfileFullCached = (slug: string) =>
           tagline: true,
           bio: true,
 
-          // Images
+          // Branding & media
           logoUrl: true,
           imageUrls: true, // string[]
 
-          // Website, Location & Reach
+          // Location & reach
           website: true,
           location: true,
           serviceArea: true, // string[]
@@ -68,9 +60,12 @@ const getProfileFullCached = (slug: string) =>
           hours: true,
           certifications: true,
 
-          // Arrays (stored as JSON in Prisma)
-          links: true, // [{label,url}] or string[]
-          press: true, // [{title,url}]
+          // Links & press
+          links: true,   // [{label,url}] or string[]
+          press: true,   // [{title,url}]
+
+          // Platform handles (object of URLs)
+          handles: true,
         },
       });
     },
@@ -78,9 +73,7 @@ const getProfileFullCached = (slug: string) =>
     { revalidate, tags: [`profile:${slug}`] }
   )();
 
-/* -------------------------------------------------------------------------- */
-/*                                   SEO                                      */
-/* -------------------------------------------------------------------------- */
+/* --------------------------------- SEO ----------------------------------- */
 
 export async function generateMetadata(
   { params }: { params: { slug: string } }
@@ -99,13 +92,10 @@ export async function generateMetadata(
     description,
     alternates: { canonical: url },
     openGraph: { title, description, url, images },
-    twitter: { card: "summary_large_image", title, description, images },
   };
 }
 
-/* -------------------------------------------------------------------------- */
-/*                               Page component                                */
-/* -------------------------------------------------------------------------- */
+/* ----------------------------- Page component ---------------------------- */
 
 export default async function PublicProfilePage({ params }: PageProps) {
   const { slug } = params;
@@ -129,6 +119,12 @@ export default async function PublicProfilePage({ params }: PageProps) {
   const toUrl = (x: any) => (typeof x === "string" ? x : x?.url);
   const linksArr = Array.isArray(profile.links) ? profile.links : [];
   const sameAs: string[] = Array.from(new Set(linksArr.map(toUrl).filter(Boolean)));
+
+  // Platform handles → clickable links
+  const handles = (profile as any).handles || {};
+  const handlePairs: Array<{ label: string; url: string }> = Object.entries(handles)
+    .filter(([, v]) => typeof v === "string" && v.trim() !== "")
+    .map(([k, v]) => ({ label: prettyHandleLabel(k), url: String(v) }));
 
   const press: Array<{ title?: string; url?: string }> = Array.isArray(profile.press)
     ? (profile.press as any[])
@@ -163,6 +159,44 @@ export default async function PublicProfilePage({ params }: PageProps) {
         <h1 className="text-3xl font-semibold">{displayName}</h1>
         {headline ? <p className="mt-2 text-muted-foreground">{headline}</p> : null}
       </header>
+
+      {/* Branding & Media: show gallery if additional images exist */}
+      {(profile.logoUrl || (profile.imageUrls?.length ?? 0) > 1) && (
+        <section className="mb-8">
+          <h3 className="mb-2 text-lg font-medium">Branding &amp; Media</h3>
+          <div className="flex flex-wrap gap-3">
+            {profile.logoUrl && (
+              <div className="h-16 w-16 overflow-hidden rounded-md border">
+                <OptimizedImg
+                  src={profile.logoUrl}
+                  alt="Logo"
+                  width={64}
+                  height={64}
+                  sizes="64px"
+                  className="h-16 w-16 object-contain bg-white"
+                  ratio={1}
+                />
+              </div>
+            )}
+            {Array.isArray(profile.imageUrls) &&
+              profile.imageUrls.slice(0, 6).map((src, i) =>
+                src ? (
+                  <div key={i} className="h-16 w-16 overflow-hidden rounded-md border">
+                    <OptimizedImg
+                      src={src}
+                      alt={`Image ${i + 1}`}
+                      width={64}
+                      height={64}
+                      sizes="64px"
+                      className="h-16 w-16 object-cover"
+                      ratio={1}
+                    />
+                  </div>
+                ) : null
+              )}
+          </div>
+        </section>
+      )}
 
       {/* Bio / About */}
       {profile.bio ? (
@@ -245,8 +279,24 @@ export default async function PublicProfilePage({ params }: PageProps) {
         </section>
       )}
 
+      {/* Platform Handles */}
+      {handlePairs.length > 0 && (
+        <section className="mb-8">
+          <h3 className="mb-2 text-lg font-medium">Platforms</h3>
+          <ul className="list-disc space-y-1 pl-6">
+            {handlePairs.map((h, i) => (
+              <li key={i}>
+                <a className="underline" href={h.url} rel="noopener noreferrer">
+                  {h.label}
+                </a>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
       {/* Links */}
-      {sameAs.length > 0 ? (
+      {sameAs.length > 0 && (
         <section className="mb-8">
           <h3 className="mb-2 text-lg font-medium">Links</h3>
           <ul className="list-disc space-y-1 pl-6">
@@ -259,10 +309,10 @@ export default async function PublicProfilePage({ params }: PageProps) {
             ))}
           </ul>
         </section>
-      ) : null}
+      )}
 
       {/* Press & Mentions */}
-      {press.length > 0 ? (
+      {press.length > 0 && (
         <section className="mb-10">
           <h3 className="mb-2 text-lg font-medium">Press &amp; Mentions</h3>
           <ul className="list-disc space-y-1 pl-6">
@@ -275,7 +325,7 @@ export default async function PublicProfilePage({ params }: PageProps) {
             ))}
           </ul>
         </section>
-      ) : null}
+      )}
 
       {/* Raw schema link */}
       <section className="mt-6">
@@ -285,6 +335,23 @@ export default async function PublicProfilePage({ params }: PageProps) {
       </section>
     </main>
   );
+}
+
+/* ------------------------------ helpers ---------------------------------- */
+
+function prettyHandleLabel(key: string) {
+  const map: Record<string, string> = {
+    youtube: "YouTube",
+    tiktok: "TikTok",
+    instagram: "Instagram",
+    substack: "Substack",
+    etsy: "Etsy",
+    x: "X (Twitter)",
+    linkedin: "LinkedIn",
+    facebook: "Facebook",
+    github: "GitHub",
+  };
+  return map[key] || key;
 }
 
 /**
