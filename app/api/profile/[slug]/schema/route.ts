@@ -15,8 +15,9 @@ export const revalidate = 3600;
 export async function GET(_req: Request, { params }: Params) {
   const { slug } = params;
 
-  const profile = await prisma.profile.findUnique({
-    where: { slug },
+  // Accept either canonical slug or internal id as the URL segment
+  const profile = await prisma.profile.findFirst({
+    where: { OR: [{ slug }, { id: slug }] },
   });
 
   if (!profile) {
