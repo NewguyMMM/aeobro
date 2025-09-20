@@ -3,34 +3,36 @@ import type { Profile } from "@prisma/client";
 
 /**
  * Build JSON-LD (schema.org) for a public profile.
- * Adjust mapping to your Prisma shape as needed.
+ * Expands to Person vs Organization, with optional FAQ/Service hooks.
  */
 export function buildProfileSchema(profile: Partial<Profile>, baseUrl: string) {
-  const url = `${baseUrl}/p/${profile.slug}`;
+  const slug = profile["slug" as keyof Profile] as string | undefined;
+  const url = slug ? `${baseUrl}/p/${slug}` : baseUrl;
+
   const name =
-    profile["displayName" as keyof Profile] ??
-    profile["name" as keyof Profile] ??
-    profile["headline" as keyof Profile] ??
-    "Profile";
+    (profile["displayName" as keyof Profile] as string | null) ??
+    (profile["name" as keyof Profile] as string | null) ??
+    (profile["headline" as keyof Profile] as string | null) ??
+    undefined;
 
   const description =
     (profile["bio" as keyof Profile] as string | null) ??
     (profile["description" as keyof Profile] as string | null) ??
     undefined;
 
-  // Try common image fields
+  // Images
   const image =
     (profile["image" as keyof Profile] as string | null) ??
     (profile["avatarUrl" as keyof Profile] as string | null) ??
     undefined;
 
-  // Organization / business details if present
+  // Organization details
   const orgName =
     (profile["organizationName" as keyof Profile] as string | null) ??
     (profile["company" as keyof Profile] as string | null) ??
     undefined;
 
-  // Contact
+  // Contact info
   const email =
     (profile["publicEmail" as keyof Profile] as string | null) ??
     (profile["email" as keyof Profile] as string | null) ??
@@ -41,16 +43,18 @@ export function buildProfileSchema(profile: Partial<Profile>, baseUrl: string) {
     (profile["phone" as keyof Profile] as string | null) ??
     undefined;
 
-  const sameAs: string[] =
-    (profile["links" as keyof Profile] as any)?.filter?.((x: any) =>
-      typeof x === "string"
-    ) ??
-    (profile["socialLinks" as keyof Profile] as any)?.filter?.((x: any) =>
-      typeof x === "string"
-    ) ??
-    [];
+  // Links / handles
+  let sameAs: string[] = [];
+  const links = profile["links" as keyof Profile] as any;
+  const socials = profile["socialLinks" as keyof Profile] as any;
+  if (Array.isArray(links)) {
+    sameAs = sameAs.concat(links.map((x) => (typeof x === "string" ? x : x?.url)).filter(Boolean));
+  }
+  if (Array.isArray(socials)) {
+    sameAs = sameAs.concat(socials.map((x) => (typeof x === "string" ? x : x?.url)).filter(Boolean));
+  }
 
-  // Postal address if you store it (defensive)
+  // Postal address
   const addr = (profile["address" as keyof Profile] as any) || {};
   const address =
     addr && (addr.streetAddress || addr.addressLocality || addr.postalCode)
@@ -64,46 +68,63 @@ export function buildProfileSchema(profile: Partial<Profile>, baseUrl: string) {
         }
       : undefined;
 
-  // Decide Person vs Organization
+  // Profile type
   const isOrg =
-    (profile["profileType" as keyof Profile] as string | null) ===
-      "organization" ||
-    (!!orgName && !name); // heuristic
+    (profile["profileType" as keyof Profile] as string | null)?.toLowerCase() === "organization" ||
+    (!!orgName && !name);
 
+  // Base schema
   const base: any = {
     "@context": "https://schema.org",
     "@type": isOrg ? "Organization" : "Person",
+    "@id": `${url}#profile`,
     url,
     name: String(name || orgName || "Profile"),
     description,
     image,
-    sameAs: sameAs.length ? sameAs : undefined,
+    sameAs: sameAs.length ? Array.from(new Set(sameAs)) : undefined,
+    email,
+    telephone,
+    address,
   };
 
   if (isOrg) {
     base.legalName = orgName || undefined;
-    base.email = email || undefined;
-    base.telephone = telephone || undefined;
-    base.address = address || undefined;
+    // Optional: business services or FAQ markup (Pro/Business only)
+    if (profile["faqs" as keyof Profile]) {
+      base.mainEntity = (profile["faqs" as keyof Profile] as any[]).map((f) => ({
+        "@type": "Question",
+        name: f.q,
+        acceptedAnswer: { "@type": "Answer", text: f.a },
+      }));
+    }
+    if (profile["services" as keyof Profile]) {
+      base.hasOfferCatalog = {
+        "@type": "OfferCatalog",
+        name: `${orgName} Services`,
+        itemListElement: (profile["services" as keyof Profile] as any[]).map((s) => ({
+          "@type": "Offer",
+          itemOffered: { "@type": "Service", name: s.name, description: s.desc },
+        })),
+      };
+    }
   } else {
-    // Person
-    base.email = email || undefined;
-    base.telephone = telephone || undefined;
-    base.address = address || undefined;
-    // Optional: jobTitle, worksFor, etc. if you store them
-    const jobTitle =
-      (profile["jobTitle" as keyof Profile] as string | null) || undefined;
+    // Person extras
+    const jobTitle = (profile["jobTitle" as keyof Profile] as string | null) || undefined;
     const worksFor =
       (profile["organizationName" as keyof Profile] as string | null) ||
+      (profile["company" as keyof Profile] as string | null) ||
       undefined;
-
-    base.jobTitle = jobTitle;
-    base.worksFor = worksFor
-      ? { "@type": "Organization", name: worksFor }
-      : undefined;
+    if (jobTitle) base.jobTitle = jobTitle;
+    if (worksFor) base.worksFor = { "@type": "Organization", name: worksFor };
   }
 
-  // Clean undefined
-  Object.keys(base).forEach((k) => base[k] === undefined && delete base[k]);
+  // Strip empties
+  Object.keys(base).forEach((k) => {
+    if (base[k] === undefined || base[k] === null || base[k] === "") {
+      delete base[k];
+    }
+  });
+
   return base;
 }
