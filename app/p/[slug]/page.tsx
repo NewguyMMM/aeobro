@@ -11,40 +11,78 @@ import { unstable_cache } from "next/cache";
 type PageProps = { params: { slug: string } };
 
 /**
- * Incremental Static Regeneration (ISR)
- * Cached at the edge; re-rendered in the background when stale.
- * Adjust to your traffic/cost needs (e.g., 300 = 5 min, 3600 = 1 hour).
+ * ISR: Cached at the edge; background re-render when stale.
+ * Keep using tag-based revalidation from your API with revalidateTag(`profile:${slug}`).
  */
 export const revalidate = 3600;
 
-// ---- Cached readers (tag-based) ---------------------------------------------
+/* -------------------------------------------------------------------------- */
+/*                              Cached DB readers                              */
+/* -------------------------------------------------------------------------- */
 
-// Narrow read for <head> metadata (fast)
+// Narrow fetch for <head> metadata (fast)
 const getProfileMetaCached = (slug: string) =>
   unstable_cache(
     async () => {
       return prisma.profile.findUnique({
         where: { slug },
-        select: { displayName: true, tagline: true, logoUrl: true, slug: true },
+        select: {
+          displayName: true,
+          tagline: true,
+          logoUrl: true,
+          slug: true,
+        },
       });
     },
-    // cache key (unique per slug)
     ["profile:meta", slug],
     { revalidate, tags: [`profile:${slug}`] }
   )();
 
-// Full read for the page body
+// Full fetch for the page body (render all human-visible fields)
 const getProfileFullCached = (slug: string) =>
   unstable_cache(
     async () => {
-      return prisma.profile.findUnique({ where: { slug } });
+      return prisma.profile.findUnique({
+        where: { slug },
+        // select explicitly (safe across schema tweaks)
+        select: {
+          id: true,
+          slug: true,
+          displayName: true,
+          tagline: true,
+          bio: true,
+          logoUrl: true,
+          image: true,
+          avatarUrl: true,
+
+          // Website, Location & Reach
+          website: true,
+          location: true,
+          serviceArea: true,
+
+          // Trust & Authority
+          foundedYear: true,
+          teamSize: true,
+          pricingModel: true,
+          languages: true,
+          hours: true,
+          certifications: true,
+
+          // Arrays (stored as JSON in Prisma)
+          links: true,        // [{label,url}] or string[]
+          socialLinks: true,  // [{label?,url}] or string[]
+          press: true,        // [{title,url}]
+        },
+      });
     },
     ["profile:full", slug],
     { revalidate, tags: [`profile:${slug}`] }
   )();
 
-// -----------------------------------------------------------------------------
-// SEO metadata (canonical, OG, Twitter)
+/* -------------------------------------------------------------------------- */
+/*                                   SEO                                      */
+/* -------------------------------------------------------------------------- */
+
 export async function generateMetadata(
   { params }: { params: { slug: string } }
 ): Promise<Metadata> {
@@ -66,17 +104,19 @@ export async function generateMetadata(
   };
 }
 
+/* -------------------------------------------------------------------------- */
+/*                               Page component                                */
+/* -------------------------------------------------------------------------- */
+
 export default async function PublicProfilePage({ params }: PageProps) {
   const { slug } = params;
-
-  // Cached DB read (ISR + tag)
   const profile = await getProfileFullCached(slug);
   if (!profile) notFound();
 
   const baseUrl = await getRuntimeBaseUrl();
   const schema = buildProfileSchema(profile as any, baseUrl);
 
-  // Human-readable fallbacks (keep simple and robust)
+  // Human-readable fallbacks (robust to future schema tweaks)
   const displayName =
     (profile as any).displayName ??
     (profile as any).name ??
@@ -86,7 +126,6 @@ export default async function PublicProfilePage({ params }: PageProps) {
   const headline =
     (profile as any).headline ??
     (profile as any).tagline ??
-    (profile as any).bio ??
     "";
 
   const image: string | null =
@@ -95,16 +134,21 @@ export default async function PublicProfilePage({ params }: PageProps) {
     (profile as any).logoUrl ??
     null;
 
-  // Links: accept either array of strings or array of objects with {url}
+  // Normalize link arrays → unique URLs
   const toUrl = (x: any) => (typeof x === "string" ? x : x?.url);
   const sameAs: string[] = Array.from(
     new Set(
-      (Array.isArray((profile as any).links) ? (profile as any).links : [])
+      ([] as any[])
+        .concat(Array.isArray((profile as any).links) ? (profile as any).links : [])
         .concat(Array.isArray((profile as any).socialLinks) ? (profile as any).socialLinks : [])
         .map(toUrl)
         .filter(Boolean)
     )
   );
+
+  const press: Array<{ title?: string; url?: string }> = Array.isArray((profile as any).press)
+    ? ((profile as any).press as any[])
+    : [];
 
   return (
     <main className="mx-auto max-w-3xl px-6 py-12">
@@ -119,7 +163,6 @@ export default async function PublicProfilePage({ params }: PageProps) {
       <header className="mb-8">
         {image ? (
           <div className="mb-4 h-24 w-24 overflow-hidden rounded-2xl">
-            {/* next/image via our wrapper: AVIF/WebP + CDN caching + DPR-aware sizing */}
             <OptimizedImg
               src={image}
               alt={`${displayName} logo`}
@@ -137,14 +180,93 @@ export default async function PublicProfilePage({ params }: PageProps) {
         {headline ? <p className="mt-2 text-muted-foreground">{headline}</p> : null}
       </header>
 
-      {/* Social / Links */}
+      {/* Bio / About — this is the missing piece from your screenshots */}
+      {(profile as any).bio ? (
+        <section className="prose max-w-none mb-10">
+          <h2>About</h2>
+          <p>{(profile as any).bio}</p>
+        </section>
+      ) : null}
+
+      {/* Website, Location & Reach */}
+      {(profile.website || profile.location || profile.serviceArea) && (
+        <section className="mb-8">
+          <h3 className="mb-2 text-lg font-medium">Website, Location &amp; Reach</h3>
+          <ul className="space-y-1 text-sm">
+            {profile.website && (
+              <li>
+                <span className="font-medium">Website:</span>{" "}
+                <a className="underline" href={profile.website} rel="noopener noreferrer">
+                  {profile.website}
+                </a>
+              </li>
+            )}
+            {profile.location && (
+              <li>
+                <span className="font-medium">Location:</span> {profile.location}
+              </li>
+            )}
+            {profile.serviceArea && (
+              <li>
+                <span className="font-medium">Service area:</span> {profile.serviceArea}
+              </li>
+            )}
+          </ul>
+        </section>
+      )}
+
+      {/* Trust & Authority */}
+      {(profile.foundedYear ||
+        profile.teamSize ||
+        profile.pricingModel ||
+        profile.languages ||
+        profile.hours ||
+        profile.certifications) && (
+        <section className="mb-8">
+          <h3 className="mb-2 text-lg font-medium">Trust &amp; Authority</h3>
+          <ul className="space-y-1 text-sm">
+            {profile.foundedYear && (
+              <li>
+                <span className="font-medium">Founded:</span> {profile.foundedYear}
+              </li>
+            )}
+            {profile.teamSize && (
+              <li>
+                <span className="font-medium">Team size:</span> {profile.teamSize}
+              </li>
+            )}
+            {profile.pricingModel && (
+              <li>
+                <span className="font-medium">Pricing model:</span> {profile.pricingModel}
+              </li>
+            )}
+            {profile.languages && (
+              <li>
+                <span className="font-medium">Languages:</span> {profile.languages}
+              </li>
+            )}
+            {profile.hours && (
+              <li>
+                <span className="font-medium">Hours:</span> {profile.hours}
+              </li>
+            )}
+            {profile.certifications && (
+              <li>
+                <span className="font-medium">Certifications:</span> {profile.certifications}
+              </li>
+            )}
+          </ul>
+        </section>
+      )}
+
+      {/* Links / Social */}
       {sameAs.length > 0 ? (
-        <section className="mt-6">
-          <h2 className="mb-3 text-lg font-medium">Links</h2>
+        <section className="mb-8">
+          <h3 className="mb-2 text-lg font-medium">Links</h3>
           <ul className="list-disc space-y-1 pl-6">
             {sameAs.map((href, i) => (
               <li key={i}>
-                <a className="underline" href={href}>
+                <a className="underline" href={href} rel="noopener noreferrer">
                   {href}
                 </a>
               </li>
@@ -153,12 +275,25 @@ export default async function PublicProfilePage({ params }: PageProps) {
         </section>
       ) : null}
 
-      {/* Optional: Raw schema link for devs/bots */}
-      <section className="mt-10">
-        <a
-          className="text-sm underline"
-          href={`/api/profile/${encodeURIComponent(slug)}/schema`}
-        >
+      {/* Press & Directory Mentions */}
+      {press.length > 0 ? (
+        <section className="mb-10">
+          <h3 className="mb-2 text-lg font-medium">Press &amp; Mentions</h3>
+          <ul className="list-disc space-y-1 pl-6">
+            {press.map((p, i) => (
+              <li key={i}>
+                <a className="underline" href={p.url} rel="noopener noreferrer">
+                  {p.title || p.url}
+                </a>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
+      {/* Raw schema link for devs/bots */}
+      <section className="mt-6">
+        <a className="text-sm underline" href={`/api/profile/${encodeURIComponent(slug)}/schema`}>
           View raw schema JSON
         </a>
       </section>
@@ -168,9 +303,9 @@ export default async function PublicProfilePage({ params }: PageProps) {
 
 /**
  * 🔁 How to purge one profile after edits
- * Call this in your update API/route action after writing to the DB:
+ * In your update API/route handler after persisting to Prisma:
  *   import { revalidateTag } from "next/cache";
- *   revalidateTag(`profile:${slug}`); // or use profile ID if you prefer
+ *   revalidateTag(`profile:${slug}`);
  *
  * This invalidates both the page body and metadata caches for that slug,
  * so the next request regenerates with fresh data.
