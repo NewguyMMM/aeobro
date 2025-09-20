@@ -10,10 +10,17 @@ import { unstable_cache } from "next/cache";
 
 type PageProps = { params: { slug: string } };
 
+/**
+ * ISR: Cached at the edge; background re-render when stale.
+ * Keep using tag-based revalidation from your API with revalidateTag(`profile:${slug}`).
+ */
 export const revalidate = 3600;
 
-/* ----------------------------- Cached readers ----------------------------- */
+/* -------------------------------------------------------------------------- */
+/*                              Cached DB readers                              */
+/* -------------------------------------------------------------------------- */
 
+// Narrow fetch for <head> metadata (fast)
 const getProfileMetaCached = (slug: string) =>
   unstable_cache(
     async () => {
@@ -31,6 +38,7 @@ const getProfileMetaCached = (slug: string) =>
     { revalidate, tags: [`profile:${slug}`] }
   )();
 
+// Full fetch for the page body (render all human-visible fields)
 const getProfileFullCached = (slug: string) =>
   unstable_cache(
     async () => {
@@ -47,7 +55,7 @@ const getProfileFullCached = (slug: string) =>
           logoUrl: true,
           imageUrls: true, // string[]
 
-          // Location & reach
+          // Website, Location & Reach
           website: true,
           location: true,
           serviceArea: true, // string[]
@@ -73,7 +81,9 @@ const getProfileFullCached = (slug: string) =>
     { revalidate, tags: [`profile:${slug}`] }
   )();
 
-/* --------------------------------- SEO ----------------------------------- */
+/* -------------------------------------------------------------------------- */
+/*                                   SEO                                      */
+/* -------------------------------------------------------------------------- */
 
 export async function generateMetadata(
   { params }: { params: { slug: string } }
@@ -95,7 +105,9 @@ export async function generateMetadata(
   };
 }
 
-/* ----------------------------- Page component ---------------------------- */
+/* -------------------------------------------------------------------------- */
+/*                               Page component                                */
+/* -------------------------------------------------------------------------- */
 
 export default async function PublicProfilePage({ params }: PageProps) {
   const { slug } = params;
@@ -160,7 +172,7 @@ export default async function PublicProfilePage({ params }: PageProps) {
         {headline ? <p className="mt-2 text-muted-foreground">{headline}</p> : null}
       </header>
 
-      {/* Branding & Media: show gallery if additional images exist */}
+      {/* Branding & Media: logo + small gallery */}
       {(profile.logoUrl || (profile.imageUrls?.length ?? 0) > 1) && (
         <section className="mb-8">
           <h3 className="mb-2 text-lg font-medium">Branding &amp; Media</h3>
@@ -279,7 +291,7 @@ export default async function PublicProfilePage({ params }: PageProps) {
         </section>
       )}
 
-      {/* Platform Handles */}
+      {/* Platforms (handles) */}
       {handlePairs.length > 0 && (
         <section className="mb-8">
           <h3 className="mb-2 text-lg font-medium">Platforms</h3>
