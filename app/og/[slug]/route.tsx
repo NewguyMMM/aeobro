@@ -1,4 +1,4 @@
-// app/og/[slug]/route.ts
+// app/og/[slug]/route.tsx
 import { ImageResponse } from "next/og";
 import { getBaseUrl } from "@/lib/getBaseUrl";
 
@@ -19,8 +19,7 @@ export const contentType = "image/png";
 
 type Ctx = { params: { slug: string } };
 
-function pick<T extends Record<string, any>>(obj: T) {
-  // Try Person → Organization → fallback
+function pick(obj: Record<string, any>) {
   const type = Array.isArray(obj["@type"]) ? obj["@type"][0] : obj["@type"];
   const isPerson = type === "Person";
   const isOrg = type === "Organization" || type === "LocalBusiness";
@@ -34,10 +33,10 @@ function pick<T extends Record<string, any>>(obj: T) {
 
   const tagline =
     obj.description ??
-    (obj.slogan || "") ??
-    (obj.tagline || "");
+    obj.slogan ??
+    obj.tagline ??
+    "";
 
-  // Try a logo or image
   const logo =
     (obj.logo && (typeof obj.logo === "string" ? obj.logo : obj.logo?.url)) ||
     (obj.image && (typeof obj.image === "string" ? obj.image : obj.image?.url)) ||
@@ -53,12 +52,10 @@ export async function GET(_req: Request, { params }: Ctx) {
   // Fetch JSON-LD for this profile; cache it at the edge too
   const schemaUrl = `${base}/api/profile/${encodeURIComponent(slug)}/schema`;
   const res = await fetch(schemaUrl, {
-    // cache the upstream schema for 1h as well
     next: { revalidate: 3600, tags: [`profile:${slug}:schema`] },
   });
 
   if (!res.ok) {
-    // Minimal not-found image
     return new ImageResponse(
       (
         <div
@@ -85,7 +82,6 @@ export async function GET(_req: Request, { params }: Ctx) {
   const schema = await res.json();
   const { name, tagline, logo } = pick(schema);
 
-  // Basic theme
   const bg = "linear-gradient(135deg, #0b1220 0%, #0e203a 60%, #123d5a 100%)";
   const accent = "#58a6ff";
   const muted = "rgba(255,255,255,0.7)";
@@ -169,7 +165,6 @@ export async function GET(_req: Request, { params }: Ctx) {
           }}
         >
           {logo ? (
-            // In @vercel/og we can use <img> with absolute URLs
             <img
               src={logo}
               alt="logo"
@@ -185,10 +180,6 @@ export async function GET(_req: Request, { params }: Ctx) {
         </div>
       </div>
     ),
-    {
-      ...size,
-      // Hint for better font rendering on some platforms
-      fonts: [],
-    }
+    { ...size }
   );
 }
