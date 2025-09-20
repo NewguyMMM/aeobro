@@ -3,8 +3,9 @@ import { prisma } from "@/lib/prisma";
 import { buildProfileSchema } from "@/lib/schema";
 import { getBaseUrl } from "@/lib/getBaseUrl";
 import Script from "next/script";
-import Image from "next/image";
 import { notFound } from "next/navigation";
+import type { Metadata } from "next";
+import OptimizedImg from "@/components/OptimizedImg";
 
 type PageProps = { params: { slug: string } };
 
@@ -15,8 +16,36 @@ type PageProps = { params: { slug: string } };
  */
 export const revalidate = 3600;
 
-// (Optional) Keep this route statically renderable. Avoid reading cookies/session here.
-// export const dynamic = "force-static";
+// Keep this route statically renderable (don’t read cookies/session here)
+
+/** SEO metadata (canonical, OG, Twitter) */
+export async function generateMetadata(
+  { params }: { params: { slug: string } }
+): Promise<Metadata> {
+  // Lean select for metadata to keep things fast
+  const profile = await prisma.profile.findUnique({
+    where: { slug: params.slug },
+    select: { displayName: true, tagline: true, logoUrl: true },
+  });
+
+  if (!profile) {
+    return { title: "Profile not found" };
+  }
+
+  const baseUrl = getBaseUrl();
+  const url = `${baseUrl}/p/${params.slug}`;
+  const title = profile.displayName ?? "Profile";
+  const description = profile.tagline ?? "Public profile";
+  const images = profile.logoUrl ? [profile.logoUrl] : [];
+
+  return {
+    title,
+    description,
+    alternates: { canonical: url },
+    openGraph: { title, description, url, images },
+    twitter: { card: "summary_large_image", title, description, images },
+  };
+}
 
 export default async function PublicProfilePage({ params }: PageProps) {
   const { slug } = params;
@@ -67,29 +96,21 @@ export default async function PublicProfilePage({ params }: PageProps) {
       <header className="mb-8">
         {image ? (
           <div className="mb-4 h-24 w-24 overflow-hidden rounded-2xl">
-            {/* Next/Image = automatic AVIF/WebP + CDN caching + DPR-aware sizing
-               IMPORTANT: add the image host(s) to next.config.js > images.remotePatterns */}
-            <Image
+            {/* next/image via our wrapper: AVIF/WebP + CDN caching + DPR-aware sizing */}
+            <OptimizedImg
               src={image}
-              alt={displayName}
+              alt={`${displayName} logo`}
               width={96}
               height={96}
-              className="h-24 w-24 object-cover"
               priority
               sizes="96px"
+              className="h-24 w-24 object-cover"
             />
           </div>
         ) : null}
 
         <h1 className="text-3xl font-semibold">{displayName}</h1>
         {headline ? <p className="mt-2 text-muted-foreground">{headline}</p> : null}
-
-        <p className="mt-4 text-sm text-gray-500">
-          Canonical:{" "}
-          <a className="underline" href={`${baseUrl}/p/${slug}`}>
-            {baseUrl}/p/{slug}
-          </a>
-        </p>
       </header>
 
       {/* Social / Links */}
