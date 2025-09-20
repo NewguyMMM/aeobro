@@ -1,63 +1,78 @@
 // lib/schema.ts
 import type { Profile } from "@prisma/client";
 
+/** Map editor entityType → schema.org @type */
+function schemaTypeFor(entityType?: string, orgHeuristic = false) {
+  switch ((entityType || "").toLowerCase()) {
+    case "local service":
+      return "LocalBusiness";
+    case "business":
+    case "organization":
+      return "Organization";
+    case "creator / person":
+      return "Person";
+    default:
+      // Fallback: if it looks like an org, use Organization; else Person
+      return orgHeuristic ? "Organization" : "Person";
+  }
+}
+
 /**
  * Build JSON-LD (schema.org) for a public profile.
- * Expands to Person vs Organization, with optional FAQ/Service hooks.
+ * - Uses entityType to pick @type
+ * - description prefers Bio → Tagline
+ * - Consolidates links/socials into sameAs
+ * - Keeps optional FAQ/Service hooks
  */
 export function buildProfileSchema(profile: Partial<Profile>, baseUrl: string) {
-  const slug = profile["slug" as keyof Profile] as string | undefined;
+  const slug = (profile as any)?.slug as string | undefined;
   const url = slug ? `${baseUrl}/p/${slug}` : baseUrl;
 
-  const name =
-    (profile["displayName" as keyof Profile] as string | null) ??
-    (profile["name" as keyof Profile] as string | null) ??
-    (profile["headline" as keyof Profile] as string | null) ??
-    undefined;
+  // Core identity
+  const displayName = (profile as any)?.displayName as string | null;
+  const legalName = (profile as any)?.legalName as string | null;
+  const entityType = (profile as any)?.entityType as string | null;
 
-  const description =
-    (profile["bio" as keyof Profile] as string | null) ??
-    (profile["description" as keyof Profile] as string | null) ??
-    undefined;
+  // Description: Bio → Tagline
+  const bio = (profile as any)?.bio as string | null;
+  const tagline = (profile as any)?.tagline as string | null;
+  const description = bio || tagline || undefined;
 
-  // Images
+  // Image fallbacks (prefer logo for orgs)
   const image =
-    (profile["image" as keyof Profile] as string | null) ??
-    (profile["avatarUrl" as keyof Profile] as string | null) ??
+    ((profile as any)?.logoUrl as string | null) ??
+    ((profile as any)?.avatarUrl as string | null) ??
+    ((profile as any)?.image as string | null) ??
     undefined;
 
-  // Organization details
-  const orgName =
-    (profile["organizationName" as keyof Profile] as string | null) ??
-    (profile["company" as keyof Profile] as string | null) ??
-    undefined;
-
-  // Contact info
+  // Contact
   const email =
-    (profile["publicEmail" as keyof Profile] as string | null) ??
-    (profile["email" as keyof Profile] as string | null) ??
+    ((profile as any)?.publicEmail as string | null) ??
+    ((profile as any)?.email as string | null) ??
     undefined;
-
   const telephone =
-    (profile["publicPhone" as keyof Profile] as string | null) ??
-    (profile["phone" as keyof Profile] as string | null) ??
+    ((profile as any)?.publicPhone as string | null) ??
+    ((profile as any)?.phone as string | null) ??
     undefined;
 
-  // Links / handles
-  let sameAs: string[] = [];
-  const links = profile["links" as keyof Profile] as any;
-  const socials = profile["socialLinks" as keyof Profile] as any;
-  if (Array.isArray(links)) {
-    sameAs = sameAs.concat(links.map((x) => (typeof x === "string" ? x : x?.url)).filter(Boolean));
-  }
-  if (Array.isArray(socials)) {
-    sameAs = sameAs.concat(socials.map((x) => (typeof x === "string" ? x : x?.url)).filter(Boolean));
-  }
+  // Links / socials → sameAs
+  const toUrl = (x: any) => (typeof x === "string" ? x : x?.url);
+  const linksArr = Array.isArray((profile as any)?.links) ? (profile as any)?.links : [];
+  const socialsArr = Array.isArray((profile as any)?.socialLinks) ? (profile as any)?.socialLinks : [];
+  const sameAs = Array.from(
+    new Set(
+      ([] as any[])
+        .concat(linksArr, socialsArr)
+        .map(toUrl)
+        .filter(Boolean)
+    )
+  );
+  const sameAsOut = sameAs.length ? sameAs : undefined;
 
-  // Postal address
-  const addr = (profile["address" as keyof Profile] as any) || {};
+  // Address (optional structured object if present on Profile model)
+  const addr = ((profile as any)?.address as any) || {};
   const address =
-    addr && (addr.streetAddress || addr.addressLocality || addr.postalCode)
+    addr && (addr.streetAddress || addr.addressLocality || addr.postalCode || addr.addressRegion)
       ? {
           "@type": "PostalAddress",
           streetAddress: addr.streetAddress || undefined,
@@ -68,63 +83,102 @@ export function buildProfileSchema(profile: Partial<Profile>, baseUrl: string) {
         }
       : undefined;
 
-  // Profile type
-  const isOrg =
-    (profile["profileType" as keyof Profile] as string | null)?.toLowerCase() === "organization" ||
-    (!!orgName && !name);
+  // Heuristic: treat as org if legalName exists and entityType is missing
+  const orgHeuristic = !!legalName && !entityType;
+  const schemaType = schemaTypeFor(entityType || undefined, orgHeuristic);
 
-  // Base schema
+  // Name rules: prefer displayName; for orgs fall back to legalName
+  const name =
+    (displayName as string | null) ??
+    (schemaType !== "Person" ? (legalName as string | null) : null) ??
+    undefined;
+
   const base: any = {
     "@context": "https://schema.org",
-    "@type": isOrg ? "Organization" : "Person",
+    "@type": schemaType,
     "@id": `${url}#profile`,
     url,
-    name: String(name || orgName || "Profile"),
+    name: name || (legalName || "Profile"),
     description,
     image,
-    sameAs: sameAs.length ? Array.from(new Set(sameAs)) : undefined,
+    sameAs: sameAsOut,
     email,
     telephone,
     address,
   };
 
-  if (isOrg) {
-    base.legalName = orgName || undefined;
-    // Optional: business services or FAQ markup (Pro/Business only)
-    if (profile["faqs" as keyof Profile]) {
-      base.mainEntity = (profile["faqs" as keyof Profile] as any[]).map((f) => ({
+  // Organization / LocalBusiness extras
+  if (schemaType === "Organization" || schemaType === "LocalBusiness") {
+    base.legalName = legalName || undefined;
+
+    // Optional: opening hours if you store a simple string
+    const hours = (profile as any)?.hours as string | null;
+    if (hours) base.openingHours = hours;
+
+    // Optional: languages served (comma list)
+    const languages = (profile as any)?.languages as string[] | null;
+    if (languages && languages.length) base.availableLanguage = languages;
+
+    // Optional: service area (comma list)
+    const serviceArea = (profile as any)?.serviceArea as string[] | null;
+    if (serviceArea && serviceArea.length) base.areaServed = serviceArea;
+
+    // Optional: foundedYear/teamSize/pricingModel
+    const foundedYear = (profile as any)?.foundedYear as number | null;
+    if (foundedYear) base.foundingDate = String(foundedYear);
+
+    const teamSize = (profile as any)?.teamSize as number | null;
+    if (teamSize) base.numberOfEmployees = teamSize;
+
+    const pricingModel = (profile as any)?.pricingModel as string | null;
+    if (pricingModel) base.additionalProperty = [{ "@type": "PropertyValue", name: "pricingModel", value: pricingModel }];
+
+    // Optional: Services (OfferCatalog)
+    const services = (profile as any)?.services as Array<{ name: string; desc?: string }>;
+    if (Array.isArray(services) && services.length) {
+      base.hasOfferCatalog = {
+        "@type": "OfferCatalog",
+        name: `${(legalName || displayName || "Services").toString()} Services`,
+        itemListElement: services.map((s) => ({
+          "@type": "Offer",
+          itemOffered: { "@type": "Service", name: s?.name, description: s?.desc || undefined },
+        })),
+      };
+    }
+
+    // Optional: FAQs (mainEntity as QAPage style)
+    const faqs = (profile as any)?.faqs as Array<{ q: string; a: string }>;
+    if (Array.isArray(faqs) && faqs.length) {
+      base.mainEntity = faqs.map((f) => ({
         "@type": "Question",
         name: f.q,
         acceptedAnswer: { "@type": "Answer", text: f.a },
       }));
     }
-    if (profile["services" as keyof Profile]) {
-      base.hasOfferCatalog = {
-        "@type": "OfferCatalog",
-        name: `${orgName} Services`,
-        itemListElement: (profile["services" as keyof Profile] as any[]).map((s) => ({
-          "@type": "Offer",
-          itemOffered: { "@type": "Service", name: s.name, description: s.desc },
-        })),
-      };
-    }
   } else {
     // Person extras
-    const jobTitle = (profile["jobTitle" as keyof Profile] as string | null) || undefined;
-    const worksFor =
-      (profile["organizationName" as keyof Profile] as string | null) ||
-      (profile["company" as keyof Profile] as string | null) ||
-      undefined;
+    const jobTitle = (profile as any)?.jobTitle as string | null;
     if (jobTitle) base.jobTitle = jobTitle;
+
+    const worksFor =
+      ((profile as any)?.organizationName as string | null) ??
+      ((profile as any)?.company as string | null) ??
+      (legalName as string | null) ??
+      undefined;
     if (worksFor) base.worksFor = { "@type": "Organization", name: worksFor };
   }
 
-  // Strip empties
-  Object.keys(base).forEach((k) => {
-    if (base[k] === undefined || base[k] === null || base[k] === "") {
+  // Remove empty values
+  for (const k of Object.keys(base)) {
+    if (
+      base[k] === undefined ||
+      base[k] === null ||
+      (typeof base[k] === "string" && base[k].trim() === "") ||
+      (Array.isArray(base[k]) && base[k].length === 0)
+    ) {
       delete base[k];
     }
-  });
+  }
 
   return base;
 }
