@@ -307,34 +307,36 @@ export async function PUT(req: Request) {
       where: { userId: auth.userId },
       update: payload,
       create: { userId: auth.userId, ...payload },
-      select: { id: true, slug: true }, // lean return for downstream revalidation
+      select: { id: true, slug: true }, // lean return
     });
 
-    /* ---------- 🔥 Cache invalidation: keep profiles fresh and cheap ---------- */
-
+    /* ---------- 🔥 Cache invalidation aligned to page tags ---------- */
     const oldSlug = existing?.slug;
 
-    // If slug changed, also revalidate old paths to flush cached HTML/JSON/OG
+    // Revalidate the specific HTML/JSON/OG paths
     if (oldSlug && oldSlug !== saved.slug) {
       revalidatePath(`/p/${oldSlug}`);
       revalidatePath(`/api/profile/${oldSlug}/schema`);
       revalidatePath(`/og/${oldSlug}`);
-      // If you created /schema/<slug> file route, you can also:
+      // If you added these:
       // revalidatePath(`/schema/${oldSlug}`);
-      // If you created /api/profile/<slug> (public JSON), you can also:
       // revalidatePath(`/api/profile/${oldSlug}`);
+      // Also nuke the old tag variant
+      revalidateTag(`profile:${oldSlug}`);
     }
 
-    // Revalidate current paths: HTML page, JSON-LD schema, and OG image
     revalidatePath(`/p/${saved.slug}`);
     revalidatePath(`/api/profile/${saved.slug}/schema`);
     revalidatePath(`/og/${saved.slug}`);
-    // Optional extras if you added these routes:
+    // Optional: if you have these routes:
     // revalidatePath(`/schema/${saved.slug}`);
     // revalidatePath(`/api/profile/${saved.slug}`);
 
-    // Optional but powerful: if your other routes fetch this profile with next: { tags: [`profile:${id}`] }
-    revalidateTag(`profile:${saved.id}`);
+    // IMPORTANT: your page caches use tag `profile:<slug>` (not ID)
+    revalidateTag(`profile:${saved.slug}`);
+
+    // Optional: if sitemap lists profiles, refresh it too
+    revalidatePath(`/sitemap.xml`);
 
     return NextResponse.json({ ok: true, slug: saved.slug, id: saved.id });
   } catch (err: any) {
