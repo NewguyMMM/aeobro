@@ -4,9 +4,13 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "prisma generate && sh -c 'export DATABASE_DIRECT_URL=${DATABASE_DIRECT_URL:-$DATABASE_URL}; prisma migrate deploy' && next build",
+    "build": "prisma generate && next build",
     "start": "next start",
-    "postinstall": "next telemetry disable"
+    "postinstall": "next telemetry disable",
+
+    "migrate:deploy": "sh -c 'export DATABASE_DIRECT_URL=${DATABASE_DIRECT_URL:-$DATABASE_URL}; prisma migrate deploy'",
+    "migrate:status": "prisma migrate status",
+    "prisma:generate": "prisma generate"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.10.0",
