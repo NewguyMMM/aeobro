@@ -12,6 +12,34 @@ datasource db {
   directUrl = env("DATABASE_DIRECT_URL")
 }
 
+/* ===============================
+   Enums
+   =============================== */
+
+enum ClaimStatus {
+  PENDING
+  PARTIAL
+  VERIFIED
+  FAILED
+}
+
+enum VerifyStatus {
+  PENDING
+  VERIFIED
+  FAILED
+}
+
+enum Plan {
+  FREE
+  LITE
+  PRO
+  BUSINESS
+}
+
+/* ===============================
+   Models
+   =============================== */
+
 model User {
   id            String    @id @default(cuid())
   name          String?
@@ -20,6 +48,14 @@ model User {
   image         String?
   welcomeSentAt DateTime? // one-time welcome flag
 
+  // --- Billing / Paywall ---
+  plan                 Plan     @default(FREE)
+  planStatus           String   @default("inactive") // active | trialing | past_due | canceled
+  stripeCustomerId     String?  @unique
+  stripeSubscriptionId String?  @unique
+  currentPeriodEnd     DateTime?
+
+  // Auth relations
   accounts      Account[]
   sessions      Session[]
 
@@ -164,17 +200,4 @@ model BioCode {
 
   @@index([userId])
   @@index([platform])
-}
-
-enum ClaimStatus {
-  PENDING
-  PARTIAL
-  VERIFIED
-  FAILED
-}
-
-enum VerifyStatus {
-  PENDING
-  VERIFIED
-  FAILED
 }
