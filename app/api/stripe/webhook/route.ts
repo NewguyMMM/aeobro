@@ -18,16 +18,12 @@ const PRICE_TO_PLAN: Record<string, "LITE" | "PRO" | "BUSINESS"> = {
   [process.env.NEXT_PUBLIC_STRIPE_PRICE_BUSINESS ?? ""]: "BUSINESS",
 };
 
-// Narrow a retrieved customer to a non-deleted Customer
+// Type guard: true when it's a live (non-deleted) Customer
 function isLiveCustomer(
-  c: unknown
+  c: Stripe.Customer | Stripe.DeletedCustomer
 ): c is Stripe.Customer {
-  return (
-    typeof c === "object" &&
-    c !== null &&
-    // @ts-expect-error: runtime guard for union
-    (c as any).deleted !== true
-  );
+  // DeletedCustomer has { deleted: true }; Customer has no 'deleted' key
+  return !("deleted" in (c as any) && (c as any).deleted === true);
 }
 
 async function upsertUserFromCustomerId(
@@ -48,15 +44,13 @@ async function upsertUserFromCustomerId(
     return prisma.user.update({ where: { id: byCustomer.id }, data: fields });
   }
 
-  // 2) Fallback: get email from Stripe customer (if not deleted), then match by email
-  const retrieved =
-    (await stripe.customers.retrieve(customerId)) as unknown as
-      | Stripe.Customer
-      | Stripe.DeletedCustomer;
+  // 2) Fallback: fetch customer and try by email
+  const retrieved = await stripe.customers.retrieve(customerId);
+  const cust = retrieved as unknown as Stripe.Customer | Stripe.DeletedCustomer;
 
-  if (isLiveCustomer(retrieved) && retrieved.email) {
+  if (isLiveCustomer(cust) && cust.email) {
     const byEmail = await prisma.user.findUnique({
-      where: { email: retrieved.email },
+      where: { email: cust.email },
       select: { id: true },
     });
     if (byEmail) {
@@ -67,7 +61,6 @@ async function upsertUserFromCustomerId(
     }
   }
 
-  // No matching user; nothing to do
   return null;
 }
 
