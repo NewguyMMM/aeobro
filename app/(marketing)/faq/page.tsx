@@ -20,6 +20,15 @@ export default function Page() {
     "mainEntity": [
       {
         "@type": "Question",
+        "name": "What is JSON-LD?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text":
+            "JSON-LD (JavaScript Object Notation for Linked Data) is a behind-the-scenes format that labels the facts on a page so Google, ChatGPT, and other AI systems can understand them with certainty. Think of it as a business card for machines: humans read your site, but AI needs clean, structured fields (name, links, category, address) to know who you are. Example (shortened): { \"@context\": \"https://schema.org\", \"@type\": \"CafeOrCoffeeShop\", \"name\": \"Joe's Coffee Shop\", \"address\": { \"streetAddress\": \"123 Main Street\", \"addressLocality\": \"Springfield\", \"addressRegion\": \"NJ\" } }"
+        }
+      },
+      {
+        "@type": "Question",
         "name": "What is AEOBRO?",
         "acceptedAnswer": {
           "@type": "Answer",
@@ -122,6 +131,40 @@ export default function Page() {
       </h1>
 
       <div className="space-y-8">
+        {/* NEW: What is JSON-LD? */}
+        <div className="card">
+          <h3 className="font-semibold">What is JSON-LD?</h3>
+          <p className="text-gray-700 mt-2">
+            <strong>JSON-LD</strong> (JavaScript Object Notation for Linked Data) is a behind-the-scenes
+            data format that labels the facts on a page so <strong>Google, ChatGPT, and other AI
+            systems</strong> can understand them with certainty.
+          </p>
+          <p className="text-gray-700 mt-2">
+            Think of it as a <strong>business card for machines</strong>: humans read your site, but AI
+            needs clean, structured fields (name, links, category, address) to know who you are.
+          </p>
+          <p className="text-gray-700 mt-2">
+            <strong>Why it matters:</strong> Structured, verified JSON-LD helps AI pull the{" "}
+            <em>right</em> details about your brand—consistently and with higher trust.
+          </p>
+          <div className="mt-4">
+            <pre className="bg-gray-50 p-4 rounded-xl overflow-auto text-sm">
+              <code>
+{`{
+  "@context": "https://schema.org",
+  "@type": "CafeOrCoffeeShop",
+  "name": "Joe's Coffee Shop",
+  "address": {
+    "streetAddress": "123 Main Street",
+    "addressLocality": "Springfield",
+    "addressRegion": "NJ"
+  }
+}`}
+              </code>
+            </pre>
+          </div>
+        </div>
+
         <div className="card">
           <h3 className="font-semibold">What is AEOBRO?</h3>
           <p className="text-gray-700 mt-2">
