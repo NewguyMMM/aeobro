@@ -16,8 +16,19 @@ const PRICE_TO_PLAN: Record<string, "LITE" | "PRO" | "BUSINESS"> = {
   [process.env.NEXT_PUBLIC_STRIPE_PRICE_LITE ?? ""]: "LITE",
   [process.env.NEXT_PUBLIC_STRIPE_PRICE_PRO ?? ""]: "PRO",
   [process.env.NEXT_PUBLIC_STRIPE_PRICE_BUSINESS ?? ""]: "BUSINESS",
-  // Enterprise omitted on purpose; add if you want to handle it.
 };
+
+// Narrow a retrieved customer to a non-deleted Customer
+function isLiveCustomer(
+  c: unknown
+): c is Stripe.Customer {
+  return (
+    typeof c === "object" &&
+    c !== null &&
+    // @ts-expect-error: runtime guard for union
+    (c as any).deleted !== true
+  );
+}
 
 async function upsertUserFromCustomerId(
   customerId: string,
@@ -28,29 +39,29 @@ async function upsertUserFromCustomerId(
     currentPeriodEnd?: Date | null;
   },
 ) {
-  // First try to update by customerId
-  const userByCustomer = await prisma.user.findFirst({
+  // 1) Try by customerId
+  const byCustomer = await prisma.user.findFirst({
     where: { stripeCustomerId: customerId },
     select: { id: true },
   });
-
-  if (userByCustomer) {
-    return prisma.user.update({
-      where: { id: userByCustomer.id },
-      data: fields,
-    });
+  if (byCustomer) {
+    return prisma.user.update({ where: { id: byCustomer.id }, data: fields });
   }
 
-  // Fallback: fetch customer email, try update by email
-  const customer = await stripe.customers.retrieve(customerId);
-  if (customer && typeof customer !== "string" && customer.email) {
-    const userByEmail = await prisma.user.findUnique({
-      where: { email: customer.email },
+  // 2) Fallback: get email from Stripe customer (if not deleted), then match by email
+  const retrieved =
+    (await stripe.customers.retrieve(customerId)) as unknown as
+      | Stripe.Customer
+      | Stripe.DeletedCustomer;
+
+  if (isLiveCustomer(retrieved) && retrieved.email) {
+    const byEmail = await prisma.user.findUnique({
+      where: { email: retrieved.email },
       select: { id: true },
     });
-    if (userByEmail) {
+    if (byEmail) {
       return prisma.user.update({
-        where: { id: userByEmail.id },
+        where: { id: byEmail.id },
         data: { stripeCustomerId: customerId, ...fields },
       });
     }
@@ -63,19 +74,19 @@ async function upsertUserFromCustomerId(
 export async function POST(req: Request) {
   let event: Stripe.Event;
 
+  // Verify signature
   try {
     const signature = req.headers.get("stripe-signature")!;
-    const rawBody = await req.text();
-    event = stripe.webhooks.constructEvent(rawBody, signature, WEBHOOK_SECRET);
+    const raw = await req.text();
+    event = stripe.webhooks.constructEvent(raw, signature, WEBHOOK_SECRET);
   } catch (err: any) {
-    console.error("❌ Webhook signature verification failed:", err?.message);
+    console.error("❌ Invalid Stripe signature:", err?.message);
     return new NextResponse("Invalid signature", { status: 400 });
   }
 
   try {
     switch (event.type) {
       case "checkout.session.completed": {
-        // Optionally grab subscription id and attach to user early
         const session = event.data.object as Stripe.Checkout.Session;
         const customerId = session.customer as string | undefined;
         const subscriptionId = session.subscription as string | undefined;
@@ -83,7 +94,6 @@ export async function POST(req: Request) {
         if (customerId && subscriptionId) {
           await upsertUserFromCustomerId(customerId, {
             stripeSubscriptionId: subscriptionId,
-            // plan gets set on subscription.* below (more reliable)
           });
         }
         break;
@@ -98,7 +108,7 @@ export async function POST(req: Request) {
         const plan =
           mappedPlan && ["trialing", "active", "past_due"].includes(sub.status)
             ? mappedPlan
-            : ("FREE" as const); // fallback if price not recognized
+            : ("FREE" as const);
 
         await upsertUserFromCustomerId(sub.customer as string, {
           stripeSubscriptionId: sub.id,
@@ -121,7 +131,7 @@ export async function POST(req: Request) {
       }
 
       default:
-        // Ignore other events (you can add more if needed)
+        // ignore other events
         break;
     }
 
