@@ -12,7 +12,6 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
   apiVersion: "2024-06-20",
 });
 
-// Allow only prices you’ve exposed in env
 const ALLOWED_PRICE_IDS = [
   process.env.NEXT_PUBLIC_STRIPE_PRICE_LITE!,
   process.env.NEXT_PUBLIC_STRIPE_PRICE_PRO!,
@@ -32,46 +31,35 @@ function appBaseUrl() {
 
 export async function POST(req: Request) {
   try {
-    // Require auth so we can attach the sub to this user
     const session = await getServerSession(authOptions);
     if (!session?.user?.email) {
       return NextResponse.json({ ok: false, message: "Unauthorized" }, { status: 401 });
     }
 
     const { priceId } = await req.json();
-
     if (!priceId) {
       return NextResponse.json({ ok: false, message: "Missing priceId" }, { status: 400 });
     }
     if (!ALLOWED_PRICE_IDS.includes(priceId)) {
       return NextResponse.json(
-        {
-          ok: false,
-          message:
-            "Invalid priceId (not in allowlist). Check client/server envs for NEXT_PUBLIC_STRIPE_PRICE_*.",
-        },
+        { ok: false, message: "Invalid priceId (not in allowlist). Check NEXT_PUBLIC_STRIPE_PRICE_*." },
         { status: 400 }
       );
     }
 
-    // Ensure Stripe Customer exists and is linked to the user
+    // --- HOTFIX: do NOT read/write user.stripeCustomerId (column not available yet)
     const user = await prisma.user.findUnique({
       where: { email: session.user.email },
-      select: { id: true, email: true, stripeCustomerId: true },
+      select: { id: true, email: true },
     });
     if (!user?.email) {
       return NextResponse.json({ ok: false, message: "User not found" }, { status: 401 });
     }
 
-    let customerId = user.stripeCustomerId;
-    if (!customerId) {
-      const created = await stripe.customers.create({ email: user.email });
-      customerId = created.id;
-      await prisma.user.update({
-        where: { id: user.id },
-        data: { stripeCustomerId: customerId },
-      });
-    }
+    // Try to reuse an existing Stripe customer by email; else create one
+    const existing = await stripe.customers.list({ email: user.email, limit: 1 });
+    const customerId =
+      existing.data[0]?.id || (await stripe.customers.create({ email: user.email })).id;
 
     const base = appBaseUrl();
 
@@ -82,7 +70,6 @@ export async function POST(req: Request) {
       allow_promotion_codes: true,
       billing_address_collection: "auto",
       automatic_tax: { enabled: false },
-      // Use existing pages
       success_url: `${base}/dashboard?checkout=success`,
       cancel_url: `${base}/pricing?checkout=cancel`,
       customer_email: user.email,
