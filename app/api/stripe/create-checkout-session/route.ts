@@ -12,12 +12,13 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
   apiVersion: "2024-06-20",
 });
 
+// Allow only the prices you’ve exposed via env
 const ALLOWED_PRICE_IDS = [
-  process.env.NEXT_PUBLIC_STRIPE_PRICE_LITE!,
-  process.env.NEXT_PUBLIC_STRIPE_PRICE_PRO!,
-  process.env.NEXT_PUBLIC_STRIPE_PRICE_BUSINESS!,
-  process.env.NEXT_PUBLIC_STRIPE_PRICE_ENTERPRISE!,
-].filter(Boolean);
+  process.env.NEXT_PUBLIC_STRIPE_PRICE_LITE,
+  process.env.NEXT_PUBLIC_STRIPE_PRICE_PRO,
+  process.env.NEXT_PUBLIC_STRIPE_PRICE_BUSINESS,
+  process.env.NEXT_PUBLIC_STRIPE_PRICE_ENTERPRISE,
+].filter(Boolean) as string[];
 
 function appBaseUrl() {
   const u =
@@ -31,6 +32,7 @@ function appBaseUrl() {
 
 export async function POST(req: Request) {
   try {
+    // Require auth so we can associate the purchase with a user
     const session = await getServerSession(authOptions);
     if (!session?.user?.email) {
       return NextResponse.json({ ok: false, message: "Unauthorized" }, { status: 401 });
@@ -42,21 +44,29 @@ export async function POST(req: Request) {
     }
     if (!ALLOWED_PRICE_IDS.includes(priceId)) {
       return NextResponse.json(
-        { ok: false, message: "Invalid priceId (not in allowlist). Check NEXT_PUBLIC_STRIPE_PRICE_*." },
+        {
+          ok: false,
+          message:
+            "Invalid priceId (not in allowlist). Check NEXT_PUBLIC_STRIPE_PRICE_* in your env.",
+        },
         { status: 400 }
       );
     }
 
-    // --- HOTFIX: do NOT read/write user.stripeCustomerId (column not available yet)
-    const user = await prisma.user.findUnique({
+    // --- HOTFIX: don't rely on stripeCustomerId column yet ---
+    // Ensure we have a User row; if missing (e.g., after DB reset), create it.
+    let user = await prisma.user.findUnique({
       where: { email: session.user.email },
       select: { id: true, email: true },
     });
-    if (!user?.email) {
-      return NextResponse.json({ ok: false, message: "User not found" }, { status: 401 });
+    if (!user) {
+      user = await prisma.user.create({
+        data: { email: session.user.email, name: session.user.name ?? null },
+        select: { id: true, email: true },
+      });
     }
 
-    // Try to reuse an existing Stripe customer by email; else create one
+    // Reuse an existing Stripe customer for this email if possible, else create one
     const existing = await stripe.customers.list({ email: user.email, limit: 1 });
     const customerId =
       existing.data[0]?.id || (await stripe.customers.create({ email: user.email })).id;
@@ -65,19 +75,24 @@ export async function POST(req: Request) {
 
     const checkout = await stripe.checkout.sessions.create({
       mode: "subscription",
-      customer: customerId,
+      customer: customerId, // ✅ keep ONLY customer; DO NOT include customer_email simultaneously
       line_items: [{ price: priceId, quantity: 1 }],
       allow_promotion_codes: true,
       billing_address_collection: "auto",
       automatic_tax: { enabled: false },
+
       success_url: `${base}/dashboard?checkout=success`,
       cancel_url: `${base}/pricing?checkout=cancel`,
-      customer_email: user.email,
+
+      // Note: Do NOT set `customer_email` when `customer` is provided
       metadata: { plan_price_id: priceId, user_email: user.email },
     });
 
     if (!checkout.url) {
-      return NextResponse.json({ ok: false, message: "Stripe did not return a URL" }, { status: 500 });
+      return NextResponse.json(
+        { ok: false, message: "Stripe did not return a Checkout URL" },
+        { status: 500 }
+      );
     }
 
     return NextResponse.json({ ok: true, url: checkout.url });
