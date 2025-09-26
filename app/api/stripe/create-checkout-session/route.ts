@@ -20,17 +20,38 @@ const ALLOWED_PRICE_IDS = [
   process.env.NEXT_PUBLIC_STRIPE_PRICE_ENTERPRISE!,
 ].filter(Boolean);
 
+function appBaseUrl() {
+  const u =
+    process.env.NEXTAUTH_URL ||
+    process.env.VERCEL_URL ||
+    process.env.NEXT_PUBLIC_APP_URL ||
+    process.env.SITE_URL ||
+    "http://localhost:3000";
+  return u.startsWith("http") ? u : `https://${u}`;
+}
+
 export async function POST(req: Request) {
   try {
     // Require auth so we can attach the sub to this user
     const session = await getServerSession(authOptions);
     if (!session?.user?.email) {
-      return NextResponse.json({ ok: false, error: "UNAUTHORIZED" }, { status: 401 });
+      return NextResponse.json({ ok: false, message: "Unauthorized" }, { status: 401 });
     }
 
     const { priceId } = await req.json();
-    if (!priceId || !ALLOWED_PRICE_IDS.includes(priceId)) {
-      return NextResponse.json({ ok: false, error: "INVALID_PRICE" }, { status: 400 });
+
+    if (!priceId) {
+      return NextResponse.json({ ok: false, message: "Missing priceId" }, { status: 400 });
+    }
+    if (!ALLOWED_PRICE_IDS.includes(priceId)) {
+      return NextResponse.json(
+        {
+          ok: false,
+          message:
+            "Invalid priceId (not in allowlist). Check client/server envs for NEXT_PUBLIC_STRIPE_PRICE_*.",
+        },
+        { status: 400 }
+      );
     }
 
     // Ensure Stripe Customer exists and is linked to the user
@@ -39,25 +60,20 @@ export async function POST(req: Request) {
       select: { id: true, email: true, stripeCustomerId: true },
     });
     if (!user?.email) {
-      return NextResponse.json({ ok: false, error: "NO_USER" }, { status: 401 });
+      return NextResponse.json({ ok: false, message: "User not found" }, { status: 401 });
     }
 
-    const customerId =
-      user.stripeCustomerId ||
-      (await stripe.customers.create({ email: user.email })).id;
-
-    if (!user.stripeCustomerId) {
+    let customerId = user.stripeCustomerId;
+    if (!customerId) {
+      const created = await stripe.customers.create({ email: user.email });
+      customerId = created.id;
       await prisma.user.update({
         where: { id: user.id },
         data: { stripeCustomerId: customerId },
       });
     }
 
-    // Build return URLs
-    const origin =
-      process.env.NEXT_PUBLIC_APP_URL ||
-      process.env.SITE_URL ||
-      "http://localhost:3000";
+    const base = appBaseUrl();
 
     const checkout = await stripe.checkout.sessions.create({
       mode: "subscription",
@@ -66,19 +82,23 @@ export async function POST(req: Request) {
       allow_promotion_codes: true,
       billing_address_collection: "auto",
       automatic_tax: { enabled: false },
-
-      // If you don't create /billing/success and /billing/cancel,
-      // change these two lines to your existing pages (see Option B below).
-      success_url: `${origin}/billing/success`,
-      cancel_url: `${origin}/billing/cancel`,
+      // Use existing pages
+      success_url: `${base}/dashboard?checkout=success`,
+      cancel_url: `${base}/pricing?checkout=cancel`,
+      customer_email: user.email,
+      metadata: { plan_price_id: priceId, user_email: user.email },
     });
+
+    if (!checkout.url) {
+      return NextResponse.json({ ok: false, message: "Stripe did not return a URL" }, { status: 500 });
+    }
 
     return NextResponse.json({ ok: true, url: checkout.url });
   } catch (err: any) {
     console.error("checkout error:", err);
     return NextResponse.json(
-      { ok: false, error: err?.message || "Checkout error" },
-      { status: 500 },
+      { ok: false, message: err?.message || "Checkout error" },
+      { status: 500 }
     );
   }
 }
