@@ -38,7 +38,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, message: "Unauthorized" }, { status: 401 });
     }
 
-    const { priceId } = await req.json();
+    const { priceId } = (await req.json()) as { priceId?: string };
     if (!priceId) {
       return NextResponse.json({ ok: false, message: "Missing priceId" }, { status: 400 });
     }
@@ -66,26 +66,26 @@ export async function POST(req: Request) {
       });
     }
 
+    // Normalize to a guaranteed string (Prisma type is string | null)
+    const email: string = user.email ?? session.user.email;
+
     // Reuse an existing Stripe customer for this email if possible, else create one
-    const existing = await stripe.customers.list({ email: user.email, limit: 1 });
+    const existing = await stripe.customers.list({ email, limit: 1 });
     const customerId =
-      existing.data[0]?.id || (await stripe.customers.create({ email: user.email })).id;
+      existing.data[0]?.id || (await stripe.customers.create({ email })).id;
 
     const base = appBaseUrl();
 
     const checkout = await stripe.checkout.sessions.create({
       mode: "subscription",
-      customer: customerId, // ✅ keep ONLY customer; DO NOT include customer_email simultaneously
+      customer: customerId, // keep ONLY customer; do NOT include customer_email simultaneously
       line_items: [{ price: priceId, quantity: 1 }],
       allow_promotion_codes: true,
       billing_address_collection: "auto",
       automatic_tax: { enabled: false },
-
       success_url: `${base}/dashboard?checkout=success`,
       cancel_url: `${base}/pricing?checkout=cancel`,
-
-      // Note: Do NOT set `customer_email` when `customer` is provided
-      metadata: { plan_price_id: priceId, user_email: user.email },
+      metadata: { plan_price_id: priceId, user_email: email },
     });
 
     if (!checkout.url) {
