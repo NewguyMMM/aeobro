@@ -1,5 +1,5 @@
 "use client";
-import { useState, useCallback } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 const PRICES = {
   LITE: process.env.NEXT_PUBLIC_STRIPE_PRICE_LITE ?? "",
@@ -13,6 +13,17 @@ export default function PricingPage() {
   const [loading, setLoading] = useState<PlanTitle | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
+  // Clear any stale "Redirecting…" state when returning via back/forward cache or refocusing tab
+  useEffect(() => {
+    const reset = () => setLoading(null);
+    window.addEventListener("pageshow", reset);
+    window.addEventListener("focus", reset);
+    return () => {
+      window.removeEventListener("pageshow", reset);
+      window.removeEventListener("focus", reset);
+    };
+  }, []);
+
   const startCheckout = useCallback(async (priceId: string, plan: PlanTitle) => {
     setErr(null);
 
@@ -23,7 +34,6 @@ export default function PricingPage() {
 
     setLoading(plan);
     try {
-      // NOTE: ensure this path matches your server route filename
       const res = await fetch("/api/stripe/create-checkout-session", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -32,18 +42,19 @@ export default function PricingPage() {
 
       const ct = res.headers.get("content-type") || "";
       if (!ct.includes("application/json")) {
-        throw new Error("Unexpected response (not JSON). Check API route path/guards.");
+        throw new Error("Unexpected response (not JSON). Check API route/guards.");
       }
 
       const data = await res.json();
       if (!res.ok) throw new Error(data?.message || "Checkout failed.");
       if (!data?.url) throw new Error("No checkout URL returned by server.");
 
-      window.location.href = data.url as string;
+      // Use assign so user can go back; 'pageshow' handler above will clear the loading state.
+      window.location.assign(data.url as string);
     } catch (e: any) {
       console.error("Checkout error:", e);
       setErr(e?.message || "Something went wrong starting checkout.");
-      setLoading(null); // restore button instead of sticking on “Redirecting…”
+      setLoading(null); // never leave UI stuck
     }
   }, []);
 
@@ -77,7 +88,7 @@ export default function PricingPage() {
       </ul>
       <button
         className="btn mt-auto"
-        disabled={loading !== null}
+        disabled={loading === title} // only disable the one being used
         onClick={() => startCheckout(priceId, title)}
       >
         {loading === title ? "Redirecting…" : btnText}
@@ -113,7 +124,12 @@ export default function PricingPage() {
           title="Business"
           price="$199/mo"
           features={["Everything in Pro"]}
-          soon={["Multi-location (10)", "Team seats (3)", "Bulk import + webhooks", "Advanced analytics"]}
+          soon={[
+            "Multi-location (10)",
+            "Team seats (3)",
+            "Bulk import + webhooks",
+            "Advanced analytics",
+          ]}
           btnText="Get Business"
           priceId={PRICES.BUSINESS}
         />
