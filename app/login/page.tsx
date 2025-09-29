@@ -2,12 +2,20 @@
 "use client";
 
 import * as React from "react";
-import { useSearchParams } from "next/navigation";
 import { signIn } from "next-auth/react";
 
 export default function LoginPage() {
-  const sp = useSearchParams();
-  const callbackUrl = sp.get("callbackUrl") || "/dashboard";
+  // derive callbackUrl from ?callbackUrl=... on the client
+  const [callbackUrl, setCallbackUrl] = React.useState("/dashboard");
+  React.useEffect(() => {
+    try {
+      const qs = new URLSearchParams(window.location.search);
+      const cb = qs.get("callbackUrl");
+      if (cb) setCallbackUrl(cb);
+    } catch {
+      // ignore
+    }
+  }, []);
 
   const [email, setEmail] = React.useState("");
   const [busy, setBusy] = React.useState(false);
@@ -29,7 +37,7 @@ export default function LoginPage() {
 
     setBusy(true);
     try {
-      // Send magic link without redirecting this page
+      // Send magic link (no redirect here; NextAuth will handle after click)
       await signIn("email", { email: trimmed, callbackUrl, redirect: false });
       setMessage("Check your email for the sign-in link.");
     } catch (err: any) {
