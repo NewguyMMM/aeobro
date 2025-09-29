@@ -28,6 +28,7 @@ export default function PricingPage() {
 
   function hrefFor(plan: PlanTitle, priceId: string) {
     if (!priceId) return "#";
+    // Server route will handle: if not signed in -> NextAuth email; else -> Stripe Checkout
     return `/checkout?plan=${encodeURIComponent(plan)}&priceId=${encodeURIComponent(priceId)}`;
   }
 
