@@ -1,7 +1,7 @@
 // app/(marketing)/pricing/page.tsx
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 const PRICES = {
   LITE: process.env.NEXT_PUBLIC_STRIPE_PRICE_LITE ?? "",
@@ -10,6 +10,10 @@ const PRICES = {
 } as const;
 
 type PlanTitle = "Lite" | "Pro" | "Business";
+
+function cx(...parts: Array<string | false | null | undefined>) {
+  return parts.filter(Boolean).join(" ");
+}
 
 export default function PricingPage() {
   const [loading, setLoading] = useState<PlanTitle | null>(null);
@@ -28,9 +32,51 @@ export default function PricingPage() {
 
   function hrefFor(plan: PlanTitle, priceId: string) {
     if (!priceId) return "#";
-    // Server route will handle: if not signed in -> NextAuth email; else -> Stripe Checkout
+    // Server route handles auth → Stripe
     return `/checkout?plan=${encodeURIComponent(plan)}&priceId=${encodeURIComponent(priceId)}`;
   }
+
+  // Show the Stripe price-id helper only in dev and only if something's missing
+  const showConfigHint = useMemo(() => {
+    const missing = !PRICES.LITE || !PRICES.PRO || !PRICES.BUSINESS;
+    return process.env.NODE_ENV !== "production" && missing;
+  }, []);
+
+  const Button = ({
+    children,
+    href,
+    onClick,
+    disabled,
+    title,
+  }: {
+    children: React.ReactNode;
+    href?: string;
+    onClick?: () => void;
+    disabled?: boolean;
+    title?: string;
+  }) => {
+    const base =
+      "mt-auto inline-flex h-10 items-center justify-center rounded-xl px-4 py-2 text-center font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-sky-500";
+    const enabled = "bg-black text-white hover:bg-sky-600";
+    const disabledCls = "bg-black/50 text-white/80 cursor-not-allowed";
+    if (href && !disabled) {
+      return (
+        <a href={href} className={cx(base, enabled)} onClick={onClick}>
+          {children}
+        </a>
+      );
+    }
+    return (
+      <button
+        className={cx(base, disabled ? disabledCls : enabled)}
+        disabled={disabled}
+        title={title}
+        onClick={onClick}
+      >
+        {children}
+      </button>
+    );
+  };
 
   const PlanCard = ({
     title,
@@ -39,6 +85,7 @@ export default function PricingPage() {
     soon = [],
     btnText,
     priceId,
+    featured = false,
   }: {
     title: PlanTitle;
     price: string;
@@ -46,11 +93,23 @@ export default function PricingPage() {
     soon?: string[];
     btnText: string;
     priceId: string;
+    featured?: boolean;
   }) => {
     const disabled = !priceId;
 
     return (
-      <div className="rounded-2xl border p-6 flex flex-col gap-4">
+      <div
+        className={cx(
+          "relative flex flex-col gap-4 rounded-2xl border p-6 shadow-sm",
+          featured && "border-sky-500/40 shadow-md"
+        )}
+      >
+        {featured && (
+          <div className="absolute -top-3 left-6 rounded-full bg-sky-600 px-3 py-1 text-xs font-semibold text-white shadow">
+            Most Popular
+          </div>
+        )}
+
         <h3 className="text-xl font-semibold">{title}</h3>
         <div className="text-3xl font-bold">{price}</div>
 
@@ -66,22 +125,17 @@ export default function PricingPage() {
         </ul>
 
         {disabled ? (
-          <button
-            className="btn mt-auto opacity-50 pointer-events-none"
-            aria-disabled
+          <Button
+            disabled
             title={`Missing Stripe Price ID for ${title}.`}
             onClick={() => setErr(`Missing Stripe Price ID for ${title}.`)}
           >
             {btnText}
-          </button>
+          </Button>
         ) : (
-          <a
-            href={hrefFor(title, priceId)}
-            className="btn mt-auto"
-            onClick={() => setLoading(title)}
-          >
+          <Button href={hrefFor(title, priceId)} onClick={() => setLoading(title)}>
             {loading === title ? "Redirecting…" : btnText}
-          </a>
+          </Button>
         )}
       </div>
     );
@@ -95,7 +149,7 @@ export default function PricingPage() {
         </div>
       )}
 
-      <div className="grid md:grid-cols-3 gap-6">
+      <div className="grid gap-6 md:grid-cols-3">
         <PlanCard
           title="Lite"
           price="$3.99/mo"
@@ -111,6 +165,7 @@ export default function PricingPage() {
           soon={["FAQ markup", "Service markup", "Change history"]}
           btnText="Get Pro"
           priceId={PRICES.PRO}
+          featured
         />
 
         <PlanCard
@@ -128,9 +183,11 @@ export default function PricingPage() {
         />
       </div>
 
-      <p className="text-sm text-gray-500 mt-4">
-        If a plan button is disabled, add the corresponding Stripe Price ID to your environment variables.
-      </p>
+      {showConfigHint && (
+        <p className="mt-4 text-sm text-gray-500">
+          If a plan button is disabled, add the corresponding Stripe Price ID to your environment variables.
+        </p>
+      )}
     </div>
   );
 }
