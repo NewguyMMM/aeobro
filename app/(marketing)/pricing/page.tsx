@@ -142,7 +142,7 @@ export default function PricingPage() {
   };
 
   return (
-    {/* Extra top padding for more space under header; a bit more bottom too */}
+    // Extra top padding for more space under header; a bit more bottom too
     <div className="container pt-28 pb-20">
       {err && (
         <div className="mb-6 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
