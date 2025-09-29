@@ -1,5 +1,7 @@
+// app/(marketing)/pricing/page.tsx
 "use client";
-import { useCallback, useEffect, useState } from "react";
+
+import { useEffect, useState } from "react";
 
 const PRICES = {
   LITE: process.env.NEXT_PUBLIC_STRIPE_PRICE_LITE ?? "",
@@ -13,7 +15,7 @@ export default function PricingPage() {
   const [loading, setLoading] = useState<PlanTitle | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
-  // Clear any stale "Redirecting…" state when returning via back/forward cache or refocusing tab
+  // Clear "Redirecting…" if user navigates back from Stripe or refocuses the tab
   useEffect(() => {
     const reset = () => setLoading(null);
     window.addEventListener("pageshow", reset);
@@ -24,39 +26,10 @@ export default function PricingPage() {
     };
   }, []);
 
-  const startCheckout = useCallback(async (priceId: string, plan: PlanTitle) => {
-    setErr(null);
-
-    if (!priceId) {
-      setErr(`Missing Stripe Price ID for ${plan}.`);
-      return;
-    }
-
-    setLoading(plan);
-    try {
-      const res = await fetch("/api/stripe/create-checkout-session", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ priceId }),
-      });
-
-      const ct = res.headers.get("content-type") || "";
-      if (!ct.includes("application/json")) {
-        throw new Error("Unexpected response (not JSON). Check API route/guards.");
-      }
-
-      const data = await res.json();
-      if (!res.ok) throw new Error(data?.message || "Checkout failed.");
-      if (!data?.url) throw new Error("No checkout URL returned by server.");
-
-      // Use assign so user can go back; 'pageshow' handler above will clear the loading state.
-      window.location.assign(data.url as string);
-    } catch (e: any) {
-      console.error("Checkout error:", e);
-      setErr(e?.message || "Something went wrong starting checkout.");
-      setLoading(null); // never leave UI stuck
-    }
-  }, []);
+  function hrefFor(plan: PlanTitle, priceId: string) {
+    if (!priceId) return "#";
+    return `/checkout?plan=${encodeURIComponent(plan)}&priceId=${encodeURIComponent(priceId)}`;
+  }
 
   const PlanCard = ({
     title,
@@ -72,29 +45,46 @@ export default function PricingPage() {
     soon?: string[];
     btnText: string;
     priceId: string;
-  }) => (
-    <div className="rounded-2xl border p-6 flex flex-col gap-4">
-      <h3 className="text-xl font-semibold">{title}</h3>
-      <div className="text-3xl font-bold">{price}</div>
-      <ul className="text-sm space-y-1">
-        {features.map((f) => (
-          <li key={f}>✅ {f}</li>
-        ))}
-        {soon.map((f) => (
-          <li key={f} className="opacity-70">
-            🛠️ {f} — <em>Coming soon</em>
-          </li>
-        ))}
-      </ul>
-      <button
-        className="btn mt-auto"
-        disabled={loading === title} // only disable the one being used
-        onClick={() => startCheckout(priceId, title)}
-      >
-        {loading === title ? "Redirecting…" : btnText}
-      </button>
-    </div>
-  );
+  }) => {
+    const disabled = !priceId;
+
+    return (
+      <div className="rounded-2xl border p-6 flex flex-col gap-4">
+        <h3 className="text-xl font-semibold">{title}</h3>
+        <div className="text-3xl font-bold">{price}</div>
+
+        <ul className="text-sm space-y-1">
+          {features.map((f) => (
+            <li key={f}>✅ {f}</li>
+          ))}
+          {soon.map((f) => (
+            <li key={f} className="opacity-70">
+              🛠️ {f} — <em>Coming soon</em>
+            </li>
+          ))}
+        </ul>
+
+        {disabled ? (
+          <button
+            className="btn mt-auto opacity-50 pointer-events-none"
+            aria-disabled
+            title={`Missing Stripe Price ID for ${title}.`}
+            onClick={() => setErr(`Missing Stripe Price ID for ${title}.`)}
+          >
+            {btnText}
+          </button>
+        ) : (
+          <a
+            href={hrefFor(title, priceId)}
+            className="btn mt-auto"
+            onClick={() => setLoading(title)}
+          >
+            {loading === title ? "Redirecting…" : btnText}
+          </a>
+        )}
+      </div>
+    );
+  };
 
   return (
     <div className="container py-16">
@@ -112,6 +102,7 @@ export default function PricingPage() {
           btnText="Get Lite"
           priceId={PRICES.LITE}
         />
+
         <PlanCard
           title="Pro"
           price="$49/mo"
@@ -120,6 +111,7 @@ export default function PricingPage() {
           btnText="Get Pro"
           priceId={PRICES.PRO}
         />
+
         <PlanCard
           title="Business"
           price="$199/mo"
@@ -134,6 +126,10 @@ export default function PricingPage() {
           priceId={PRICES.BUSINESS}
         />
       </div>
+
+      <p className="text-sm text-gray-500 mt-4">
+        If a plan button is disabled, add the corresponding Stripe Price ID to your environment variables.
+      </p>
     </div>
   );
 }
