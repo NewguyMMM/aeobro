@@ -141,9 +141,7 @@ export default function PricingPage() {
         <Button
           disabled={disabled}
           title={disabled ? `Missing Stripe Price ID for ${title}.` : undefined}
-          onClick={
-            disabled ? undefined : () => startCheckout(priceId, title)
-          }
+          onClick={disabled ? undefined : () => startCheckout(priceId, title)}
         >
           {loading === title ? "Redirecting…" : btnText}
         </Button>
@@ -165,7 +163,7 @@ export default function PricingPage() {
         <PlanCard
           title="Lite"
           price="$3.99/mo"
-          features={["Person/Creator JSON-LD", "Basic profile (links/images caps)"]}
+          features={["Centralized AI Ready Profile", "Basic profile (links/images caps)"]}
           btnText="Get Lite"
           priceId={PRICES.LITE}
         />
@@ -173,7 +171,7 @@ export default function PricingPage() {
         <PlanCard
           title="Pro"
           price="$49/mo"
-          features={["Organization/LocalBusiness JSON-LD"]}
+          features={["Centralized AI Ready Profile"]}
           soon={["FAQ markup", "Service markup", "Change history"]}
           btnText="Get Pro"
           priceId={PRICES.PRO}
