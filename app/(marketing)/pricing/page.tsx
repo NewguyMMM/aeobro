@@ -19,6 +19,25 @@ export default function PricingPage() {
   const [loading, setLoading] = useState<PlanTitle | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
+  // Auto-resume checkout after sign-in if URL has ?start=<priceId>&plan=<PlanTitle>
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    const priceId = url.searchParams.get("start");
+    const plan = url.searchParams.get("plan") as PlanTitle | null;
+
+    if (priceId && plan) {
+      // Clean URL first to avoid loops on refresh
+      url.searchParams.delete("start");
+      url.searchParams.delete("plan");
+      const clean =
+        url.pathname + (url.searchParams.toString() ? `?${url.searchParams}` : "");
+      window.history.replaceState({}, "", clean);
+      // Kick off checkout
+      startCheckout(priceId, plan);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Clear "Redirecting…" if user navigates back from Stripe or refocuses the tab
   useEffect(() => {
     const reset = () => setLoading(null);
@@ -45,6 +64,17 @@ export default function PricingPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ priceId }),
       });
+
+      // If not signed in → send to NextAuth sign-in, then return and auto-resume
+      if (res.status === 401) {
+        const callbackUrl = new URL(window.location.href);
+        callbackUrl.searchParams.set("start", priceId);
+        callbackUrl.searchParams.set("plan", plan);
+        const signin = new URL("/api/auth/signin", window.location.origin);
+        signin.searchParams.set("callbackUrl", callbackUrl.toString());
+        window.location.assign(signin.toString());
+        return;
+      }
 
       const data = await res.json();
       if (!res.ok) throw new Error(data?.message || "Failed to start checkout.");
