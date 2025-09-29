@@ -105,7 +105,7 @@ export default function PricingPage() {
         )}
       >
         {featured && (
-          <div className="absolute -top-4 left-6 rounded-full bg-sky-600 px-3 py-1 text-xs font-semibold text-white shadow">
+          <div className="absolute -top-2 md:-top-3 left-6 rounded-full bg-sky-600 px-3 py-1 text-xs font-semibold text-white shadow">
             Most Popular
           </div>
         )}
@@ -142,15 +142,16 @@ export default function PricingPage() {
   };
 
   return (
-    // Extra top padding for more space under header; a bit more bottom too
-    <div className="container pt-28 pb-20">
+    // Increase TOP padding to create the breathing room under the header
+    <div className="container pt-24 pb-16">
       {err && (
         <div className="mb-6 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
           {err}
         </div>
       )}
 
-      <div className="grid gap-6 md:grid-cols-3">
+      {/* Small top margin on the grid to maintain symmetry with the footer gap */}
+      <div className="grid gap-6 md:grid-cols-3 mt-2">
         <PlanCard
           title="Lite"
           price="$3.99/mo"
