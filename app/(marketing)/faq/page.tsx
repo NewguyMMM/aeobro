@@ -8,7 +8,7 @@ export const revalidate = 3600;
 export const metadata = {
   title: "AEOBRO FAQ",
   description:
-    "Answers about AEOBRO verification, tiers, publishing to AI engines, cancellations, and refunds.",
+    "Answers about AEOBRO verification, tiers, publishing to AI engines, cancellations, and feature definitions.",
   alternates: { canonical: "/faq" },
 } as const;
 
@@ -35,7 +35,6 @@ export default function Page() {
           text: "AI Engine Optimization · Business Reach Optimization.",
         },
       },
-      // ✅ Renamed question + updated answer text
       {
         "@type": "Question",
         name: "How do I create a profile on AEOBRO?",
@@ -44,7 +43,6 @@ export default function Page() {
           text: "Click the \"Create Your AI Ready Profile\" button on aeobro.com.",
         },
       },
-      // ✅ New question immediately after the creation question
       {
         "@type": "Question",
         name: "What is an AI-ready Profile?",
@@ -134,6 +132,98 @@ export default function Page() {
           "@type": "Answer",
           text:
             "After lapse, premium features and editing are disabled and the public profile is unpublished (no longer crawlable). Data is retained for 90 days for reactivation; after that, it may be deleted per policy.",
+        },
+      },
+
+      /* ------ NEW: Feature explanations (FAQPage JSON-LD) ------ */
+      {
+        "@type": "Question",
+        name: "What is a Centralized AI Ready Profile?",
+        acceptedAnswer: {
+          "@type": "Answer",
+          text:
+            "A single public page that consolidates your official links, facts, and structured JSON-LD. Advantage: reduces confusion for AI systems by pointing them at one verified source of truth. No guarantee of ranking or inclusion.",
+        },
+      },
+      {
+        "@type": "Question",
+        name: "What does Basic profile (links/images caps) include?",
+        acceptedAnswer: {
+          "@type": "Answer",
+          text:
+            "Core fields (name, tagline, bio) plus a limited number of links and images. Advantage: a quick, lightweight setup that still produces valid structured data without heavy maintenance.",
+        },
+      },
+      {
+        "@type": "Question",
+        name: "What is FAQ markup?",
+        acceptedAnswer: {
+          "@type": "Answer",
+          text:
+            "A way to publish your common questions and answers in schema.org format. Advantage: helps AI assistants and search engines retrieve accurate responses to routine questions. Marked as Coming soon; not yet available.",
+        },
+      },
+      {
+        "@type": "Question",
+        name: "What is Service markup?",
+        acceptedAnswer: {
+          "@type": "Answer",
+          text:
+            "Structured data describing what you offer, service areas, and key attributes. Advantage: makes it easier for AI systems to understand your offerings. Coming soon; not yet available.",
+        },
+      },
+      {
+        "@type": "Question",
+        name: "What is Change history?",
+        acceptedAnswer: {
+          "@type": "Answer",
+          text:
+            "A log of edits to your profile (what changed and when). Advantage: transparency for audits and faster trust-building with AI systems that prefer up-to-date sources. Coming soon; not yet available.",
+        },
+      },
+      {
+        "@type": "Question",
+        name: "What does Everything in Pro mean?",
+        acceptedAnswer: {
+          "@type": "Answer",
+          text:
+            "Business includes all Pro features plus scalability options. Advantage: one tier for teams that need multi-location, seats, and automation. Features listed as Coming soon are not yet active.",
+        },
+      },
+      {
+        "@type": "Question",
+        name: "What is Multi-location?",
+        acceptedAnswer: {
+          "@type": "Answer",
+          text:
+            "Support for publishing structured data for multiple locations under one brand. Advantage: cleaner management and clearer signals for AI about where you operate. Coming soon; not yet available.",
+        },
+      },
+      {
+        "@type": "Question",
+        name: "What are Team seats?",
+        acceptedAnswer: {
+          "@type": "Answer",
+          text:
+            "Multiple user logins with role-appropriate access. Advantage: safer collaboration without sharing passwords. Coming soon; not yet available.",
+        },
+      },
+      {
+        "@type": "Question",
+        name: "What are Bulk import and webhooks?",
+        acceptedAnswer: {
+          "@type": "Answer",
+          text:
+            "Tools to bring in data at scale and receive change notifications. Advantage: reduces manual entry and keeps external systems in sync. Coming soon; not yet available.",
+        },
+      },
+      {
+        "@type": "Question",
+        name: "What are Advanced analytics?",
+        acceptedAnswer: {
+          "@type": "Answer",
+          text:
+            "Reporting about profile completeness and machine-readability signals (e.g., JSON-LD coverage). Advantage: helps prioritize improvements. Coming soon; not yet available.",
         },
       },
     ],
@@ -377,6 +467,75 @@ export default function Page() {
             crawlable by machines). We retain your profile data for <strong>90 days</strong> so you
             can reactivate. After 90 days with no reactivation, the profile may be permanently
             deleted per our retention policy.
+          </p>
+        </div>
+
+        {/* --------- NEW: Feature explanations (UI section) ---------- */}
+        <div className="card">
+          <h3 className="font-semibold">What do the pricing features mean?</h3>
+
+          <h4 className="font-medium mt-4">Centralized AI Ready Profile</h4>
+          <p className="text-gray-700 mt-2">
+            A single, verified public page plus structured JSON-LD that consolidates your official
+            links and key facts. <em>Advantage:</em> simplifies discovery for AI systems by pointing
+            them at one consistent source. (This improves clarity, not rankings; no placements are
+            guaranteed.)
+          </p>
+
+          <h4 className="font-medium mt-4">Basic profile (links/images caps)</h4>
+          <p className="text-gray-700 mt-2">
+            Core fields (name, tagline, bio) with a limited number of links and images.
+            <em> Advantage:</em> fast setup with clean machine-readable output and minimal upkeep.
+          </p>
+
+          <h4 className="font-medium mt-4">FAQ markup <span className="text-gray-500">(Coming soon)</span></h4>
+          <p className="text-gray-700 mt-2">
+            Publish common questions and answers in schema.org format. <em>Advantage:</em> helps AI
+            assistants retrieve accurate responses to routine questions. (Not yet available.)
+          </p>
+
+          <h4 className="font-medium mt-4">Service markup <span className="text-gray-500">(Coming soon)</span></h4>
+          <p className="text-gray-700 mt-2">
+            Structured data describing offerings, service areas, and attributes. <em>Advantage:</em>
+            clearer machine understanding of what you do. (Not yet available.)
+          </p>
+
+          <h4 className="font-medium mt-4">Change history <span className="text-gray-500">(Coming soon)</span></h4>
+          <p className="text-gray-700 mt-2">
+            A record of profile edits over time. <em>Advantage:</em> transparency and easier audits
+            for systems that prefer up-to-date, traceable sources. (Not yet available.)
+          </p>
+
+          <h4 className="font-medium mt-4">Everything in Pro</h4>
+          <p className="text-gray-700 mt-2">
+            Business includes all Pro features plus scalability options below. <em>Advantage:</em>
+            one tier to centralize multi-location/teams/automation needs. (Items labeled “Coming
+            soon” are not active yet.)
+          </p>
+
+          <h4 className="font-medium mt-4">Multi-location (10) <span className="text-gray-500">(Coming soon)</span></h4>
+          <p className="text-gray-700 mt-2">
+            Manage structured data for up to 10 locations under one brand.
+            <em> Advantage:</em> consistent data across all sites/areas. (Not yet available.)
+          </p>
+
+          <h4 className="font-medium mt-4">Team seats (3) <span className="text-gray-500">(Coming soon)</span></h4>
+          <p className="text-gray-700 mt-2">
+            Three user logins with role-appropriate access. <em>Advantage:</em> safer collaboration
+            without shared passwords. (Not yet available.)
+          </p>
+
+          <h4 className="font-medium mt-4">Bulk import + webhooks <span className="text-gray-500">(Coming soon)</span></h4>
+          <p className="text-gray-700 mt-2">
+            Bring in data at scale and receive change notifications to your systems.
+            <em> Advantage:</em> reduces manual work and keeps sources synchronized. (Not yet
+            available.)
+          </p>
+
+          <h4 className="font-medium mt-4">Advanced analytics <span className="text-gray-500">(Coming soon)</span></h4>
+          <p className="text-gray-700 mt-2">
+            Reports on completeness and machine-readability signals. <em>Advantage:</em> helps you
+            prioritize improvements. (Not yet available.)
           </p>
         </div>
       </div>
