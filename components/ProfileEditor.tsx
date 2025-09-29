@@ -2,6 +2,7 @@
 "use client";
 
 import * as React from "react";
+import { useSession } from "next-auth/react";
 import { useToast } from "@/components/Toast";
 
 // Helper UI components
@@ -96,6 +97,8 @@ function toNum(input: string): number | undefined {
 
 /** -------- Component -------- */
 export default function ProfileEditor({ initial }: { initial: Profile | null }) {
+  const { data: session } = useSession();
+  const email = session?.user?.email ?? "";
   const toast = useToast();
 
   // ---- Server identifiers
@@ -424,8 +427,39 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
 
   return (
     <div className="max-w-2xl grid gap-8">
-      {/* Toolbar: status + guarded View link (no duplicate page title) */}
-      <div className="flex items-center justify-end">
+      {/* Toolbar: left = account email pill; right = status + guarded View link */}
+      <div className="flex items-center justify-between">
+        {/* Signed-in email pill */}
+        {email ? (
+          <div className="flex items-center gap-3">
+            <span className="inline-flex items-center gap-2 rounded-full border border-gray-200 bg-gray-50 px-3 py-1 text-sm text-gray-700">
+              <svg
+                aria-hidden="true"
+                viewBox="0 0 24 24"
+                className="h-4 w-4"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <rect x="3" y="5" width="18" height="14" rx="2" ry="2" />
+                <path d="m3 7 9 6 9-6" />
+              </svg>
+              <span className="font-medium">{email}</span>
+            </span>
+            <button
+              type="button"
+              onClick={() => navigator.clipboard.writeText(email)}
+              className="text-xs text-gray-500 underline-offset-2 hover:text-sky-600 hover:underline"
+            >
+              Copy
+            </button>
+          </div>
+        ) : (
+          <span />
+        )}
+
         <div className="flex items-center gap-3">
           <span className={`text-xs px-2.5 py-1 rounded-full ${statusClasses}`}>{status}</span>
           <button
@@ -489,7 +523,7 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
           </div>
         </div>
 
-        {/* Read-only public URL (Option A) */}
+        {/* Read-only public URL */}
         <div className="mt-2">
           <PublicUrlReadonly slug={serverSlug} />
         </div>
@@ -927,7 +961,7 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
                 type="button"
                 className="px-3 py-2 border rounded-lg"
                 onClick={openPublic}
-                >
+              >
                 View Anyway
               </button>
               <button
