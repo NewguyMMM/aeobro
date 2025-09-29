@@ -53,23 +53,21 @@ export async function POST(req: Request) {
       );
     }
 
-    // --- HOTFIX: don't rely on stripeCustomerId column yet ---
-    // Ensure we have a User row; if missing (e.g., after DB reset), create it.
+    // Ensure a User row exists (covers DB resets)
     let user = await prisma.user.findUnique({
       where: { email: session.user.email },
-      select: { id: true, email: true },
+      select: { id: true, email: true, name: true },
     });
     if (!user) {
       user = await prisma.user.create({
         data: { email: session.user.email, name: session.user.name ?? null },
-        select: { id: true, email: true },
+        select: { id: true, email: true, name: true },
       });
     }
 
-    // Normalize to a guaranteed string (Prisma type is string | null)
     const email: string = user.email ?? session.user.email;
 
-    // Reuse an existing Stripe customer for this email if possible, else create one
+    // Reuse existing Stripe customer by email if present
     const existing = await stripe.customers.list({ email, limit: 1 });
     const customerId =
       existing.data[0]?.id || (await stripe.customers.create({ email })).id;
@@ -78,7 +76,7 @@ export async function POST(req: Request) {
 
     const checkout = await stripe.checkout.sessions.create({
       mode: "subscription",
-      customer: customerId, // keep ONLY customer; do NOT include customer_email simultaneously
+      customer: customerId, // don't include customer_email simultaneously
       line_items: [{ price: priceId, quantity: 1 }],
       allow_promotion_codes: true,
       billing_address_collection: "auto",
@@ -95,6 +93,7 @@ export async function POST(req: Request) {
       );
     }
 
+    // IMPORTANT: return JSON (client will navigate)
     return NextResponse.json({ ok: true, url: checkout.url });
   } catch (err: any) {
     console.error("checkout error:", err);
