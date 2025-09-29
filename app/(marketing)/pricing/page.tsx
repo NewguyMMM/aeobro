@@ -1,7 +1,7 @@
 // app/(marketing)/pricing/page.tsx
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 
 const PRICES = {
   LITE: process.env.NEXT_PUBLIC_STRIPE_PRICE_LITE ?? "",
@@ -30,11 +30,33 @@ export default function PricingPage() {
     };
   }, []);
 
-  function hrefFor(plan: PlanTitle, priceId: string) {
-    if (!priceId) return "#";
-    // Server route handles auth → Stripe
-    return `/checkout?plan=${encodeURIComponent(plan)}&priceId=${encodeURIComponent(priceId)}`;
-  }
+  const startCheckout = useCallback(async (priceId: string, plan: PlanTitle) => {
+    setErr(null);
+
+    if (!priceId) {
+      setErr(`Missing Stripe Price ID for ${plan}.`);
+      return;
+    }
+
+    try {
+      setLoading(plan);
+      const res = await fetch("/api/stripe/create-checkout-session", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ priceId }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.message || "Failed to start checkout.");
+      if (!data?.url) throw new Error("Server did not return a checkout URL.");
+
+      // Real browser navigation to Stripe Checkout
+      window.location.assign(data.url as string);
+    } catch (e: any) {
+      setErr(e?.message || "Something went wrong.");
+      setLoading(null);
+    }
+  }, []);
 
   // Show the Stripe price-id helper only in dev and only if something's missing
   const showConfigHint = useMemo(() => {
@@ -44,13 +66,11 @@ export default function PricingPage() {
 
   const Button = ({
     children,
-    href,
     onClick,
     disabled,
     title,
   }: {
     children: React.ReactNode;
-    href?: string;
     onClick?: () => void;
     disabled?: boolean;
     title?: string;
@@ -59,13 +79,7 @@ export default function PricingPage() {
       "mt-auto inline-flex h-10 items-center justify-center rounded-xl px-4 py-2 text-center font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-sky-500";
     const enabled = "bg-black text-white hover:bg-sky-600";
     const disabledCls = "bg-black/50 text-white/80 cursor-not-allowed";
-    if (href && !disabled) {
-      return (
-        <a href={href} className={cx(base, enabled)} onClick={onClick}>
-          {children}
-        </a>
-      );
-    }
+
     return (
       <button
         className={cx(base, disabled ? disabledCls : enabled)}
@@ -124,19 +138,15 @@ export default function PricingPage() {
           ))}
         </ul>
 
-        {disabled ? (
-          <Button
-            disabled
-            title={`Missing Stripe Price ID for ${title}.`}
-            onClick={() => setErr(`Missing Stripe Price ID for ${title}.`)}
-          >
-            {btnText}
-          </Button>
-        ) : (
-          <Button href={hrefFor(title, priceId)} onClick={() => setLoading(title)}>
-            {loading === title ? "Redirecting…" : btnText}
-          </Button>
-        )}
+        <Button
+          disabled={disabled}
+          title={disabled ? `Missing Stripe Price ID for ${title}.` : undefined}
+          onClick={
+            disabled ? undefined : () => startCheckout(priceId, title)
+          }
+        >
+          {loading === title ? "Redirecting…" : btnText}
+        </Button>
       </div>
     );
   };
