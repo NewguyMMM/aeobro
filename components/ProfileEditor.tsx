@@ -429,7 +429,7 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
     <div className="max-w-2xl grid gap-8">
       {/* Toolbar: left = account email pill; right = status + guarded View link */}
       <div className="flex items-center justify-between">
-        {/* Signed-in email pill */}
+        {/* Signed-in email pill with hover note */}
         {email ? (
           <div className="flex items-center gap-3">
             <span className="inline-flex items-center gap-2 rounded-full border border-gray-200 bg-gray-50 px-3 py-1 text-sm text-gray-700">
@@ -447,14 +447,14 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
                 <path d="m3 7 9 6 9-6" />
               </svg>
               <span className="font-medium">{email}</span>
+              <span
+                className="ml-1 inline-flex h-4 w-4 items-center justify-center rounded-full bg-gray-200 text-[10px] font-semibold text-gray-700"
+                title="This email is private and is NOT shown on your public profile. Only information you enter in the fields below appears publicly."
+                aria-label="This email is private and not shown on your public profile."
+              >
+                i
+              </span>
             </span>
-            <button
-              type="button"
-              onClick={() => navigator.clipboard.writeText(email)}
-              className="text-xs text-gray-500 underline-offset-2 hover:text-sky-600 hover:underline"
-            >
-              Copy
-            </button>
           </div>
         ) : (
           <span />
@@ -483,7 +483,7 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
           <input
             id="displayName"
             className={input}
-            placeholder="Kings Anesthesia"
+            placeholder="Your public display name"
             value={displayName}
             onChange={(e) => setDisplayName(e.target.value)}
             maxLength={120}
@@ -498,7 +498,7 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
             <input
               id="legalName"
               className={input}
-              placeholder="Kings Anesthesia LLC"
+              placeholder="Legal or brand name (optional)"
               value={legalName}
               onChange={(e) => setLegalName(e.target.value)}
               maxLength={160}
@@ -540,7 +540,7 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
           <input
             id="tagline"
             className={input}
-            placeholder="Ambulatory anesthesia in New Jersey."
+            placeholder="Short tagline (1 line)"
             value={tagline}
             onChange={(e) => setTagline(e.target.value)}
             maxLength={160}
@@ -555,7 +555,7 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
             id="bio"
             className={input}
             rows={6}
-            placeholder="2–3 sentences describing what you do, who you serve, and what makes you credible."
+            placeholder="Tell people what you do, who you serve, and what makes you credible."
             value={bio}
             onChange={(e) => setBio(e.target.value)}
             maxLength={2000}
@@ -592,7 +592,7 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
             <input
               id="location"
               className={input}
-              placeholder="Wyckoff, NJ"
+              placeholder="City, state (or address)"
               value={location}
               onChange={(e) => setLocation(e.target.value)}
               maxLength={120}
@@ -607,7 +607,7 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
           <input
             id="serviceArea"
             className={input}
-            placeholder="NJ, NY, PA"
+            placeholder="Regions you serve (comma-separated)"
             value={serviceArea}
             onChange={(e) => setServiceArea(e.target.value)}
             maxLength={240}
@@ -628,7 +628,7 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
               id="foundedYear"
               className={input}
               inputMode="numeric"
-              placeholder="2020"
+              placeholder="e.g., 2020"
               value={foundedYear}
               onChange={(e) => setFoundedYear(e.target.value)}
               maxLength={4}
@@ -642,7 +642,7 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
               id="teamSize"
               className={input}
               inputMode="numeric"
-              placeholder="5"
+              placeholder="e.g., 5"
               value={teamSize}
               onChange={(e) => setTeamSize(e.target.value)}
               maxLength={6}
@@ -675,7 +675,7 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
             <input
               id="languages"
               className={input}
-              placeholder="English, Spanish"
+              placeholder="e.g., English, Spanish"
               value={languages}
               onChange={(e) => setLanguages(e.target.value)}
               maxLength={200}
@@ -688,7 +688,7 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
             <input
               id="hours"
               className={input}
-              placeholder="Mon–Fri 9am–5pm"
+              placeholder="e.g., Mon–Fri 9am–5pm"
               value={hours}
               onChange={(e) => setHours(e.target.value)}
               maxLength={160}
@@ -704,7 +704,7 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
             id="certs"
             className={input}
             rows={3}
-            placeholder="e.g., Board-certified anesthesiologist; AAAHC accredited facility."
+            placeholder="e.g., Board-certified; industry accreditations; notable awards."
             value={certifications}
             onChange={(e) => setCertifications(e.target.value)}
             maxLength={2000}
@@ -719,14 +719,14 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <input
               className={input}
-              placeholder="Title (e.g., NJ.com feature)"
+              placeholder="Title of mention or article"
               value={pressDraft.title}
               onChange={(e) => setPressDraft({ ...pressDraft, title: e.target.value })}
               maxLength={120}
             />
             <input
               className={input}
-              placeholder="https://link-to-article.com"
+              placeholder="https://your-article-or-listing.com"
               value={pressDraft.url}
               onChange={(e) => setPressDraft({ ...pressDraft, url: e.target.value })}
               maxLength={300}
@@ -852,7 +852,7 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
               <div className="flex gap-2">
                 <input
                   className={input}
-                  placeholder="Label (e.g., Reviews)"
+                  placeholder="Link label (e.g., Reviews)"
                   value={linkDraft.label}
                   onChange={(e) => setLinkDraft({ ...linkDraft, label: e.target.value })}
                   maxLength={60}
@@ -866,7 +866,7 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
               <label className={label}>URL</label>
               <input
                 className={input}
-                placeholder="https://link.com"
+                placeholder="https://your-link.com"
                 value={linkDraft.url}
                 onChange={(e) => setLinkDraft({ ...linkDraft, url: e.target.value })}
                 maxLength={300}
