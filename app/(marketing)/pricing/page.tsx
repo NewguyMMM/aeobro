@@ -20,18 +20,26 @@ function cx(...parts: Array<string | false | null | undefined>) {
 function Tooltip({
   children,
   text,
+  align = "left",
 }: {
   children: React.ReactNode;
   text: string;
+  align?: "left" | "right";
 }) {
-  // Minimal, accessible tooltip using title + custom bubble for nicer UI
+  // Accessible, no native title attribute -> avoids duplicate tooltips
+  // Shows on hover and keyboard focus
   return (
-    <span className="relative inline-flex items-center group" title={text}>
+    <span
+      className="relative inline-flex items-center group focus:outline-none"
+      tabIndex={0}
+      aria-label={text}
+    >
       {children}
       <span
         className={cx(
-          "pointer-events-none absolute left-0 top-full z-10 mt-2 hidden max-w-xs rounded-lg border bg-white p-3 text-xs leading-relaxed text-gray-700 shadow-lg group-hover:block",
-          "w-[280px]"
+          "pointer-events-none absolute z-20 mt-2 hidden max-w-xs w-[280px] rounded-lg border bg-white p-3 text-xs leading-relaxed text-gray-700 shadow-lg",
+          "group-hover:block group-focus:block",
+          align === "left" ? "left-0 top-full" : "right-0 top-full"
         )}
         role="tooltip"
       >
