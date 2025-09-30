@@ -1,6 +1,10 @@
 // app/p/[slug]/page.tsx
 import { prisma } from "@/lib/prisma";
-import { buildProfileSchema } from "@/lib/schema";
+import {
+  buildProfileSchema,
+  buildFAQJsonLd,
+  buildServiceJsonLd,
+} from "@/lib/schema";
 import { getRuntimeBaseUrl } from "@/lib/getBaseUrl";
 import Script from "next/script";
 import { notFound } from "next/navigation";
@@ -69,8 +73,8 @@ const getProfileFullCached = (slug: string) =>
           certifications: true,
 
           // Links & press
-          links: true,   // [{label,url}] or string[]
-          press: true,   // [{title,url}]
+          links: true, // [{label,url}] or string[]
+          press: true, // [{title,url}]
 
           // Platform handles (object of URLs)
           handles: true,
@@ -78,6 +82,44 @@ const getProfileFullCached = (slug: string) =>
       });
     },
     ["profile:full", slug],
+    { revalidate, tags: [`profile:${slug}`] }
+  )();
+
+// FAQs for this profile (public only)
+const getFaqsCached = (profileId: string, slug: string) =>
+  unstable_cache(
+    async () => {
+      return prisma.fAQItem.findMany({
+        where: { profileId, isPublic: true },
+        orderBy: { position: "asc" },
+        select: { id: true, question: true, answer: true, position: true },
+      });
+    },
+    ["profile:faqs", slug],
+    { revalidate, tags: [`profile:${slug}`] }
+  )();
+
+// Services for this profile (public only)
+const getServicesCached = (profileId: string, slug: string) =>
+  unstable_cache(
+    async () => {
+      return prisma.serviceItem.findMany({
+        where: { profileId, isPublic: true },
+        orderBy: { position: "asc" },
+        select: {
+          id: true,
+          name: true,
+          description: true,
+          url: true,
+          priceMin: true,
+          priceMax: true,
+          priceUnit: true,
+          currency: true,
+          position: true,
+        },
+      });
+    },
+    ["profile:services", slug],
     { revalidate, tags: [`profile:${slug}`] }
   )();
 
@@ -115,7 +157,28 @@ export default async function PublicProfilePage({ params }: PageProps) {
   if (!profile) notFound();
 
   const baseUrl = await getRuntimeBaseUrl();
+
+  // Fetch public Services and FAQ
+  const [services, faqs] = await Promise.all([
+    getServicesCached(profile.id, slug),
+    getFaqsCached(profile.id, slug),
+  ]);
+
+  // JSON-LD blocks
   const schema = buildProfileSchema(profile as any, baseUrl);
+  const faqJsonLd = buildFAQJsonLd(slug, faqs.map(f => ({ question: f.question, answer: f.answer })));
+  const serviceJsonLd = buildServiceJsonLd(
+    `${baseUrl}/p/${slug}#profile`,
+    services.map(s => ({
+      name: s.name,
+      description: s.description ?? undefined,
+      url: s.url ?? undefined,
+      priceMin: s.priceMin as any,
+      priceMax: s.priceMax as any,
+      priceUnit: s.priceUnit ?? undefined,
+      currency: s.currency ?? undefined,
+    }))
+  );
 
   const displayName = profile.displayName ?? slug;
   const headline = profile.tagline ?? "";
@@ -150,6 +213,20 @@ export default async function PublicProfilePage({ params }: PageProps) {
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(schema) }}
       />
+      {faqJsonLd ? (
+        <Script
+          id="faq-jsonld"
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(faqJsonLd) }}
+        />
+      ) : null}
+      {serviceJsonLd.map((obj, i) => (
+        <Script
+          key={`service-jsonld-${i}`}
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(obj) }}
+        />
+      ))}
 
       {/* HUMAN-READABLE PROFILE */}
       <header className="mb-8">
@@ -291,6 +368,31 @@ export default async function PublicProfilePage({ params }: PageProps) {
         </section>
       )}
 
+      {/* Services */}
+      {services.length > 0 && (
+        <section id="services" className="mb-8">
+          <h3 className="mb-2 text-lg font-medium">Services</h3>
+          <ul className="grid gap-4 md:grid-cols-2">
+            {services.map((s) => (
+              <li key={s.id} className="rounded-xl border p-4">
+                <div className="font-medium">{s.name}</div>
+                {s.description ? (
+                  <p className="text-sm text-gray-600 mt-1">{s.description}</p>
+                ) : null}
+                <div className="text-sm text-gray-700 mt-2">
+                  {renderPrice(s.currency, s.priceMin as any, s.priceMax as any, s.priceUnit ?? undefined)}
+                </div>
+                {s.url ? (
+                  <a href={s.url} className="inline-block mt-2 text-sky-600 hover:underline">
+                    Learn more
+                  </a>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
       {/* Platforms (handles) */}
       {handlePairs.length > 0 && (
         <section className="mb-8">
@@ -339,6 +441,21 @@ export default async function PublicProfilePage({ params }: PageProps) {
         </section>
       )}
 
+      {/* FAQ */}
+      {faqs.length > 0 && (
+        <section id="faq" className="mb-10">
+          <h3 className="mb-2 text-lg font-medium">FAQ</h3>
+          <div className="divide-y rounded-xl border">
+            {faqs.map((f) => (
+              <details key={f.id} className="p-4">
+                <summary className="cursor-pointer font-medium">{f.question}</summary>
+                <div className="mt-2 text-gray-700 whitespace-pre-line">{f.answer}</div>
+              </details>
+            ))}
+          </div>
+        </section>
+      )}
+
       {/* Raw schema link */}
       <section className="mt-6">
         <a className="text-sm underline" href={`/api/profile/${encodeURIComponent(slug)}/schema`}>
@@ -364,6 +481,27 @@ function prettyHandleLabel(key: string) {
     github: "GitHub",
   };
   return map[key] || key;
+}
+
+function renderPrice(
+  currency?: string | null,
+  min?: number | string | null,
+  max?: number | string | null,
+  unit?: string
+) {
+  if (min == null && max == null) return null;
+  const c = currency ? `${currency} ` : "";
+  const m1 = min != null ? String(min) : "";
+  const m2 = max != null ? String(max) : "";
+  const range =
+    min != null && max != null ? `${m1}–${m2}` : min != null ? m1 : `Up to ${m2}`;
+  return (
+    <span>
+      {c}
+      {range}
+      {unit ? ` ${unit}` : ""}
+    </span>
+  );
 }
 
 /**
