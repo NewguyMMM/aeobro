@@ -1,4 +1,5 @@
 // lib/schema.ts
+// 📅 2025-09-30 12:36 PM ET
 import type { Profile } from "@prisma/client";
 
 /** Map editor entityType → schema.org @type */
@@ -18,11 +19,12 @@ function schemaTypeFor(entityType?: string, orgHeuristic = false) {
 }
 
 /**
- * Build JSON-LD (schema.org) for a public profile.
+ * Build the primary JSON-LD block for a public profile.
  * - Uses entityType to pick @type
  * - description prefers Bio → Tagline
  * - Consolidates links/socials into sameAs
- * - Keeps optional FAQ/Service hooks
+ * - ❗️Does NOT inline FAQs/Services anymore (these now live in separate tables).
+ *   Use buildFAQJsonLd() and buildServiceJsonLd() below.
  */
 export function buildProfileSchema(profile: Partial<Profile>, baseUrl: string) {
   const slug = (profile as any)?.slug as string | undefined;
@@ -45,7 +47,7 @@ export function buildProfileSchema(profile: Partial<Profile>, baseUrl: string) {
     ((profile as any)?.image as string | null) ??
     undefined;
 
-  // Contact
+  // Contact (these keys may or may not exist on your Profile shape — safe casts)
   const email =
     ((profile as any)?.publicEmail as string | null) ??
     ((profile as any)?.email as string | null) ??
@@ -61,10 +63,7 @@ export function buildProfileSchema(profile: Partial<Profile>, baseUrl: string) {
   const socialsArr = Array.isArray((profile as any)?.socialLinks) ? (profile as any)?.socialLinks : [];
   const sameAs = Array.from(
     new Set(
-      ([] as any[])
-        .concat(linksArr, socialsArr)
-        .map(toUrl)
-        .filter(Boolean)
+      ([] as any[]).concat(linksArr, socialsArr).map(toUrl).filter(Boolean)
     )
   );
   const sameAsOut = sameAs.length ? sameAs : undefined;
@@ -115,15 +114,15 @@ export function buildProfileSchema(profile: Partial<Profile>, baseUrl: string) {
     const hours = (profile as any)?.hours as string | null;
     if (hours) base.openingHours = hours;
 
-    // Optional: languages served (comma list)
+    // Optional: languages served (string[] on your model)
     const languages = (profile as any)?.languages as string[] | null;
     if (languages && languages.length) base.availableLanguage = languages;
 
-    // Optional: service area (comma list)
+    // Optional: service area (string[] on your model)
     const serviceArea = (profile as any)?.serviceArea as string[] | null;
     if (serviceArea && serviceArea.length) base.areaServed = serviceArea;
 
-    // Optional: foundedYear/teamSize/pricingModel
+    // Optional: foundedYear / teamSize / pricingModel
     const foundedYear = (profile as any)?.foundedYear as number | null;
     if (foundedYear) base.foundingDate = String(foundedYear);
 
@@ -131,29 +130,10 @@ export function buildProfileSchema(profile: Partial<Profile>, baseUrl: string) {
     if (teamSize) base.numberOfEmployees = teamSize;
 
     const pricingModel = (profile as any)?.pricingModel as string | null;
-    if (pricingModel) base.additionalProperty = [{ "@type": "PropertyValue", name: "pricingModel", value: pricingModel }];
-
-    // Optional: Services (OfferCatalog)
-    const services = (profile as any)?.services as Array<{ name: string; desc?: string }>;
-    if (Array.isArray(services) && services.length) {
-      base.hasOfferCatalog = {
-        "@type": "OfferCatalog",
-        name: `${(legalName || displayName || "Services").toString()} Services`,
-        itemListElement: services.map((s) => ({
-          "@type": "Offer",
-          itemOffered: { "@type": "Service", name: s?.name, description: s?.desc || undefined },
-        })),
-      };
-    }
-
-    // Optional: FAQs (mainEntity as QAPage style)
-    const faqs = (profile as any)?.faqs as Array<{ q: string; a: string }>;
-    if (Array.isArray(faqs) && faqs.length) {
-      base.mainEntity = faqs.map((f) => ({
-        "@type": "Question",
-        name: f.q,
-        acceptedAnswer: { "@type": "Answer", text: f.a },
-      }));
+    if (pricingModel) {
+      base.additionalProperty = [
+        { "@type": "PropertyValue", name: "pricingModel", value: pricingModel },
+      ];
     }
   } else {
     // Person extras
@@ -181,4 +161,99 @@ export function buildProfileSchema(profile: Partial<Profile>, baseUrl: string) {
   }
 
   return base;
+}
+
+/**
+ * Build a standalone FAQPage JSON-LD object.
+ * Use this alongside the main profile script on the public profile page.
+ *
+ * @param slug - profile slug (used to form the FAQ section URL)
+ * @param faqs - array of { question, answer }
+ */
+export function buildFAQJsonLd(
+  slug: string,
+  faqs: Array<{ question: string; answer: string }>
+) {
+  if (!faqs?.length) return null;
+  return {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    mainEntity: faqs.map((q) => ({
+      "@type": "Question",
+      name: q.question,
+      acceptedAnswer: {
+        "@type": "Answer",
+        text: q.answer,
+      },
+    })),
+    // Anchor to the FAQ section on the public page
+    url: `/p/${slug}#faq`,
+  };
+}
+
+/**
+ * Build Service JSON-LD objects.
+ * Returns an array (one schema object per Service).
+ *
+ * @param providerIdUrl - the @id or URL of the provider (e.g., `${baseUrl}/p/${slug}#profile`)
+ * @param services - array of service definitions from DB
+ */
+export function buildServiceJsonLd(
+  providerIdUrl: string,
+  services: Array<{
+    name: string;
+    description?: string | null;
+    url?: string | null;
+    priceMin?: number | string | null;
+    priceMax?: number | string | null;
+    priceUnit?: string | null;
+    currency?: string | null;
+  }>
+) {
+  if (!services?.length) return [];
+  return services.map((svc) => {
+    const hasAnyPrice = svc.priceMin !== undefined || svc.priceMax !== undefined;
+    const offers =
+      hasAnyPrice
+        ? {
+            "@type": "Offer",
+            ...(svc.currency ? { priceCurrency: svc.currency } : {}),
+            ...(svc.priceMin !== undefined ? { price: String(svc.priceMin) } : {}),
+            ...(svc.priceMax !== undefined
+              ? { highPrice: String(svc.priceMax) }
+              : {}),
+            ...(svc.priceMin !== undefined && svc.priceMax !== undefined
+              ? {
+                  priceSpecification: {
+                    "@type": "PriceSpecification",
+                    minPrice: String(svc.priceMin),
+                    maxPrice: String(svc.priceMax),
+                  },
+                }
+              : {}),
+            ...(svc.url ? { url: svc.url } : {}),
+            ...(svc.priceUnit
+              ? {
+                  eligibleQuantity: {
+                    "@type": "QuantitativeValue",
+                    unitText: svc.priceUnit,
+                  },
+                }
+              : {}),
+          }
+        : undefined;
+
+    const obj: any = {
+      "@context": "https://schema.org",
+      "@type": "Service",
+      name: svc.name,
+      provider: providerIdUrl, // link back to the main entity
+    };
+
+    if (svc.description) obj.description = svc.description;
+    if (svc.url) obj.url = svc.url;
+    if (offers) obj.offers = offers;
+
+    return obj;
+  });
 }
