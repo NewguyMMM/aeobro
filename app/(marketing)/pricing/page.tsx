@@ -125,6 +125,7 @@ export default function PricingPage() {
   const PlanCard = ({
     title,
     price,
+    bestFor,
     features,
     soon = [],
     btnText,
@@ -133,6 +134,7 @@ export default function PricingPage() {
   }: {
     title: PlanTitle;
     price: string;
+    bestFor: string;
     features: string[];
     soon?: string[];
     btnText: string;
@@ -156,6 +158,11 @@ export default function PricingPage() {
 
         <h3 className="text-xl font-semibold">{title}</h3>
         <div className="text-3xl font-bold">{price}</div>
+
+        {/* Best for … */}
+        <p className="text-sm text-gray-700 -mt-2">
+          <span className="font-medium">Best for:</span> {bestFor}
+        </p>
 
         <ul className="text-sm space-y-1">
           {features.map((f) => (
@@ -193,6 +200,7 @@ export default function PricingPage() {
         <PlanCard
           title="Lite"
           price="$3.99/mo"
+          bestFor="individuals, creators, or small teams who want a simple, AI-ready profile without extras."
           features={["Centralized AI Ready Profile", "Basic profile (links/images caps)"]}
           btnText="Get Lite"
           priceId={PRICES.LITE}
@@ -201,6 +209,7 @@ export default function PricingPage() {
         <PlanCard
           title="Pro"
           price="$49/mo"
+          bestFor="professionals and growing brands that need richer AI visibility with FAQs, services, and updates."
           features={["Centralized AI Ready Profile"]}
           soon={["FAQ markup", "Service markup", "Change history"]}
           btnText="Get Pro"
@@ -211,6 +220,7 @@ export default function PricingPage() {
         <PlanCard
           title="Business"
           price="$199/mo"
+          bestFor="agencies, multi-location companies, or organizations that need collaboration, scale, and advanced tools."
           features={["Everything in Pro"]}
           soon={[
             "Multi-location (10)",
