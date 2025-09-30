@@ -15,6 +15,66 @@ function cx(...parts: Array<string | false | null | undefined>) {
   return parts.filter(Boolean).join(" ");
 }
 
+/* ------------------------ UI helpers ------------------------ */
+
+function Tooltip({
+  children,
+  text,
+}: {
+  children: React.ReactNode;
+  text: string;
+}) {
+  // Minimal, accessible tooltip using title + custom bubble for nicer UI
+  return (
+    <span className="relative inline-flex items-center group" title={text}>
+      {children}
+      <span
+        className={cx(
+          "pointer-events-none absolute left-0 top-full z-10 mt-2 hidden max-w-xs rounded-lg border bg-white p-3 text-xs leading-relaxed text-gray-700 shadow-lg group-hover:block",
+          "w-[280px]"
+        )}
+        role="tooltip"
+      >
+        {text}
+      </span>
+    </span>
+  );
+}
+
+function FeatureLine({
+  label,
+  tooltip,
+  variant = "check",
+  comingSoon = false,
+}: {
+  label: string;
+  tooltip: string;
+  variant?: "check" | "wrench";
+  comingSoon?: boolean;
+}) {
+  const icon = variant === "check" ? "✅" : "🛠️";
+  return (
+    <li className={cx("text-sm", comingSoon && "opacity-70")}>
+      <Tooltip text={tooltip}>
+        <span className="inline-flex items-start gap-2">
+          <span aria-hidden="true">{icon}</span>
+          <span>
+            {label}
+            {comingSoon && (
+              <>
+                {" "}
+                — <em>Coming soon</em>
+              </>
+            )}
+          </span>
+        </span>
+      </Tooltip>
+    </li>
+  );
+}
+
+/* ------------------------ Page ------------------------ */
+
 export default function PricingPage() {
   const [loading, setLoading] = useState<PlanTitle | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -122,6 +182,8 @@ export default function PricingPage() {
     );
   };
 
+  type FeatureSpec = { label: string; tooltip: string };
+
   const PlanCard = ({
     title,
     price,
@@ -135,8 +197,8 @@ export default function PricingPage() {
     title: PlanTitle;
     price: string;
     bestFor: string;
-    features: string[];
-    soon?: string[];
+    features: FeatureSpec[];
+    soon?: FeatureSpec[];
     btnText: string;
     priceId: string;
     featured?: boolean;
@@ -164,14 +226,23 @@ export default function PricingPage() {
           <span className="font-medium">Best for:</span> {bestFor}
         </p>
 
-        <ul className="text-sm space-y-1">
+        <ul className="space-y-1">
           {features.map((f) => (
-            <li key={f}>✅ {f}</li>
+            <FeatureLine
+              key={f.label}
+              label={f.label}
+              tooltip={f.tooltip}
+              variant="check"
+            />
           ))}
           {soon.map((f) => (
-            <li key={f} className="opacity-70">
-              🛠️ {f} — <em>Coming soon</em>
-            </li>
+            <FeatureLine
+              key={f.label}
+              label={f.label}
+              tooltip={f.tooltip}
+              variant="wrench"
+              comingSoon
+            />
           ))}
         </ul>
 
@@ -185,6 +256,32 @@ export default function PricingPage() {
       </div>
     );
   };
+
+  /* ------------------------ Feature content ------------------------ */
+
+  const CENTRALIZED_TOOLTIP =
+    "You get a basic, centralized AI-ready profile with your business/creator name, logo, links, and a capped number of images/links. This is like having a business card for machines — enough for AI and search engines to know who you are and where to find you. But: no advanced schema types (FAQ, Services, Reviews, etc.) and no audit trail.";
+
+  const FAQ_TOOLTIP =
+    "Beyond just listing a tagline, you can build a structured Q&A section AI can read.";
+
+  const SERVICE_TOOLTIP =
+    "Not just “We do photography,” but “We offer wedding packages, family sessions, pricing ranges, etc.” in schema format.";
+
+  const HISTORY_TOOLTIP =
+    "Tracks updates to your profile/schema over time and lets you audit or roll back changes.";
+
+  const MULTI_LOCATION_TOOLTIP =
+    "Manage up to 10 locations under one account—each with its own hours, address, and phone—published in structured data.";
+
+  const TEAM_SEATS_TOOLTIP =
+    "Invite up to 3 teammates to edit and publish without sharing a login.";
+
+  const BULK_WEBHOOKS_TOOLTIP =
+    "Upload many items at once and notify your other apps automatically when you publish or update.";
+
+  const ANALYTICS_TOOLTIP =
+    "See how often your structured data appears in AI answers/search and which items drive visibility.";
 
   return (
     // Increase TOP padding to create the breathing room under the header
@@ -201,7 +298,7 @@ export default function PricingPage() {
           title="Lite"
           price="$3.99/mo"
           bestFor="individuals, creators, or small teams who want a simple, AI-ready profile without extras."
-          features={["Centralized AI Ready Profile", "Basic profile (links/images caps)"]}
+          features={[{ label: "Centralized AI Ready Profile", tooltip: CENTRALIZED_TOOLTIP }]}
           btnText="Get Lite"
           priceId={PRICES.LITE}
         />
@@ -210,8 +307,12 @@ export default function PricingPage() {
           title="Pro"
           price="$49/mo"
           bestFor="professionals and growing brands that need richer AI visibility with FAQs, services, and updates."
-          features={["Centralized AI Ready Profile"]}
-          soon={["FAQ markup", "Service markup", "Change history"]}
+          features={[{ label: "Centralized AI Ready Profile", tooltip: CENTRALIZED_TOOLTIP }]}
+          soon={[
+            { label: "FAQ markup", tooltip: FAQ_TOOLTIP },
+            { label: "Service markup", tooltip: SERVICE_TOOLTIP },
+            { label: "Change history", tooltip: HISTORY_TOOLTIP },
+          ]}
           btnText="Get Pro"
           priceId={PRICES.PRO}
           featured
@@ -221,12 +322,12 @@ export default function PricingPage() {
           title="Business"
           price="$199/mo"
           bestFor="agencies, multi-location companies, or organizations that need collaboration, scale, and advanced tools."
-          features={["Everything in Pro"]}
+          features={[{ label: "Everything in Pro", tooltip: "Includes all Pro features." }]}
           soon={[
-            "Multi-location (10)",
-            "Team seats (3)",
-            "Bulk import + webhooks",
-            "Advanced analytics",
+            { label: "Multi-location (10)", tooltip: MULTI_LOCATION_TOOLTIP },
+            { label: "Team seats (3)", tooltip: TEAM_SEATS_TOOLTIP },
+            { label: "Bulk import + webhooks", tooltip: BULK_WEBHOOKS_TOOLTIP },
+            { label: "Advanced analytics", tooltip: ANALYTICS_TOOLTIP },
           ]}
           btnText="Get Business"
           priceId={PRICES.BUSINESS}
