@@ -295,7 +295,7 @@ export default function PricingPage() {
     // Increase TOP padding to create the breathing room under the header
     <div className="container pt-24 pb-16">
       {err && (
-        <div className="mb-6 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+        <div className="mb-6 rounded-md border border-red-2 00 bg-red-50 p-3 text-sm text-red-700">
           {err}
         </div>
       )}
@@ -311,16 +311,18 @@ export default function PricingPage() {
           priceId={PRICES.LITE}
         />
 
+        {/* Pro: ✅ features included (no longer 'coming soon') */}
         <PlanCard
           title="Pro"
           price="$49/mo"
           bestFor="professionals and growing brands that need richer AI visibility with FAQs, services, and updates."
-          features={[{ label: "Centralized AI Ready Profile", tooltip: CENTRALIZED_TOOLTIP }]}
-          soon={[
+          features={[
+            { label: "Centralized AI Ready Profile", tooltip: CENTRALIZED_TOOLTIP },
             { label: "FAQ markup", tooltip: FAQ_TOOLTIP },
             { label: "Service markup", tooltip: SERVICE_TOOLTIP },
             { label: "Change history", tooltip: HISTORY_TOOLTIP },
           ]}
+          soon={[]}
           btnText="Get Pro"
           priceId={PRICES.PRO}
           featured
