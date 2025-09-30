@@ -6,9 +6,12 @@ import { prisma } from "@/lib/prisma";
 import { z } from "zod";
 import { logChange } from "@/lib/changeLog";
 import { ChangeAction, ChangeEntity } from "@prisma/client";
-import { requirePlan } from "@/lib/plan";
+// ✅ Use enforcePlan (1 arg)
+import { enforcePlan } from "@/lib/entitlements";
 
-const decimal = z.union([z.number(), z.string()]).transform((v) => (v === "" || v === null ? undefined : v));
+const decimal = z
+  .union([z.number(), z.string()])
+  .transform((v) => (v === "" || v === null ? undefined : v));
 
 const upsertSchema = z.object({
   profileId: z.string().cuid(),
@@ -31,10 +34,12 @@ const upsertSchema = z.object({
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const profileId = searchParams.get("profileId");
-  if (!profileId) return NextResponse.json({ ok: false, message: "profileId required" }, { status: 400 });
+  if (!profileId)
+    return NextResponse.json({ ok: false, message: "profileId required" }, { status: 400 });
 
   const session = await getServerSession(authOptions);
-  if (!session?.user?.email) return NextResponse.json({ ok: false, message: "Unauthorized" }, { status: 401 });
+  if (!session?.user?.email)
+    return NextResponse.json({ ok: false, message: "Unauthorized" }, { status: 401 });
 
   const profile = await prisma.profile.findFirst({
     where: { id: profileId, user: { email: session.user.email } },
@@ -42,14 +47,20 @@ export async function GET(req: NextRequest) {
   });
   if (!profile) return NextResponse.json({ ok: false, message: "Not found" }, { status: 404 });
 
-  const items = await prisma.serviceItem.findMany({ where: { profileId }, orderBy: { position: "asc" } });
+  const items = await prisma.serviceItem.findMany({
+    where: { profileId },
+    orderBy: { position: "asc" },
+  });
   return NextResponse.json({ ok: true, items });
 }
 
 export async function POST(req: NextRequest) {
-  await requirePlan("PRO");
+  // Gate writes at PRO+
+  await enforcePlan("PRO");
+
   const session = await getServerSession(authOptions);
-  if (!session?.user?.email) return NextResponse.json({ ok: false, message: "Unauthorized" }, { status: 401 });
+  if (!session?.user?.email)
+    return NextResponse.json({ ok: false, message: "Unauthorized" }, { status: 401 });
 
   const body = await req.json();
   const data = upsertSchema.parse(body);
@@ -60,7 +71,9 @@ export async function POST(req: NextRequest) {
   });
   if (!owner) return NextResponse.json({ ok: false, message: "Not found" }, { status: 404 });
 
-  const before = await prisma.serviceItem.findMany({ where: { profileId: data.profileId } });
+  const before = await prisma.serviceItem.findMany({
+    where: { profileId: data.profileId },
+  });
 
   await prisma.$transaction([
     prisma.serviceItem.deleteMany({ where: { profileId: data.profileId } }),
@@ -81,7 +94,9 @@ export async function POST(req: NextRequest) {
     }),
   ]);
 
-  const after = await prisma.serviceItem.findMany({ where: { profileId: data.profileId } });
+  const after = await prisma.serviceItem.findMany({
+    where: { profileId: data.profileId },
+  });
 
   await logChange({
     userId: owner.userId,
