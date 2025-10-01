@@ -14,20 +14,15 @@ import { unstable_cache } from "next/cache";
 
 type PageProps = { params: { slug: string } };
 
-/** ✅ Force Node.js runtime so Prisma does not run on the Edge */
+/** Ensure Prisma runs on Node runtime (not Edge) */
 export const runtime = "nodejs";
 
-/**
- * ISR: Cached at the edge; background re-render when stale.
- * Keep using tag-based revalidation from your API with revalidateTag(`profile:${slug}`).
- */
+/** ISR */
 export const revalidate = 3600;
 
-/* -------------------------------------------------------------------------- */
-/*                              Cached DB readers                              */
-/* -------------------------------------------------------------------------- */
+/* --------------------- Cached DB readers (schema-safe) -------------------- */
 
-// Narrow fetch for <head> metadata (fast)
+// Meta: only fields we’re sure exist in prod DB
 const getProfileMetaCached = (slug: string) =>
   unstable_cache(
     async () => {
@@ -45,50 +40,19 @@ const getProfileMetaCached = (slug: string) =>
     { revalidate, tags: [`profile:${slug}`] }
   )();
 
-// Full fetch for the page body (render all human-visible fields)
+// Full: DO NOT use `select` → let Prisma fetch whatever columns exist
 const getProfileFullCached = (slug: string) =>
   unstable_cache(
     async () => {
       return prisma.profile.findUnique({
         where: { slug },
-        select: {
-          id: true,
-          slug: true,
-          displayName: true,
-          tagline: true,
-          bio: true,
-
-          // Branding & media
-          logoUrl: true,
-          imageUrls: true, // string[]
-
-          // Website, Location & Reach
-          website: true,
-          location: true,
-          serviceArea: true, // string[]
-
-          // Trust & Authority
-          foundedYear: true,
-          teamSize: true,
-          pricingModel: true,
-          languages: true, // string[]
-          hours: true,
-          certifications: true,
-
-          // Links & press
-          links: true, // [{label,url}] or string[]
-          press: true, // [{title,url}]
-
-          // Platform handles (object of URLs)
-          handles: true,
-        },
       });
     },
     ["profile:full", slug],
     { revalidate, tags: [`profile:${slug}`] }
   )();
 
-// FAQs for this profile (public only)
+// FAQs (public)
 const getFaqsCached = (profileId: string, slug: string) =>
   unstable_cache(
     async () => {
@@ -102,7 +66,7 @@ const getFaqsCached = (profileId: string, slug: string) =>
     { revalidate, tags: [`profile:${slug}`] }
   )();
 
-// Services for this profile (public only)
+// Services (public)
 const getServicesCached = (profileId: string, slug: string) =>
   unstable_cache(
     async () => {
@@ -126,9 +90,7 @@ const getServicesCached = (profileId: string, slug: string) =>
     { revalidate, tags: [`profile:${slug}`] }
   )();
 
-/* -------------------------------------------------------------------------- */
-/*                                Utilities                                    */
-/* -------------------------------------------------------------------------- */
+/* -------------------------------- Utils ---------------------------------- */
 
 function safeUrl(u?: string | null): string | null {
   const s = typeof u === "string" ? u.trim() : "";
@@ -139,9 +101,7 @@ function pickFirst<T>(arr: (T | null | undefined)[]): T | null {
   return null;
 }
 
-/* -------------------------------------------------------------------------- */
-/*                                   SEO                                      */
-/* -------------------------------------------------------------------------- */
+/* --------------------------------- SEO ----------------------------------- */
 
 export async function generateMetadata(
   { params }: { params: { slug: string } }
@@ -164,25 +124,22 @@ export async function generateMetadata(
   };
 }
 
-/* -------------------------------------------------------------------------- */
-/*                               Page component                                */
-/* -------------------------------------------------------------------------- */
+/* ------------------------------ Page ------------------------------------- */
 
 export default async function PublicProfilePage({ params }: PageProps) {
   const { slug } = params;
-  const profile = await getProfileFullCached(slug);
+  const profile: any = await getProfileFullCached(slug);
   if (!profile) notFound();
 
   const baseUrl = await getRuntimeBaseUrl();
 
-  // Fetch public Services and FAQ
   const [services, faqs] = await Promise.all([
     getServicesCached(profile.id, slug),
     getFaqsCached(profile.id, slug),
   ]);
 
-  // JSON-LD blocks
-  const schema = buildProfileSchema(profile as any, baseUrl);
+  // JSON-LD
+  const schema = buildProfileSchema(profile, baseUrl);
   const faqJsonLd = buildFAQJsonLd(
     slug,
     faqs.map((f) => ({ question: f.question, answer: f.answer }))
@@ -203,28 +160,27 @@ export default async function PublicProfilePage({ params }: PageProps) {
   const displayName = profile.displayName ?? slug;
   const headline = profile.tagline ?? "";
 
-  // Prefer a non-empty logo, else first non-empty image
   const image: string | null = pickFirst<string>([
     safeUrl(profile.logoUrl),
     ...(Array.isArray(profile.imageUrls)
-      ? (profile.imageUrls.map((u) => safeUrl(u)).filter(Boolean) as string[])
+      ? (profile.imageUrls.map((u: any) => safeUrl(u)).filter(Boolean) as string[])
       : []),
   ]);
 
-  // Normalize links → unique, non-empty URLs
+  // Links
   const toUrl = (x: any) => safeUrl(typeof x === "string" ? x : x?.url);
   const linksArr = Array.isArray(profile.links) ? profile.links : [];
   const sameAs: string[] = Array.from(
     new Set(linksArr.map(toUrl).filter(Boolean) as string[])
   );
 
-  // Platform handles → clickable, non-empty links
-  const handles = (profile as any).handles || {};
+  // Handles
+  const handles = profile?.handles || {};
   const handlePairs: Array<{ label: string; url: string }> = Object.entries(handles)
     .map(([k, v]) => ({ label: prettyHandleLabel(k), url: safeUrl(String(v)) }))
     .filter((h): h is { label: string; url: string } => !!h.url);
 
-  // Press → reduce to guarantee url is a string
+  // Press
   const press: Array<{ title?: string; url: string }> = Array.isArray(profile.press)
     ? (profile.press as any[]).reduce<Array<{ title?: string; url: string }>>(
         (acc, p) => {
@@ -238,7 +194,7 @@ export default async function PublicProfilePage({ params }: PageProps) {
 
   return (
     <main className="mx-auto max-w-3xl px-6 py-12">
-      {/* MACHINE-READABLE JSON-LD */}
+      {/* JSON-LD */}
       <Script
         id="profile-jsonld"
         type="application/ld+json"
@@ -259,7 +215,7 @@ export default async function PublicProfilePage({ params }: PageProps) {
         />
       ))}
 
-      {/* HUMAN-READABLE PROFILE */}
+      {/* Header */}
       <header className="mb-8">
         {image ? (
           <div className="mb-4 h-24 w-24 overflow-hidden rounded-2xl">
@@ -280,7 +236,7 @@ export default async function PublicProfilePage({ params }: PageProps) {
         {headline ? <p className="mt-2 text-muted-foreground">{headline}</p> : null}
       </header>
 
-      {/* Branding & Media: logo + small gallery */}
+      {/* Branding & Media */}
       {(safeUrl(profile.logoUrl) || (profile.imageUrls?.length ?? 0) > 1) && (
         <section className="mb-8">
           <h3 className="mb-2 text-lg font-medium">Branding &amp; Media</h3>
@@ -299,7 +255,7 @@ export default async function PublicProfilePage({ params }: PageProps) {
               </div>
             )}
             {Array.isArray(profile.imageUrls) &&
-              profile.imageUrls.slice(0, 6).map((raw, i) => {
+              profile.imageUrls.slice(0, 6).map((raw: any, i: number) => {
                 const src = safeUrl(raw);
                 return src ? (
                   <div key={i} className="h-16 w-16 overflow-hidden rounded-md border">
@@ -319,7 +275,7 @@ export default async function PublicProfilePage({ params }: PageProps) {
         </section>
       )}
 
-      {/* Bio / About */}
+      {/* About */}
       {profile.bio ? (
         <section className="prose max-w-none mb-10">
           <h2>About</h2>
@@ -425,7 +381,7 @@ export default async function PublicProfilePage({ params }: PageProps) {
         </section>
       )}
 
-      {/* Platforms (handles) */}
+      {/* Platforms */}
       {handlePairs.length > 0 && (
         <section className="mb-8">
           <h3 className="mb-2 text-lg font-medium">Platforms</h3>
@@ -457,7 +413,7 @@ export default async function PublicProfilePage({ params }: PageProps) {
         </section>
       )}
 
-      {/* Press & Mentions */}
+      {/* Press */}
       {press.length > 0 && (
         <section className="mb-10">
           <h3 className="mb-2 text-lg font-medium">Press &amp; Mentions</h3>
@@ -537,8 +493,7 @@ function renderPrice(
 }
 
 /**
- * 🔁 Cache purge after edits
- * In your update API/route handler after saving:
+ * After edits that change a profile, call:
  *   import { revalidateTag } from "next/cache";
  *   revalidateTag(`profile:${slug}`);
  */
