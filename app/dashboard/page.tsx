@@ -16,7 +16,7 @@ export default async function DashboardPage() {
   return (
     <div className="container py-8">
       <div className="mb-6 flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">Your AI Profile</h1>
+        <h1 className="text-2xl font-semibold">Your AI Ready Profile</h1>
         {/* Removed the extra View link (PublicProfileLink) to avoid duplication.
             The only entry point is inside ProfileEditor with dirty-state guarding. */}
       </div>
