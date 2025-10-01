@@ -34,8 +34,6 @@ type PlatformHandles = {
 type LinkItem = { label: string; url: string };
 type PressItem = { title: string; url: string };
 
-type PlanTitle = "Lite" | "Pro" | "Business";
-
 type Profile = {
   // server identity
   id?: string | null;
@@ -87,6 +85,7 @@ function isValidUrl(u: string): boolean {
   }
 }
 function toCsv(arr?: string[] | null): string {
+  // Ensure standard comma+space join
   return (arr ?? []).join(", ");
 }
 function fromCsv(s: string): string[] {
@@ -165,16 +164,16 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
   const lastSavedRef = React.useRef<string>(""); // JSON string of last-saved payload
   const [dirty, setDirty] = React.useState<boolean>(false);
 
-  // ---- Unsaved changes modal
+  // ---- Modal for viewing with unsaved changes
   const [confirmOpen, setConfirmOpen] = React.useState(false);
 
-  // ---- Plan/Tier (best-effort; hides if endpoint not present)
+  // ---- Plan pill (Lite/Pro/Business) — best-effort and hidden if not available
+  type PlanTitle = "Lite" | "Pro" | "Business";
   const [plan, setPlan] = React.useState<PlanTitle | null>(null);
   React.useEffect(() => {
     let cancelled = false;
     (async () => {
-      const candidates = ["/api/account", "/api/me", "/api/user", "/api/plan"];
-      for (const path of candidates) {
+      for (const path of ["/api/account", "/api/me", "/api/user", "/api/plan"]) {
         try {
           const r = await fetch(path, { cache: "no-store" });
           if (!r.ok) continue;
@@ -460,7 +459,7 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
 
   return (
     <div className="max-w-2xl grid gap-8">
-      {/* Title + plan */}
+      {/* Title + reassurance + plan pill */}
       <div className="flex items-start justify-between">
         <div className="grid gap-1">
           <h2 className="text-2xl font-bold">Your AI Ready Profile</h2>
@@ -487,4 +486,563 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
             <span className="inline-flex items-center gap-2 rounded-full border border-gray-200 bg-gray-50 px-3 py-1 text-sm text-gray-700">
               <svg
                 aria-hidden="true"
-               
+                viewBox="0 0 24 24"
+                className="h-4 w-4"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <rect x="3" y="5" width="18" height="14" rx="2" ry="2" />
+                <path d="m3 7 9 6 9-6" />
+              </svg>
+              <span className="font-medium">{email}</span>
+              <span
+                className="ml-1 inline-flex h-4 w-4 items-center justify-center rounded-full bg-gray-200 text-[10px] font-semibold text-gray-700"
+                title="This email is private and is NOT shown on your public profile. Only information you enter in the fields below appears publicly."
+                aria-label="This email is private and not shown on your public profile."
+              >
+                i
+              </span>
+            </span>
+          </div>
+        ) : (
+          <span />
+        )}
+
+        <div className="flex items-center gap-3">
+          <span className={`text-xs px-2.5 py-1 rounded-full ${statusClasses}`}>{status}</span>
+          <button
+            type="button"
+            onClick={handleViewPublic}
+            className="text-blue-600 hover:text-blue-800 underline underline-offset-2"
+          >
+            View public profile
+          </button>
+        </div>
+      </div>
+
+      {/* Identity */}
+      <section className="grid gap-4">
+        <h3 className="text-lg font-semibold">Identity</h3>
+
+        <div className={row}>
+          <label className={label} htmlFor="displayName">
+            Display name *
+          </label>
+          <input
+            id="displayName"
+            className={input}
+            placeholder="Your public display name"
+            value={displayName}
+            onChange={(e) => setDisplayName(e.target.value)}
+            maxLength={120}
+          />
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className={row}>
+            <label className={label} htmlFor="legalName">
+              Legal/brand name (if different)
+            </label>
+            <input
+              id="legalName"
+              className={input}
+              placeholder="Legal or brand name (optional)"
+              value={legalName}
+              onChange={(e) => setLegalName(e.target.value)}
+              maxLength={160}
+            />
+          </div>
+          <div className={row}>
+            <label className={label} htmlFor="entityType">
+              Entity type <EntityTypeHelp />
+            </label>
+            <select
+              id="entityType"
+              className={input}
+              value={entityType}
+              onChange={(e) => setEntityType(e.target.value as EntityType)}
+            >
+              <option value="">Select…</option>
+              <option>Business</option>
+              <option>Local Service</option>
+              <option>Organization</option>
+              <option>Creator / Person</option>
+              <option>Product</option>
+            </select>
+          </div>
+        </div>
+
+        {/* Read-only public URL */}
+        <div className="mt-2">
+          <PublicUrlReadonly slug={serverSlug} />
+        </div>
+      </section>
+
+      {/* Tagline & Bio */}
+      <section className="grid gap-4">
+        <h3 className="text-lg font-semibold">Tagline & Bio</h3>
+
+        <div className={row}>
+          <label className={label} htmlFor="tagline">
+            One-line Summary
+            <span
+              className="ml-1 inline-flex h-4 w-4 items-center justify-center rounded-full bg-gray-200 text-[10px] font-semibold text-gray-700 align-middle"
+              title={
+                "A one-line summary of your brand or work. Think of it like the phrase under your name that instantly tells people (and AI) what you’re about. Example:\n‘Handmade jewelry for everyday wear’ or ‘AI tools for small businesses’."
+              }
+              aria-label="Help"
+            >
+              i
+            </span>
+          </label>
+          <input
+            id="tagline"
+            className={input}
+            placeholder="e.g., AI tools for small businesses"
+            value={tagline}
+            onChange={(e) => setTagline(e.target.value)}
+            maxLength={160}
+            title="A one-line summary of your brand or work. Example: ‘Handmade jewelry for everyday wear’ or ‘AI tools for small businesses’."
+          />
+        </div>
+
+        <div className={row}>
+          <label className={label} htmlFor="bio">
+            Bio / About
+          </label>
+          <textarea
+            id="bio"
+            className={input}
+            rows={6}
+            placeholder="Tell people what you do, who you serve, and what makes you credible."
+            value={bio}
+            onChange={(e) => setBio(e.target.value)}
+            maxLength={2000}
+          />
+        </div>
+      </section>
+
+      {/* Website, Location, Service area */}
+      <section className="grid gap-4">
+        <h3 className="text-lg font-semibold">Website, Location & Reach</h3>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className={row}>
+            <label className={label} htmlFor="website">
+              Website
+            </label>
+            <input
+              id="website"
+              className={input}
+              placeholder="https://example.com"
+              value={website}
+              onChange={(e) => setWebsite(e.target.value)}
+              maxLength={200}
+            />
+            <small className="text-xs text-gray-500">
+              Optional, but strongly recommended for better AI ranking.
+            </small>
+          </div>
+
+          <div className={row}>
+            <label className={label} htmlFor="location">
+              Location (address or city/state)
+            </label>
+            <input
+              id="location"
+              className={input}
+              placeholder="City, state (or address)"
+              value={location}
+              onChange={(e) => setLocation(e.target.value)}
+              maxLength={120}
+            />
+          </div>
+        </div>
+
+        <div className={row}>
+          <label className={label} htmlFor="serviceArea">
+            Service area (comma-separated regions)
+          </label>
+          <input
+            id="serviceArea"
+            className={input}
+            placeholder="Regions you serve (comma-separated)"
+            value={serviceArea}
+            onChange={(e) => setServiceArea(e.target.value)}
+            maxLength={240}
+          />
+        </div>
+      </section>
+
+      {/* Trust & Authority */}
+      <section className="grid gap-4">
+        <h3 className="text-lg font-semibold">Trust & Authority</h3>
+
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className={row}>
+            <label className={label} htmlFor="foundedYear">
+              Founded / started (year)
+            </label>
+            <input
+              id="foundedYear"
+              className={input}
+              inputMode="numeric"
+              placeholder="e.g., 2020"
+              value={foundedYear}
+              onChange={(e) => setFoundedYear(e.target.value)}
+              maxLength={4}
+            />
+          </div>
+          <div className={row}>
+            <label className={label} htmlFor="teamSize">
+              Team size
+            </label>
+            <input
+              id="teamSize"
+              className={input}
+              inputMode="numeric"
+              placeholder="e.g., 5"
+              value={teamSize}
+              onChange={(e) => setTeamSize(e.target.value)}
+              maxLength={6}
+            />
+          </div>
+          <div className={row}>
+            <label className={label} htmlFor="pricingModel">
+              Pricing model
+            </label>
+            <select
+              id="pricingModel"
+              className={input}
+              value={pricingModel}
+              onChange={(e) => setPricingModel(e.target.value as any)}
+            >
+              <option value="">Select…</option>
+              <option>Free</option>
+              <option>Subscription</option>
+              <option>One-time</option>
+              <option>Custom</option>
+            </select>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className={row}>
+            <label className={label} htmlFor="languages">
+              Languages served (comma-separated)
+            </label>
+            <input
+              id="languages"
+              className={input}
+              placeholder="e.g., English, Spanish"
+              value={languages}
+              onChange={(e) => setLanguages(e.target.value)}
+              maxLength={200}
+            />
+          </div>
+          <div className={row}>
+            <label className={label} htmlFor="hours">
+              Hours of operation
+            </label>
+            <input
+              id="hours"
+              className={input}
+              placeholder="e.g., Mon–Fri 9am–5pm"
+              value={hours}
+              onChange={(e) => setHours(e.target.value)}
+              maxLength={160}
+            />
+          </div>
+        </div>
+
+        <div className={row}>
+          <label className={label} htmlFor="certs">
+            Certifications / licenses / awards (optional)
+          </label>
+          <textarea
+            id="certs"
+            className={input}
+            rows={3}
+            placeholder="e.g., Board-certified; industry accreditations; notable awards."
+            value={certifications}
+            onChange={(e) => setCertifications(e.target.value)}
+            maxLength={2000}
+          />
+        </div>
+
+        {/* Press */}
+        <div className="grid gap-3">
+          <div className="flex items-center justify-between">
+            <span className={label}>Press & directory mentions</span>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <input
+              className={input}
+              placeholder="Title of mention or article"
+              value={pressDraft.title}
+              onChange={(e) => setPressDraft({ ...pressDraft, title: e.target.value })}
+              maxLength={120}
+            />
+            <input
+              className={input}
+              placeholder="https://your-article-or-listing.com"
+              value={pressDraft.url}
+              onChange={(e) => setPressDraft({ ...pressDraft, url: e.target.value })}
+              maxLength={300}
+            />
+          </div>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              className="px-3 py-2 border rounded-lg"
+              onClick={() => {
+                if (!pressDraft.title || !pressDraft.url) return;
+                setPress((p) => [...p, pressDraft]);
+                setPressDraft({ title: "", url: "" });
+              }}
+            >
+              + Add press link
+            </button>
+            {press.length > 0 && (
+              <button
+                type="button"
+                className="px-3 py-2 border rounded-lg"
+                onClick={() => setPress([])}
+              >
+                Clear
+              </button>
+            )}
+          </div>
+          {press.length > 0 && (
+            <ul className="list-disc pl-6 text-sm">
+              {press.map((p, i) => (
+                <li key={i}>
+                  <span className="font-medium">{p.title}</span> — {p.url}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </section>
+
+      {/* Branding & Media */}
+      <section className="grid gap-4">
+        <h3 className="text-lg font-semibold">Branding & Media</h3>
+
+        {/* Drag-and-drop logo upload with fallback manual URL */}
+        <div className={row}>
+          <label className={label} htmlFor="logoUploader">
+            Logo
+          </label>
+          <LogoUploader value={logoUrl} onChange={(url) => setLogoUrl(url)} />
+          <div className="grid gap-2">
+            <label className="text-xs text-gray-600">Or paste a logo URL</label>
+            <input
+              id="logoUrl"
+              className={input}
+              placeholder="https://cdn.example.com/logo.png"
+              value={logoUrl}
+              onChange={(e) => setLogoUrl(e.target.value)}
+              maxLength={300}
+            />
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          {imageUrls.map((u, i) => (
+            <div className={row} key={i}>
+              <label className={label} htmlFor={`img${i}`}>
+                Image {i + 1} URL
+              </label>
+              <input
+                id={`img${i}`}
+                className={input}
+                placeholder="https://cdn.example.com/photo.jpg"
+                value={u}
+                onChange={(e) => {
+                  const copy = [...imageUrls];
+                  copy[i] = e.target.value;
+                  setImageUrls(copy);
+                }}
+                maxLength={300}
+              />
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* Platform Handles */}
+      <section className="grid gap-4">
+        <h3 className="text-lg font-semibold">Platform Handles</h3>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {([
+            ["youtube", "YouTube channel URL"],
+            ["tiktok", "TikTok profile URL"],
+            ["instagram", "Instagram profile URL"],
+            ["substack", "Substack URL"],
+            ["etsy", "Etsy shop URL"],
+            ["x", "X (Twitter) profile URL"],
+            ["linkedin", "LinkedIn page URL"],
+            ["facebook", "Facebook page URL"],
+            ["github", "GitHub org/user URL"],
+          ] as const).map(([key, label]) => (
+            <div className={row} key={key}>
+              <label className={label}>{label}</label>
+              <input
+                className={input}
+                placeholder="https://..."
+                value={(handles as any)[key] || ""}
+                onChange={(e) => setHandles((h) => ({ ...h, [key]: e.target.value }))}
+                maxLength={300}
+              />
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* Links */}
+      <section className="grid gap-4">
+        <h3 className="text-lg font-semibold">Links</h3>
+
+        <div className="grid gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-[1fr,1fr,auto] gap-3 items-start">
+            <div className="grid gap-2">
+              <label className={label}>Label</label>
+              <div className="flex gap-2">
+                <input
+                  className={input}
+                  placeholder="Link label (e.g., Reviews)"
+                  value={linkDraft.label}
+                  onChange={(e) => setLinkDraft({ ...linkDraft, label: e.target.value })}
+                  maxLength={60}
+                />
+                {/* quick-pick label types */}
+                <LinkTypeSelect onPick={(lbl) => setLinkDraft((d) => ({ ...d, label: lbl }))} />
+              </div>
+            </div>
+
+            <div className="grid gap-2">
+              <label className={label}>URL</label>
+              <input
+                className={input}
+                placeholder="https://your-link.com"
+                value={linkDraft.url}
+                onChange={(e) => setLinkDraft({ ...linkDraft, url: e.target.value })}
+                maxLength={300}
+              />
+            </div>
+
+            <div className="grid gap-2">
+              <label className="opacity-0 select-none">Add</label>
+              <button
+                type="button"
+                className="px-3 py-2 border rounded-lg"
+                onClick={() => {
+                  if (!linkDraft.label || !linkDraft.url) return;
+                  setLinks((l) => [...l, linkDraft]);
+                  setLinkDraft({ label: "", url: "" });
+                }}
+              >
+                + Add
+              </button>
+            </div>
+          </div>
+
+          {links.length > 0 && (
+            <ul className="list-disc pl-6 text-sm">
+              {links.map((l, i) => (
+                <li key={i}>
+                  <span className="font-medium">{l.label}</span> — {l.url}
+                </li>
+              ))}
+            </ul>
+          )}
+          {links.length > 0 && (
+            <div>
+              <button
+                type="button"
+                className="px-3 py-2 border rounded-lg"
+                onClick={() => setLinks([])}
+              >
+                Clear links
+              </button>
+            </div>
+          )}
+        </div>
+      </section>
+
+      {/* Save / Publish */}
+      <div className="flex flex-col gap-1">
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={save}
+            disabled={saving}
+            className="px-4 py-2 rounded-lg bg-black text-white hover:bg-gray-900 transition-colors duration-200 disabled:opacity-60"
+          >
+            {saving ? "Saving…" : "Save & Publish"}
+          </button>
+
+          {/* Copy URL appears when a public path exists */}
+          {getPublicPath() ? (
+            <button
+              type="button"
+              onClick={copyUrl}
+              className="px-3 py-2 border rounded-lg"
+            >
+              Copy URL
+            </button>
+          ) : null}
+        </div>
+        <p className="text-xs text-gray-500">
+          Your changes go live immediately when you <span className="font-medium">Save &amp; Publish</span>.
+        </p>
+      </div>
+
+      {/* Unsaved changes modal */}
+      {confirmOpen && (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-black/30">
+          <div className="bg-white rounded-xl shadow-lg p-5 w-[min(92vw,480px)]">
+            <h4 className="text-base font-semibold mb-2">You have unsaved changes</h4>
+            <p className="text-sm text-gray-600 mb-4">
+              The public profile you’re about to view shows the <span className="font-medium">last published</span> version.
+              To include your edits, click <span className="font-medium">Save &amp; View</span>.
+            </p>
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                className="px-3 py-2 border rounded-lg"
+                onClick={() => setConfirmOpen(false)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="px-3 py-2 border rounded-lg"
+                onClick={openPublic}
+              >
+                View Anyway
+              </button>
+              <button
+                type="button"
+                className="px-3 py-2 rounded-lg bg-black text-white hover:bg-gray-900"
+                onClick={async () => {
+                  setConfirmOpen(false);
+                  await save(); // save already redirects to the public page
+                }}
+              >
+                Save &amp; View
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* NOTE: No legal/footer links are rendered here.
+          The only footer row lives in app/layout.tsx */}
+    </div>
+  );
+}
