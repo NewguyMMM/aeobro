@@ -124,6 +124,19 @@ const getServicesCached = (profileId: string, slug: string) =>
   )();
 
 /* -------------------------------------------------------------------------- */
+/*                                Utilities                                    */
+/* -------------------------------------------------------------------------- */
+
+function safeUrl(u?: string | null): string | null {
+  const s = typeof u === "string" ? u.trim() : "";
+  return s ? s : null;
+}
+function pickFirst<T>(arr: (T | null | undefined)[]): T | null {
+  for (const x of arr) if (x != null) return x as T;
+  return null;
+}
+
+/* -------------------------------------------------------------------------- */
 /*                                   SEO                                      */
 /* -------------------------------------------------------------------------- */
 
@@ -137,7 +150,8 @@ export async function generateMetadata(
   const url = `${baseUrl}/p/${params.slug}`;
   const title = profile.displayName ?? "Profile";
   const description = profile.tagline ?? "Public profile";
-  const images = profile.logoUrl ? [profile.logoUrl] : [];
+  const hero = safeUrl(profile.logoUrl);
+  const images = hero ? [hero] : [];
 
   return {
     title,
@@ -166,10 +180,13 @@ export default async function PublicProfilePage({ params }: PageProps) {
 
   // JSON-LD blocks
   const schema = buildProfileSchema(profile as any, baseUrl);
-  const faqJsonLd = buildFAQJsonLd(slug, faqs.map(f => ({ question: f.question, answer: f.answer })));
+  const faqJsonLd = buildFAQJsonLd(
+    slug,
+    faqs.map((f) => ({ question: f.question, answer: f.answer }))
+  );
   const serviceJsonLd = buildServiceJsonLd(
     `${baseUrl}/p/${slug}#profile`,
-    services.map(s => ({
+    services.map((s) => ({
       name: s.name,
       description: s.description ?? undefined,
       url: s.url ?? undefined,
@@ -183,26 +200,32 @@ export default async function PublicProfilePage({ params }: PageProps) {
   const displayName = profile.displayName ?? slug;
   const headline = profile.tagline ?? "";
 
-  // Image: prefer logoUrl; else first imageUrls entry
-  const image: string | null =
-    profile.logoUrl ??
-    (Array.isArray(profile.imageUrls) && profile.imageUrls.length > 0
-      ? profile.imageUrls[0]
-      : null);
+  // Prefer a non-empty logo, else first non-empty image
+  const image: string | null = pickFirst<string>([
+    safeUrl(profile.logoUrl),
+    ...(Array.isArray(profile.imageUrls)
+      ? (profile.imageUrls.map((u) => safeUrl(u)).filter(Boolean) as string[])
+      : []),
+  ]);
 
-  // Normalize links → unique URLs
-  const toUrl = (x: any) => (typeof x === "string" ? x : x?.url);
+  // Normalize links → unique, non-empty URLs
+  const toUrl = (x: any) => safeUrl(typeof x === "string" ? x : x?.url);
   const linksArr = Array.isArray(profile.links) ? profile.links : [];
-  const sameAs: string[] = Array.from(new Set(linksArr.map(toUrl).filter(Boolean)));
+  const sameAs: string[] = Array.from(
+    new Set(linksArr.map(toUrl).filter(Boolean) as string[])
+  );
 
-  // Platform handles → clickable links
+  // Platform handles → clickable, non-empty links
   const handles = (profile as any).handles || {};
   const handlePairs: Array<{ label: string; url: string }> = Object.entries(handles)
-    .filter(([, v]) => typeof v === "string" && v.trim() !== "")
-    .map(([k, v]) => ({ label: prettyHandleLabel(k), url: String(v) }));
+    .map(([k, v]) => ({ label: prettyHandleLabel(k), url: safeUrl(String(v)) }))
+    .filter((h): h is { label: string; url: string } => !!h.url);
 
+  // Press → filter empties
   const press: Array<{ title?: string; url?: string }> = Array.isArray(profile.press)
     ? (profile.press as any[])
+        .map((p) => ({ title: p?.title, url: safeUrl(p?.url) }))
+        .filter((p) => !!p.url)
     : [];
 
   return (
@@ -250,14 +273,14 @@ export default async function PublicProfilePage({ params }: PageProps) {
       </header>
 
       {/* Branding & Media: logo + small gallery */}
-      {(profile.logoUrl || (profile.imageUrls?.length ?? 0) > 1) && (
+      {(safeUrl(profile.logoUrl) || (profile.imageUrls?.length ?? 0) > 1) && (
         <section className="mb-8">
           <h3 className="mb-2 text-lg font-medium">Branding &amp; Media</h3>
           <div className="flex flex-wrap gap-3">
-            {profile.logoUrl && (
+            {safeUrl(profile.logoUrl) && (
               <div className="h-16 w-16 overflow-hidden rounded-md border">
                 <OptimizedImg
-                  src={profile.logoUrl}
+                  src={safeUrl(profile.logoUrl)!}
                   alt="Logo"
                   width={64}
                   height={64}
@@ -268,8 +291,9 @@ export default async function PublicProfilePage({ params }: PageProps) {
               </div>
             )}
             {Array.isArray(profile.imageUrls) &&
-              profile.imageUrls.slice(0, 6).map((src, i) =>
-                src ? (
+              profile.imageUrls.slice(0, 6).map((raw, i) => {
+                const src = safeUrl(raw);
+                return src ? (
                   <div key={i} className="h-16 w-16 overflow-hidden rounded-md border">
                     <OptimizedImg
                       src={src}
@@ -281,8 +305,8 @@ export default async function PublicProfilePage({ params }: PageProps) {
                       ratio={1}
                     />
                   </div>
-                ) : null
-              )}
+                ) : null;
+              })}
           </div>
         </section>
       )}
@@ -296,15 +320,15 @@ export default async function PublicProfilePage({ params }: PageProps) {
       ) : null}
 
       {/* Website, Location & Reach */}
-      {(profile.website || profile.location || (profile.serviceArea?.length ?? 0) > 0) && (
+      {(safeUrl(profile.website) || profile.location || (profile.serviceArea?.length ?? 0) > 0) && (
         <section className="mb-8">
           <h3 className="mb-2 text-lg font-medium">Website, Location &amp; Reach</h3>
           <ul className="space-y-1 text-sm">
-            {profile.website && (
+            {safeUrl(profile.website) && (
               <li>
                 <span className="font-medium">Website:</span>{" "}
-                <a className="underline" href={profile.website} rel="noopener noreferrer">
-                  {profile.website}
+                <a className="underline" href={safeUrl(profile.website)!} rel="noopener noreferrer">
+                  {safeUrl(profile.website)}
                 </a>
               </li>
             )}
