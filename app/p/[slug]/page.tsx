@@ -128,34 +128,89 @@ export async function generateMetadata(
 
 export default async function PublicProfilePage({ params }: PageProps) {
   const { slug } = params;
-  const profile: any = await getProfileFullCached(slug);
-  if (!profile) notFound();
+
+  // 1) Fetch profile with explicit logging
+  let profile: any;
+  try {
+    profile = await getProfileFullCached(slug);
+  } catch (err: any) {
+    console.error("[/p/[slug]] PROFILE FETCH ERROR", { slug, errName: err?.name, errCode: err?.code, message: err?.message });
+    throw err; // bubble to error.tsx so digest shows and logs capture the real cause
+  }
+
+  if (!profile) {
+    console.warn("[/p/[slug]] PROFILE NOT FOUND", { slug });
+    notFound();
+  }
+
+  // Helpful breadcrumb in logs
+  try {
+    console.log("[/p/[slug]] PROFILE OK", { slug, profileId: profile.id });
+  } catch {
+    /* ignore */
+  }
 
   const baseUrl = await getRuntimeBaseUrl();
 
-  const [services, faqs] = await Promise.all([
+  // 2) Fetch Services + FAQs with logging and hard fail if either crashes
+  const [servicesRes, faqsRes] = await Promise.allSettled([
     getServicesCached(profile.id, slug),
     getFaqsCached(profile.id, slug),
   ]);
 
-  // JSON-LD
-  const schema = buildProfileSchema(profile, baseUrl);
-  const faqJsonLd = buildFAQJsonLd(
-    slug,
-    faqs.map((f) => ({ question: f.question, answer: f.answer }))
-  );
-  const serviceJsonLd = buildServiceJsonLd(
-    `${baseUrl}/p/${slug}#profile`,
-    services.map((s) => ({
-      name: s.name,
-      description: s.description ?? undefined,
-      url: s.url ?? undefined,
-      priceMin: s.priceMin as any,
-      priceMax: s.priceMax as any,
-      priceUnit: s.priceUnit ?? undefined,
-      currency: s.currency ?? undefined,
-    }))
-  );
+  if (servicesRes.status === "rejected") {
+    console.error("[/p/[slug]] SERVICES FETCH ERROR", {
+      slug,
+      profileId: profile.id,
+      errName: (servicesRes as any).reason?.name,
+      errCode: (servicesRes as any).reason?.code,
+      message: (servicesRes as any).reason?.message,
+    });
+    throw (servicesRes as any).reason;
+  }
+  if (faqsRes.status === "rejected") {
+    console.error("[/p/[slug]] FAQ FETCH ERROR", {
+      slug,
+      profileId: profile.id,
+      errName: (faqsRes as any).reason?.name,
+      errCode: (faqsRes as any).reason?.code,
+      message: (faqsRes as any).reason?.message,
+    });
+    throw (faqsRes as any).reason;
+  }
+
+  const services = servicesRes.value;
+  const faqs = faqsRes.value;
+
+  // 3) Build JSON-LD (wrap in try/catch to expose schema-related errors)
+  let schema: any, faqJsonLd: any, serviceJsonLd: any[];
+  try {
+    schema = buildProfileSchema(profile, baseUrl);
+    faqJsonLd = buildFAQJsonLd(
+      slug,
+      faqs.map((f) => ({ question: f.question, answer: f.answer }))
+    );
+    serviceJsonLd = buildServiceJsonLd(
+      `${baseUrl}/p/${slug}#profile`,
+      services.map((s) => ({
+        name: s.name,
+        description: s.description ?? undefined,
+        url: s.url ?? undefined,
+        priceMin: s.priceMin as any,
+        priceMax: s.priceMax as any,
+        priceUnit: s.priceUnit ?? undefined,
+        currency: s.currency ?? undefined,
+      }))
+    );
+  } catch (err: any) {
+    console.error("[/p/[slug]] JSON-LD BUILD ERROR", {
+      slug,
+      profileId: profile.id,
+      errName: err?.name,
+      message: err?.message,
+    });
+    throw err;
+  }
 
   const displayName = profile.displayName ?? slug;
   const headline = profile.tagline ?? "";
