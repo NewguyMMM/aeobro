@@ -26,8 +26,6 @@ function Tooltip({
   text: string;
   align?: "left" | "right";
 }) {
-  // Accessible, no native title attribute -> avoids duplicate tooltips
-  // Shows on hover and keyboard focus
   return (
     <span
       className="relative inline-flex items-center group focus:outline-none"
@@ -94,19 +92,16 @@ export default function PricingPage() {
     const plan = url.searchParams.get("plan") as PlanTitle | null;
 
     if (priceId && plan) {
-      // Clean URL first to avoid loops on refresh
       url.searchParams.delete("start");
       url.searchParams.delete("plan");
       const clean =
         url.pathname + (url.searchParams.toString() ? `?${url.searchParams}` : "");
       window.history.replaceState({}, "", clean);
-      // Kick off checkout
       startCheckout(priceId, plan);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Clear "Redirecting…" if user navigates back from Stripe or refocuses the tab
   useEffect(() => {
     const reset = () => setLoading(null);
     window.addEventListener("pageshow", reset);
@@ -133,7 +128,6 @@ export default function PricingPage() {
         body: JSON.stringify({ priceId }),
       });
 
-      // If not signed in → send to NextAuth sign-in, then return and auto-resume
       if (res.status === 401) {
         const callbackUrl = new URL(window.location.href);
         callbackUrl.searchParams.set("start", priceId);
@@ -148,7 +142,6 @@ export default function PricingPage() {
       if (!res.ok) throw new Error(data?.message || "Failed to start checkout.");
       if (!data?.url) throw new Error("Server did not return a checkout URL.");
 
-      // Real browser navigation to Stripe Checkout
       window.location.assign(data.url as string);
     } catch (e: any) {
       setErr(e?.message || "Something went wrong.");
@@ -156,7 +149,6 @@ export default function PricingPage() {
     }
   }, []);
 
-  // Show the Stripe price-id helper only in dev and only if something's missing
   const showConfigHint = useMemo(() => {
     const missing = !PRICES.LITE || !PRICES.PRO || !PRICES.BUSINESS;
     return process.env.NODE_ENV !== "production" && missing;
@@ -292,15 +284,13 @@ export default function PricingPage() {
     "See how often your structured data appears in AI answers/search and which items drive visibility.";
 
   return (
-    // Increase TOP padding to create the breathing room under the header
     <div className="container pt-24 pb-16">
       {err && (
-        <div className="mb-6 rounded-md border border-red-2 00 bg-red-50 p-3 text-sm text-red-700">
+        <div className="mb-6 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
           {err}
         </div>
       )}
 
-      {/* Small top margin on the grid to maintain symmetry with the footer gap */}
       <div className="grid gap-6 md:grid-cols-3 mt-2">
         <PlanCard
           title="Lite"
@@ -311,11 +301,11 @@ export default function PricingPage() {
           priceId={PRICES.LITE}
         />
 
-        {/* Pro: ✅ features included (no longer 'coming soon') */}
+        {/* Pro with updated descriptor */}
         <PlanCard
           title="Pro"
           price="$49/mo"
-          bestFor="professionals and growing brands that need richer AI visibility with FAQs, services, and updates."
+          bestFor="professionals, small businesses, and product brands looking for richer AI visibility with FAQs, services, and updates."
           features={[
             { label: "Centralized AI Ready Profile", tooltip: CENTRALIZED_TOOLTIP },
             { label: "FAQ markup", tooltip: FAQ_TOOLTIP },
