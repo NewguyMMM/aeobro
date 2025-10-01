@@ -588,14 +588,17 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
         <div className={row}>
           <label className={label} htmlFor="tagline">
             One-line Summary
-            <span
-              className="ml-1 inline-flex h-4 w-4 items-center justify-center rounded-full bg-gray-200 text-[10px] font-semibold text-gray-700 align-middle"
-              title={
-                "A one-line summary of your brand or work. Think of it like the phrase under your name that instantly tells people (and AI) what you’re about. Example:\n‘Handmade jewelry for everyday wear’ or ‘AI tools for small businesses’."
-              }
-              aria-label="Help"
-            >
-              i
+            {/* Tooltip wrapper */}
+            <span className="relative group ml-1 cursor-help align-middle">
+              <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-gray-200 text-[10px] font-semibold text-gray-700">
+                i
+              </span>
+              <span className="pointer-events-none absolute left-1/2 top-full z-10 mt-1 hidden w-64 -translate-x-1/2 rounded-md bg-black px-2 py-1 text-xs leading-snug text-white group-hover:block">
+                A one-line summary of your brand or work. Think of it like the phrase under your name
+                that instantly tells people (and AI) what you’re about.
+                <br />
+                Example: “Handmade jewelry for everyday wear” or “AI tools for small businesses”.
+              </span>
             </span>
           </label>
           <input
@@ -605,7 +608,6 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
             value={tagline}
             onChange={(e) => setTagline(e.target.value)}
             maxLength={160}
-            title="A one-line summary of your brand or work. Example: ‘Handmade jewelry for everyday wear’ or ‘AI tools for small businesses’."
           />
         </div>
 
