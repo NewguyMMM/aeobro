@@ -101,6 +101,30 @@ function pickFirst<T>(arr: (T | null | undefined)[]): T | null {
   return null;
 }
 
+function ErrorBlock({
+  title,
+  err,
+  hint,
+}: {
+  title: string;
+  err: unknown;
+  hint?: string;
+}) {
+  const msg =
+    (err as any)?.message ||
+    (err as any)?.toString?.() ||
+    JSON.stringify(err, null, 2);
+  return (
+    <main className="mx-auto max-w-2xl px-6 py-12">
+      <h1 className="text-xl font-semibold text-red-600">{title}</h1>
+      {hint ? <p className="mt-2 text-sm text-gray-700">{hint}</p> : null}
+      <pre className="whitespace-pre-wrap text-xs bg-gray-100 p-4 rounded-md mt-4">
+        {msg}
+      </pre>
+    </main>
+  );
+}
+
 /* --------------------------------- SEO ----------------------------------- */
 
 export async function generateMetadata(
@@ -129,13 +153,24 @@ export async function generateMetadata(
 export default async function PublicProfilePage({ params }: PageProps) {
   const { slug } = params;
 
-  // 1) Fetch profile with explicit logging
+  // 1) Fetch profile with explicit logging + inline error surface
   let profile: any;
   try {
     profile = await getProfileFullCached(slug);
   } catch (err: any) {
-    console.error("[/p/[slug]] PROFILE FETCH ERROR", { slug, errName: err?.name, errCode: err?.code, message: err?.message });
-    throw err; // bubble to error.tsx so digest shows and logs capture the real cause
+    console.error("[/p/[slug]] PROFILE FETCH ERROR", {
+      slug,
+      errName: err?.name,
+      errCode: err?.code,
+      message: err?.message,
+    });
+    return (
+      <ErrorBlock
+        title="Database Error while loading profile"
+        err={err}
+        hint="If this persists, check Neon connectivity and Prisma datasource URL."
+      />
+    );
   }
 
   if (!profile) {
@@ -152,31 +187,45 @@ export default async function PublicProfilePage({ params }: PageProps) {
 
   const baseUrl = await getRuntimeBaseUrl();
 
-  // 2) Fetch Services + FAQs with logging and hard fail if either crashes
+  // 2) Fetch Services + FAQs (log + inline error)
   const [servicesRes, faqsRes] = await Promise.allSettled([
     getServicesCached(profile.id, slug),
     getFaqsCached(profile.id, slug),
   ]);
 
   if (servicesRes.status === "rejected") {
+    const reason: any = servicesRes.reason;
     console.error("[/p/[slug]] SERVICES FETCH ERROR", {
       slug,
       profileId: profile.id,
-      errName: (servicesRes as any).reason?.name,
-      errCode: (servicesRes as any).reason?.code,
-      message: (servicesRes as any).reason?.message,
+      errName: reason?.name,
+      errCode: reason?.code,
+      message: reason?.message,
     });
-    throw (servicesRes as any).reason;
+    return (
+      <ErrorBlock
+        title="Database Error while loading services"
+        err={reason}
+        hint="Verify prisma schema & migrations for ServiceItem, and DB availability."
+      />
+    );
   }
   if (faqsRes.status === "rejected") {
+    const reason: any = faqsRes.reason;
     console.error("[/p/[slug]] FAQ FETCH ERROR", {
       slug,
       profileId: profile.id,
-      errName: (faqsRes as any).reason?.name,
-      errCode: (faqsRes as any).reason?.code,
-      message: (faqsRes as any).reason?.message,
+      errName: reason?.name,
+      errCode: reason?.code,
+      message: reason?.message,
     });
-    throw (faqsRes as any).reason;
+    return (
+      <ErrorBlock
+        title="Database Error while loading FAQs"
+        err={reason}
+        hint="Verify prisma schema & migrations for FAQItem."
+      />
+    );
   }
 
   const services = servicesRes.value;
@@ -209,7 +258,13 @@ export default async function PublicProfilePage({ params }: PageProps) {
       errName: err?.name,
       message: err?.message,
     });
-    throw err;
+    return (
+      <ErrorBlock
+        title="Template Error while building JSON-LD"
+        err={err}
+        hint="Check buildProfileSchema/buildFAQJsonLd/buildServiceJsonLd inputs."
+      />
+    );
   }
 
   const displayName = profile.displayName ?? slug;
@@ -423,7 +478,12 @@ export default async function PublicProfilePage({ params }: PageProps) {
                   <p className="text-sm text-gray-600 mt-1">{s.description}</p>
                 ) : null}
                 <div className="text-sm text-gray-700 mt-2">
-                  {renderPrice(s.currency, s.priceMin as any, s.priceMax as any, s.priceUnit ?? undefined)}
+                  {renderPrice(
+                    s.currency,
+                    s.priceMin as any,
+                    s.priceMax as any,
+                    s.priceUnit ?? undefined
+                  )}
                 </div>
                 {s.url ? (
                   <a href={s.url} className="inline-block mt-2 text-sky-600 hover:underline">
@@ -501,7 +561,10 @@ export default async function PublicProfilePage({ params }: PageProps) {
 
       {/* Raw schema link */}
       <section className="mt-6">
-        <a className="text-sm underline" href={`/api/profile/${encodeURIComponent(slug)}/schema`}>
+        <a
+          className="text-sm underline"
+          href={`/api/profile/${encodeURIComponent(slug)}/schema`}
+        >
           View raw schema JSON
         </a>
       </section>
