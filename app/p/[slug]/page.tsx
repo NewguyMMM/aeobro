@@ -14,6 +14,9 @@ import { unstable_cache } from "next/cache";
 
 type PageProps = { params: { slug: string } };
 
+/** ✅ Force Node.js runtime so Prisma does not run on the Edge */
+export const runtime = "nodejs";
+
 /**
  * ISR: Cached at the edge; background re-render when stale.
  * Keep using tag-based revalidation from your API with revalidateTag(`profile:${slug}`).
