@@ -221,11 +221,14 @@ export default async function PublicProfilePage({ params }: PageProps) {
     .map(([k, v]) => ({ label: prettyHandleLabel(k), url: safeUrl(String(v)) }))
     .filter((h): h is { label: string; url: string } => !!h.url);
 
-  // Press → filter empties
-  const press: Array<{ title?: string; url?: string }> = Array.isArray(profile.press)
+  // Press → filter empties and guarantee url is a string
+  const press = Array.isArray(profile.press)
     ? (profile.press as any[])
-        .map((p) => ({ title: p?.title, url: safeUrl(p?.url) }))
-        .filter((p) => !!p.url)
+        .map((p) => ({ title: p?.title as string | undefined, url: safeUrl(p?.url) }))
+        .filter(
+          (p): p is { title?: string; url: string } =>
+            typeof p.url === "string" && p.url.length > 0
+        )
     : [];
 
   return (
