@@ -85,7 +85,6 @@ function isValidUrl(u: string): boolean {
   }
 }
 function toCsv(arr?: string[] | null): string {
-  // Ensure standard comma+space join
   return (arr ?? []).join(", ");
 }
 function fromCsv(s: string): string[] {
@@ -167,25 +166,22 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
   // ---- Modal for viewing with unsaved changes
   const [confirmOpen, setConfirmOpen] = React.useState(false);
 
-  // ---- Plan pill (Lite/Pro/Business) — best-effort and hidden if not available
+  // ---- Plan pill (Lite/Pro/Business) — fetch from /api/account only; auto-hide if missing
   type PlanTitle = "Lite" | "Pro" | "Business";
   const [plan, setPlan] = React.useState<PlanTitle | null>(null);
   React.useEffect(() => {
     let cancelled = false;
     (async () => {
-      for (const path of ["/api/account", "/api/me", "/api/user", "/api/plan"]) {
-        try {
-          const r = await fetch(path, { cache: "no-store" });
-          if (!r.ok) continue;
-          const j = await r.json();
-          const p = (j?.plan || j?.tier || j?.data?.plan) as PlanTitle | undefined;
-          if (p && ["Lite", "Pro", "Business"].includes(p) && !cancelled) {
-            setPlan(p);
-            break;
-          }
-        } catch {
-          // ignore and try next
+      try {
+        const r = await fetch("/api/account", { cache: "no-store" });
+        if (!r.ok) return;
+        const j = await r.json();
+        const p = j?.plan as PlanTitle | undefined;
+        if (!cancelled && (p === "Lite" || p === "Pro" || p === "Business")) {
+          setPlan(p);
         }
+      } catch {
+        /* silently ignore; pill stays hidden */
       }
     })();
     return () => {
@@ -459,15 +455,12 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
 
   return (
     <div className="max-w-2xl grid gap-8">
-      {/* Title + reassurance + plan pill */}
+      {/* Reassurance note + plan pill (page provides the single h1 title) */}
       <div className="flex items-start justify-between">
-        <div className="grid gap-1">
-          <h2 className="text-2xl font-bold">Your AI Ready Profile</h2>
-          <p className="text-sm text-gray-600">
-            Only <span className="font-medium">Display name</span> is required to publish.
-            Add more when you’re ready — the more details you include, the better your AI visibility.
-          </p>
-        </div>
+        <p className="text-sm text-gray-600">
+          Only <span className="font-medium">Display name</span> is required to publish.
+          Add more when you’re ready — the more details you include, the better your AI visibility.
+        </p>
         {plan && (
           <span
             className="inline-flex items-center rounded-full bg-gray-50 text-gray-800 border border-gray-200 px-3 py-1 text-xs font-medium"
@@ -586,7 +579,7 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
         <h3 className="text-lg font-semibold">Tagline & Bio</h3>
 
         <div className={row}>
-          <label className={label} htmlFor="tagline">
+          <label className={label + " overflow-visible"} htmlFor="tagline">
             One-line Summary
             {/* Tooltip wrapper */}
             <span className="relative group ml-1 cursor-help align-middle">
