@@ -2,31 +2,35 @@
 import { PrismaClient } from "@prisma/client";
 
 /**
- * Prefer DIRECT connection for Prisma (Neon pooler can be flaky with Prisma).
- * Falls back to DATABASE_URL if DIRECT is not provided.
+ * Runtime (serverless) should use the POOLED connection string (DATABASE_URL).
+ * Migrations will use the DIRECT connection (DATABASE_DIRECT_URL) via
+ * prisma/schema.prisma's `directUrl` — no code changes needed here.
+ *
+ * Make sure DATABASE_URL includes:
+ *   &pgbouncer=true&connection_limit=1
+ * …and that both DB URLs share the same current password.
  */
-const DATABASE_URL =
-  process.env.DATABASE_DIRECT_URL || process.env.DATABASE_URL;
-
-if (!DATABASE_URL) {
-  throw new Error(
-    "Missing DATABASE_DIRECT_URL / DATABASE_URL in environment variables."
-  );
-}
 
 declare global {
   // eslint-disable-next-line no-var
-  var prisma: PrismaClient | undefined;
+  var __prisma: PrismaClient | undefined;
+}
+
+// Use pooled URL for all app/runtime Prisma usage
+const datasourceUrl = process.env.DATABASE_URL;
+
+if (!datasourceUrl) {
+  throw new Error("Missing DATABASE_URL in environment variables.");
 }
 
 export const prisma =
-  globalThis.prisma ??
+  global.__prisma ??
   new PrismaClient({
-    datasources: { db: { url: DATABASE_URL } },
-    log:
-      process.env.NODE_ENV === "development"
-        ? ["query", "error", "warn"]
-        : ["error"],
+    // Prisma 5+ preferred override for connection string
+    datasourceUrl,
+    log: process.env.NODE_ENV === "development" ? ["query", "warn", "error"] : ["error"],
   });
 
-if (process.env.NODE_ENV !== "production") globalThis.prisma = prisma;
+if (process.env.NODE_ENV !== "production") {
+  global.__prisma = prisma;
+}
