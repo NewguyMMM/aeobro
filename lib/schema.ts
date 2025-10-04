@@ -1,8 +1,9 @@
 // lib/schema.ts
-// 📅 2025-09-30 12:36 PM ET
+// 📅 2025-10-04 02:58 PM ET
 import type { Profile } from "@prisma/client";
+import { sanitizeText, sanitizeUrl } from "@/lib/sanitize";
 
-/** Map editor entityType → schema.org @type */
+/** Map editor entityType → schema.org @type (pre-gating) */
 function schemaTypeFor(entityType?: string, orgHeuristic = false) {
   switch ((entityType || "").toLowerCase()) {
     case "local service":
@@ -18,78 +19,123 @@ function schemaTypeFor(entityType?: string, orgHeuristic = false) {
   }
 }
 
+/** After deciding a desired type, gate what is actually allowed to export */
+function applyVerificationGating(
+  desiredType: "Organization" | "LocalBusiness" | "Person",
+  verificationStatus?: string | null
+): "Organization" | "LocalBusiness" | "Person" | null {
+  const status = (verificationStatus || "UNVERIFIED").toUpperCase();
+  // Only DOMAIN_VERIFIED can export org/localbusiness
+  if (desiredType === "Organization" || desiredType === "LocalBusiness") {
+    if (status === "DOMAIN_VERIFIED") return desiredType;
+    // Downgrade to Person if only platform-verified; otherwise block entirely
+    if (status === "PLATFORM_VERIFIED") return "Person";
+    if (status === "UNVERIFIED") return "Person"; // safest default is to allow Person only
+  }
+  // Person export allowed for PLATFORM_VERIFIED or DOMAIN_VERIFIED; also unverified minimal Person is okay
+  return desiredType;
+}
+
 /**
  * Build the primary JSON-LD block for a public profile.
- * - Uses entityType to pick @type
+ * - Uses entityType to pick @type, then applies verification gating
  * - description prefers Bio → Tagline
  * - Consolidates links/socials into sameAs
  * - ❗️Does NOT inline FAQs/Services anymore (these now live in separate tables).
  *   Use buildFAQJsonLd() and buildServiceJsonLd() below.
+ *
+ * All user-controlled fields are sanitized.
  */
 export function buildProfileSchema(profile: Partial<Profile>, baseUrl: string) {
   const slug = (profile as any)?.slug as string | undefined;
-  const url = slug ? `${baseUrl}/p/${slug}` : baseUrl;
+  const url = slug ? `${baseUrl}/p/${sanitizeText(slug, 120)}` : baseUrl;
 
-  // Core identity
-  const displayName = (profile as any)?.displayName as string | null;
-  const legalName = (profile as any)?.legalName as string | null;
-  const entityType = (profile as any)?.entityType as string | null;
+  // Core identity (sanitized)
+  const displayNameRaw = (profile as any)?.displayName as string | null;
+  const legalNameRaw = (profile as any)?.legalName as string | null;
+  const entityTypeRaw = (profile as any)?.entityType as string | null;
 
-  // Description: Bio → Tagline
-  const bio = (profile as any)?.bio as string | null;
-  const tagline = (profile as any)?.tagline as string | null;
-  const description = bio || tagline || undefined;
+  const displayName = displayNameRaw ? sanitizeText(displayNameRaw, 200) : null;
+  const legalName = legalNameRaw ? sanitizeText(legalNameRaw, 200) : null;
+  const entityType = entityTypeRaw ? sanitizeText(entityTypeRaw, 50) : null;
 
-  // Image fallbacks (prefer logo for orgs)
-  const image =
-    ((profile as any)?.logoUrl as string | null) ??
-    ((profile as any)?.avatarUrl as string | null) ??
-    ((profile as any)?.image as string | null) ??
+  // Description: Bio → Tagline (sanitized)
+  const bioRaw = (profile as any)?.bio as string | null;
+  const taglineRaw = (profile as any)?.tagline as string | null;
+  const description =
+    sanitizeText(bioRaw ?? "", 5000) ||
+    sanitizeText(taglineRaw ?? "", 500) ||
     undefined;
 
-  // Contact (these keys may or may not exist on your Profile shape — safe casts)
-  const email =
+  // Image/Logo (URLs sanitized)
+  const logoUrl = sanitizeUrl((profile as any)?.logoUrl as string | null);
+  const avatarUrl = sanitizeUrl((profile as any)?.avatarUrl as string | null);
+  const imageUrl = sanitizeUrl((profile as any)?.image as string | null);
+  const image = logoUrl || avatarUrl || imageUrl || undefined;
+
+  // Contact (sanitized)
+  const emailRaw =
     ((profile as any)?.publicEmail as string | null) ??
     ((profile as any)?.email as string | null) ??
-    undefined;
-  const telephone =
+    null;
+  const telephoneRaw =
     ((profile as any)?.publicPhone as string | null) ??
     ((profile as any)?.phone as string | null) ??
-    undefined;
+    null;
+  const email = emailRaw ? sanitizeText(emailRaw, 200) : undefined;
+  const telephone = telephoneRaw ? sanitizeText(telephoneRaw, 50) : undefined;
 
-  // Links / socials → sameAs
-  const toUrl = (x: any) => (typeof x === "string" ? x : x?.url);
+  // Links / socials → sameAs (URLs sanitized + deduped)
+  const toMaybeUrl = (x: any): string | null => {
+    const u = typeof x === "string" ? x : x?.url;
+    return sanitizeUrl(u);
+  };
   const linksArr = Array.isArray((profile as any)?.links) ? (profile as any)?.links : [];
   const socialsArr = Array.isArray((profile as any)?.socialLinks) ? (profile as any)?.socialLinks : [];
-  const sameAs = Array.from(
-    new Set(
-      ([] as any[]).concat(linksArr, socialsArr).map(toUrl).filter(Boolean)
-    )
-  );
+  const sameAsSet = new Set<string>();
+  ([] as any[]).concat(linksArr, socialsArr).forEach((v) => {
+    const u = toMaybeUrl(v);
+    if (u) sameAsSet.add(u);
+  });
+  const sameAs = Array.from(sameAsSet);
   const sameAsOut = sameAs.length ? sameAs : undefined;
 
-  // Address (optional structured object if present on Profile model)
+  // Address (sanitized optional structured object)
   const addr = ((profile as any)?.address as any) || {};
+  const streetAddress = addr?.streetAddress ? sanitizeText(addr.streetAddress, 200) : undefined;
+  const addressLocality = (addr?.addressLocality || addr?.city) ? sanitizeText(addr.addressLocality || addr.city, 120) : undefined;
+  const addressRegion = (addr?.addressRegion || addr?.state) ? sanitizeText(addr.addressRegion || addr.state, 60) : undefined;
+  const postalCode = addr?.postalCode ? sanitizeText(addr.postalCode, 40) : undefined;
+  const addressCountry = (addr?.addressCountry || addr?.country) ? sanitizeText(addr.addressCountry || addr.country, 60) : undefined;
   const address =
-    addr && (addr.streetAddress || addr.addressLocality || addr.postalCode || addr.addressRegion)
+    streetAddress || addressLocality || addressRegion || postalCode || addressCountry
       ? {
           "@type": "PostalAddress",
-          streetAddress: addr.streetAddress || undefined,
-          addressLocality: addr.addressLocality || addr.city || undefined,
-          addressRegion: addr.addressRegion || addr.state || undefined,
-          postalCode: addr.postalCode || undefined,
-          addressCountry: addr.addressCountry || addr.country || undefined,
+          streetAddress,
+          addressLocality,
+          addressRegion,
+          postalCode,
+          addressCountry,
         }
       : undefined;
 
   // Heuristic: treat as org if legalName exists and entityType is missing
   const orgHeuristic = !!legalName && !entityType;
-  const schemaType = schemaTypeFor(entityType || undefined, orgHeuristic);
+  const preliminaryType = schemaTypeFor(entityType || undefined, orgHeuristic);
+
+  // Apply verification gating
+  const verificationStatus = (profile as any)?.verificationStatus as string | null;
+  const schemaType = applyVerificationGating(
+    preliminaryType as any,
+    verificationStatus
+  );
+
+  if (!schemaType) return null; // gated out entirely (shouldn't happen with our defaults)
 
   // Name rules: prefer displayName; for orgs fall back to legalName
   const name =
-    (displayName as string | null) ??
-    (schemaType !== "Person" ? (legalName as string | null) : null) ??
+    displayName ??
+    (schemaType !== "Person" ? legalName : null) ??
     undefined;
 
   const base: any = {
@@ -97,13 +143,13 @@ export function buildProfileSchema(profile: Partial<Profile>, baseUrl: string) {
     "@type": schemaType,
     "@id": `${url}#profile`,
     url,
-    name: name || (legalName || "Profile"),
-    description,
-    image,
-    sameAs: sameAsOut,
-    email,
-    telephone,
-    address,
+    name: name || sanitizeText(legalName || "Profile", 200),
+    ...(description ? { description } : {}),
+    ...(image ? { image } : {}),
+    ...(sameAsOut ? { sameAs: sameAsOut } : {}),
+    ...(email ? { email } : {}),
+    ...(telephone ? { telephone } : {}),
+    ...(address ? { address } : {}),
   };
 
   // Organization / LocalBusiness extras
@@ -111,16 +157,23 @@ export function buildProfileSchema(profile: Partial<Profile>, baseUrl: string) {
     base.legalName = legalName || undefined;
 
     // Optional: opening hours if you store a simple string
-    const hours = (profile as any)?.hours as string | null;
+    const hoursRaw = (profile as any)?.hours as string | null;
+    const hours = hoursRaw ? sanitizeText(hoursRaw, 160) : null;
     if (hours) base.openingHours = hours;
 
     // Optional: languages served (string[] on your model)
-    const languages = (profile as any)?.languages as string[] | null;
-    if (languages && languages.length) base.availableLanguage = languages;
+    const languagesRaw = (profile as any)?.languages as string[] | null;
+    const languages = Array.isArray(languagesRaw)
+      ? languagesRaw.map((s) => sanitizeText(s, 60)).filter(Boolean)
+      : [];
+    if (languages.length) base.availableLanguage = languages;
 
     // Optional: service area (string[] on your model)
-    const serviceArea = (profile as any)?.serviceArea as string[] | null;
-    if (serviceArea && serviceArea.length) base.areaServed = serviceArea;
+    const serviceAreaRaw = (profile as any)?.serviceArea as string[] | null;
+    const serviceArea = Array.isArray(serviceAreaRaw)
+      ? serviceAreaRaw.map((s) => sanitizeText(s, 80)).filter(Boolean)
+      : [];
+    if (serviceArea.length) base.areaServed = serviceArea;
 
     // Optional: foundedYear / teamSize / pricingModel
     const foundedYear = (profile as any)?.foundedYear as number | null;
@@ -129,7 +182,8 @@ export function buildProfileSchema(profile: Partial<Profile>, baseUrl: string) {
     const teamSize = (profile as any)?.teamSize as number | null;
     if (teamSize) base.numberOfEmployees = teamSize;
 
-    const pricingModel = (profile as any)?.pricingModel as string | null;
+    const pricingModelRaw = (profile as any)?.pricingModel as string | null;
+    const pricingModel = pricingModelRaw ? sanitizeText(pricingModelRaw, 40) : null;
     if (pricingModel) {
       base.additionalProperty = [
         { "@type": "PropertyValue", name: "pricingModel", value: pricingModel },
@@ -137,14 +191,16 @@ export function buildProfileSchema(profile: Partial<Profile>, baseUrl: string) {
     }
   } else {
     // Person extras
-    const jobTitle = (profile as any)?.jobTitle as string | null;
+    const jobTitleRaw = (profile as any)?.jobTitle as string | null;
+    const jobTitle = jobTitleRaw ? sanitizeText(jobTitleRaw, 120) : null;
     if (jobTitle) base.jobTitle = jobTitle;
 
-    const worksFor =
+    const worksForRaw =
       ((profile as any)?.organizationName as string | null) ??
       ((profile as any)?.company as string | null) ??
-      (legalName as string | null) ??
-      undefined;
+      legalName ??
+      null;
+    const worksFor = worksForRaw ? sanitizeText(worksForRaw, 200) : null;
     if (worksFor) base.worksFor = { "@type": "Organization", name: worksFor };
   }
 
@@ -175,19 +231,31 @@ export function buildFAQJsonLd(
   faqs: Array<{ question: string; answer: string }>
 ) {
   if (!faqs?.length) return null;
+
+  const safeSlug = sanitizeText(slug, 120);
+  const mainEntity = faqs
+    .map((q) => {
+      const question = sanitizeText(q.question, 500);
+      const answer = sanitizeText(q.answer, 4000);
+      if (!question || !answer) return null;
+      return {
+        "@type": "Question",
+        name: question,
+        acceptedAnswer: {
+          "@type": "Answer",
+          text: answer,
+        },
+      };
+    })
+    .filter(Boolean) as Array<any>;
+
+  if (!mainEntity.length) return null;
+
   return {
     "@context": "https://schema.org",
     "@type": "FAQPage",
-    mainEntity: faqs.map((q) => ({
-      "@type": "Question",
-      name: q.question,
-      acceptedAnswer: {
-        "@type": "Answer",
-        text: q.answer,
-      },
-    })),
-    // Anchor to the FAQ section on the public page
-    url: `/p/${slug}#faq`,
+    mainEntity,
+    url: `/p/${safeSlug}#faq`,
   };
 }
 
@@ -211,49 +279,68 @@ export function buildServiceJsonLd(
   }>
 ) {
   if (!services?.length) return [];
-  return services.map((svc) => {
-    const hasAnyPrice = svc.priceMin !== undefined || svc.priceMax !== undefined;
-    const offers =
-      hasAnyPrice
-        ? {
-            "@type": "Offer",
-            ...(svc.currency ? { priceCurrency: svc.currency } : {}),
-            ...(svc.priceMin !== undefined ? { price: String(svc.priceMin) } : {}),
-            ...(svc.priceMax !== undefined
-              ? { highPrice: String(svc.priceMax) }
-              : {}),
-            ...(svc.priceMin !== undefined && svc.priceMax !== undefined
-              ? {
-                  priceSpecification: {
-                    "@type": "PriceSpecification",
-                    minPrice: String(svc.priceMin),
-                    maxPrice: String(svc.priceMax),
-                  },
-                }
-              : {}),
-            ...(svc.url ? { url: svc.url } : {}),
-            ...(svc.priceUnit
-              ? {
-                  eligibleQuantity: {
-                    "@type": "QuantitativeValue",
-                    unitText: svc.priceUnit,
-                  },
-                }
-              : {}),
-          }
-        : undefined;
 
-    const obj: any = {
-      "@context": "https://schema.org",
-      "@type": "Service",
-      name: svc.name,
-      provider: providerIdUrl, // link back to the main entity
-    };
+  const provider = sanitizeUrl(providerIdUrl) || sanitizeText(providerIdUrl, 2048);
 
-    if (svc.description) obj.description = svc.description;
-    if (svc.url) obj.url = svc.url;
-    if (offers) obj.offers = offers;
+  return services
+    .map((svc) => {
+      const name = sanitizeText(svc.name, 200);
+      if (!name) return null;
 
-    return obj;
-  });
+      const description = svc.description ? sanitizeText(svc.description, 2000) : undefined;
+      const url = svc.url ? sanitizeUrl(svc.url) : undefined;
+
+      const hasAnyPrice =
+        svc.priceMin !== undefined && svc.priceMin !== null
+          ? true
+          : svc.priceMax !== undefined && svc.priceMax !== null;
+
+      const currency = svc.currency ? sanitizeText(svc.currency, 10) : undefined;
+      const priceUnit = svc.priceUnit ? sanitizeText(svc.priceUnit, 40) : undefined;
+
+      const offers =
+        hasAnyPrice
+          ? {
+              "@type": "Offer",
+              ...(currency ? { priceCurrency: currency } : {}),
+              ...(svc.priceMin !== undefined && svc.priceMin !== null ? { price: String(svc.priceMin) } : {}),
+              ...(svc.priceMax !== undefined && svc.priceMax !== null ? { highPrice: String(svc.priceMax) } : {}),
+              ...(svc.priceMin !== undefined &&
+              svc.priceMin !== null &&
+              svc.priceMax !== undefined &&
+              svc.priceMax !== null
+                ? {
+                    priceSpecification: {
+                      "@type": "PriceSpecification",
+                      minPrice: String(svc.priceMin),
+                      maxPrice: String(svc.priceMax),
+                    },
+                  }
+                : {}),
+              ...(url ? { url } : {}),
+              ...(priceUnit
+                ? {
+                    eligibleQuantity: {
+                      "@type": "QuantitativeValue",
+                      unitText: priceUnit,
+                    },
+                  }
+                : {}),
+            }
+          : undefined;
+
+      const obj: any = {
+        "@context": "https://schema.org",
+        "@type": "Service",
+        name,
+        provider, // link back to the main entity
+      };
+
+      if (description) obj.description = description;
+      if (url) obj.url = url;
+      if (offers) obj.offers = offers;
+
+      return obj;
+    })
+    .filter(Boolean) as any[];
 }
