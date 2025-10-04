@@ -6,6 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { z } from "zod";
 import { toKebab, isSlugAllowed, RESERVED_SLUGS } from "@/lib/slug";
 import { revalidatePath, revalidateTag } from "next/cache";
+import { sanitizeProfilePayload } from "@/lib/sanitize"; // ✅ NEW: sanitization
 
 export const runtime = "nodejs";          // Prisma requires Node runtime
 export const dynamic = "force-dynamic";   // don't cache API responses
@@ -259,7 +260,8 @@ export async function PUT(req: Request) {
   }
 
   try {
-    const d = parsed.data;
+    // ✅ Sanitize AFTER validation, BEFORE any DB write
+    const d = sanitizeProfilePayload(parsed.data as any);
 
     // read existing (so we can detect slug changes)
     const existing = await prisma.profile.findUnique({
