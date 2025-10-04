@@ -92,9 +92,17 @@ const getServicesCached = (profileId: string, slug: string) =>
 
 /* -------------------------------- Utils ---------------------------------- */
 
+/** Only return valid http/https URLs; else null */
 function safeUrl(u?: string | null): string | null {
-  const s = typeof u === "string" ? u.trim() : "";
-  return s ? s : null;
+  const raw = typeof u === "string" ? u.trim() : "";
+  if (!raw) return null;
+  try {
+    const url = new URL(raw);
+    if (url.protocol === "http:" || url.protocol === "https:") return url.toString();
+    return null;
+  } catch {
+    return null;
+  }
 }
 function pickFirst<T>(arr: (T | null | undefined)[]): T | null {
   for (const x of arr) if (x != null) return x as T;
@@ -304,25 +312,21 @@ export default async function PublicProfilePage({ params }: PageProps) {
 
   return (
     <main className="mx-auto max-w-3xl px-6 py-12">
-      {/* JSON-LD */}
-      <Script
-        id="profile-jsonld"
-        type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(schema) }}
-      />
+      {/* JSON-LD (safe injection with JSON.stringify; no dangerouslySetInnerHTML) */}
+      {schema ? (
+        <Script id="profile-jsonld" type="application/ld+json" strategy="afterInteractive">
+          {JSON.stringify(schema)}
+        </Script>
+      ) : null}
       {faqJsonLd ? (
-        <Script
-          id="faq-jsonld"
-          type="application/ld+json"
-          dangerouslySetInnerHTML={{ __html: JSON.stringify(faqJsonLd) }}
-        />
+        <Script id="faq-jsonld" type="application/ld+json" strategy="afterInteractive">
+          {JSON.stringify(faqJsonLd)}
+        </Script>
       ) : null}
       {serviceJsonLd.map((obj, i) => (
-        <Script
-          key={`service-jsonld-${i}`}
-          type="application/ld+json"
-          dangerouslySetInnerHTML={{ __html: JSON.stringify(obj) }}
-        />
+        <Script key={`service-jsonld-${i}`} type="application/ld+json" strategy="afterInteractive">
+          {JSON.stringify(obj)}
+        </Script>
       ))}
 
       {/* Header */}
@@ -486,7 +490,7 @@ export default async function PublicProfilePage({ params }: PageProps) {
                   )}
                 </div>
                 {s.url ? (
-                  <a href={s.url} className="inline-block mt-2 text-sky-600 hover:underline">
+                  <a href={s.url} className="inline-block mt-2 text-sky-600 hover:underline" rel="noopener noreferrer">
                     Learn more
                   </a>
                 ) : null}
@@ -564,6 +568,7 @@ export default async function PublicProfilePage({ params }: PageProps) {
         <a
           className="text-sm underline"
           href={`/api/profile/${encodeURIComponent(slug)}/schema`}
+          rel="noopener noreferrer"
         >
           View raw schema JSON
         </a>
