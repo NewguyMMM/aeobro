@@ -1,4 +1,5 @@
 // app/(marketing)/audit/page.tsx
+import Script from "next/script";
 import React from "react";
 import { headers } from "next/headers";
 
