@@ -1,4 +1,5 @@
 // app/(marketing)/cancel/page.tsx
+import Script from "next/script";
 import React from "react";
 
 // ✅ Revalidate hourly (adjust as needed)

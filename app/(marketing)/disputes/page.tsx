@@ -1,4 +1,5 @@
 // app/(marketing)/disputes/page.tsx
+import Script from "next/script";
 import React from "react";
 
 // ✅ Revalidate once/day (marketing policy page)

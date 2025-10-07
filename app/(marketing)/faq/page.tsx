@@ -1,4 +1,5 @@
 // app/(marketing)/faq/page.tsx
+import Script from "next/script";
 import React from "react";
 
 // ✅ Incremental Static Regeneration (rebuilds this page at most once per hour)

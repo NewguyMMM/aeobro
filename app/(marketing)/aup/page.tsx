@@ -1,4 +1,5 @@
 // app/(marketing)/aup/page.tsx
+import Script from "next/script";
 import React from "react";
 
 // ✅ ISR (kept at 1 hour)
