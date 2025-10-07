@@ -1,4 +1,5 @@
 // app/(marketing)/privacy/page.tsx
+import Script from "next/script";
 import React from "react";
 
 // ✅ Revalidate once/day (adjust if you update more/less often)
@@ -39,8 +40,12 @@ export default function PrivacyPage() {
   return (
     <section className="container py-16 prose max-w-3xl">
       {/* ✅ JSON-LD */}
-      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
-      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbLd) }} />
+      <Script type="application/ld+json" strategy="afterInteractive">
+  {JSON.stringify(jsonLd)}
+</Script>
+      <Script type="application/ld+json" strategy="afterInteractive">
+  {JSON.stringify(breadcrumbLd)}
+</Script>
 
       <h1 className="text-4xl font-extrabold">Privacy Policy</h1>
       <p className="mt-2 text-gray-600">Last updated: {new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" })}</p>

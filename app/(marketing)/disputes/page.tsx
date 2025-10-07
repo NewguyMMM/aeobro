@@ -1,4 +1,5 @@
 // app/(marketing)/disputes/page.tsx
+import Script from "next/script";
 import React from "react";
 
 // ✅ Revalidate once/day (marketing policy page)
@@ -39,8 +40,12 @@ export default function DisputesPage() {
   return (
     <section className="container py-16 prose max-w-3xl">
       {/* ✅ JSON-LD */}
-      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
-      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbLd) }} />
+      <Script type="application/ld+json" strategy="afterInteractive">
+  {JSON.stringify(jsonLd)}
+</Script>
+      <Script type="application/ld+json" strategy="afterInteractive">
+  {JSON.stringify(breadcrumbLd)}
+</Script>
 
       <h1 className="text-4xl font-extrabold mb-2">Disputes &amp; Impersonation</h1>
       <p className="text-gray-600 mb-8">

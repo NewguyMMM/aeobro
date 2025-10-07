@@ -1,4 +1,5 @@
 // app/(marketing)/faq/page.tsx
+import Script from "next/script";
 import React from "react";
 
 // ✅ Incremental Static Regeneration (rebuilds this page at most once per hour)
@@ -232,10 +233,9 @@ export default function Page() {
   return (
     <section className="container py-16">
       {/* JSON-LD for FAQ rich results */}
-      <script
-        type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(faqJsonLd) }}
-      />
+      <Script type="application/ld+json" strategy="afterInteractive">
+  {JSON.stringify(faqJsonLd)}
+</Script>
       <h1 className="text-4xl font-extrabold mb-10">
         <span>AEO</span>
         <span className="text-primary">BRO</span> FAQ
