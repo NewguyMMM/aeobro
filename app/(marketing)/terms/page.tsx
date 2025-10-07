@@ -39,8 +39,12 @@ export default function Page() {
   return (
     <section className="container py-16">
       {/* ✅ JSON-LD */}
-      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
-      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbLd) }} />
+      <Script type="application/ld+json" strategy="afterInteractive">
+  {JSON.stringify(jsonLd)}
+</Script>
+      <Script type="application/ld+json" strategy="afterInteractive">
+  {JSON.stringify(breadcrumbLd)}
+</Script>
 
       <h1 className="text-4xl font-extrabold mb-2">Terms of Service</h1>
       <p className="text-gray-600 mb-10">

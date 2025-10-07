@@ -53,8 +53,12 @@ export default async function Page() {
   return (
     <section className="container py-16">
       {/* JSON-LD */}
-      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
-      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbLd) }} />
+      <Script type="application/ld+json" strategy="afterInteractive">
+  {JSON.stringify(jsonLd)}
+</Script>
+      <Script type="application/ld+json" strategy="afterInteractive">
+  {JSON.stringify(breadcrumbLd)}
+</Script>
 
       <h1 className="text-4xl font-extrabold">AI-Visibility Audit</h1>
       <p className="mt-3 text-gray-600">

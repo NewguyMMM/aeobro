@@ -34,8 +34,12 @@ export default function SuccessPage() {
   return (
     <main className="container py-20">
       {/* JSON-LD */}
-      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
-      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbLd) }} />
+      <Script type="application/ld+json" strategy="afterInteractive">
+  {JSON.stringify(jsonLd)}
+</Script>
+      <Script type="application/ld+json" strategy="afterInteractive">
+  {JSON.stringify(breadcrumbLd)}
+</Script>
 
       <div className="mx-auto max-w-2xl text-center">
         <h1 className="text-4xl font-extrabold tracking-tight">✅ Payment successful</h1>
