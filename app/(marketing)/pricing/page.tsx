@@ -294,7 +294,7 @@ export default function PricingPage() {
       <div className="grid gap-6 md:grid-cols-3 mt-2">
         <PlanCard
           title="Lite"
-          price="$3.99/mo"
+          price="$4.99/mo"
           bestFor="individuals, creators, or small teams who want a simple, AI-ready profile without extras."
           features={[{ label: "Centralized AI Ready Profile", tooltip: CENTRALIZED_TOOLTIP }]}
           btnText="Get Lite"

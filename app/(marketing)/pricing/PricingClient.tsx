@@ -70,7 +70,7 @@ export default function PricingClient() {
       <div className="grid gap-6 md:grid-cols-3">
         {/* Lite */}
         <div className="rounded-2xl border bg-white p-6 shadow-sm">
-          <h3 className="mb-1 text-xl font-semibold">Lite — $3.99/mo</h3>
+          <h3 className="mb-1 text-xl font-semibold">Lite — $4.99/mo</h3>
           <ul className="my-4 space-y-2 text-sm text-gray-700">
             <li>For creators & individuals</li>
             <li>Verify via YouTube/Google/Instagram/TikTok</li>
