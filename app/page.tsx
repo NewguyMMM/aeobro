@@ -30,6 +30,10 @@ export default async function Home() {
     ? "Edit Your AI Ready Profile"
     : "Create Your AI Ready Profile";
 
+  // Video configuration via env (stable, easy to swap without code changes)
+  const VIDEO_SRC = process.env.NEXT_PUBLIC_HERO_VIDEO_SRC ?? "";
+  const VIDEO_POSTER = process.env.NEXT_PUBLIC_HERO_VIDEO_POSTER ?? "";
+
   return (
     <main className="container pt-24 md:pt-28 pb-20">
       <h1 className="text-5xl font-extrabold tracking-tight mb-4">
@@ -48,6 +52,31 @@ export default async function Home() {
       <p className="text-gray-500 mb-8 max-w-2xl">
         Verified JSON-LD profiles that machines can trust.
       </p>
+
+      {/* === Video Hero (replaces the static rectangle) === */}
+      <section className="mb-8">
+        <div className="relative w-full aspect-[16/9] rounded-2xl overflow-hidden bg-black">
+          {VIDEO_SRC ? (
+            <video
+              className="h-full w-full object-cover"
+              src={VIDEO_SRC}
+              poster={VIDEO_POSTER || undefined}
+              // Per your request: play once with visible controls
+              controls
+              playsInline
+              preload="metadata"
+            />
+          ) : (
+            <div className="absolute inset-0 flex items-center justify-center text-white/80 text-sm px-4 text-center">
+              Set{" "}
+              <code className="mx-1 rounded bg-white/10 px-2 py-1">
+                NEXT_PUBLIC_HERO_VIDEO_SRC
+              </code>{" "}
+              in Vercel env vars to play your hero video.
+            </div>
+          )}
+        </div>
+      </section>
 
       <div className="flex gap-3">
         {/* Primary CTA — label flips based on whether a profile exists */}
