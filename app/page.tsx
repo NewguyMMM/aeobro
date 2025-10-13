@@ -2,7 +2,7 @@
 import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
-import VideoSequence from "@/components/VideoSequence";
+import VideoSequence from "../components/VideoSequence"; // <-- relative path, avoids alias issues
 
 export const dynamic = "force-dynamic"; // ensure CTA isn't cached incorrectly
 
