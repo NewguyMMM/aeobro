@@ -2,7 +2,7 @@
 import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
-import VideoSequence from "../components/VideoSequence"; // <-- relative path, avoids alias issues
+import VideoSequence from "../components/VideoSequence";
 
 export const dynamic = "force-dynamic"; // ensure CTA isn't cached incorrectly
 
@@ -31,8 +31,8 @@ export default async function Home() {
     ? "Edit Your AI Ready Profile"
     : "Create Your AI Ready Profile";
 
-  // Video configuration via env (stable, easy to swap without code changes)
-  const VIDEO_SRC = process.env.NEXT_PUBLIC_HERO_VIDEO_SRC ?? "";
+  // Video sources (controlled via env vars or defaults)
+  const VIDEO_SRC = process.env.NEXT_PUBLIC_HERO_VIDEO_SRC ?? "/aeobro-hero-vid1.mp4";
   const VIDEO_POSTER = process.env.NEXT_PUBLIC_HERO_VIDEO_POSTER ?? "";
   const JSONLD_VIDEO_SRC =
     process.env.NEXT_PUBLIC_JSONLD_VIDEO_SRC ?? "/AEOBRO_vid2_what_is_json.mp4";
@@ -47,7 +47,6 @@ export default async function Home() {
             Help <span className="text-sky-500">AI</span> find you.
           </h1>
 
-          {/* Tagline */}
           <p className="text-gray-700 max-w-xl">
             AEOBRO optimizes your content to be picked up and displayed by AI.
           </p>
@@ -55,14 +54,11 @@ export default async function Home() {
             Structured, efficient, trusted, and kept current in one place.
           </p>
 
-          {/* Secondary credibility booster */}
           <p className="text-gray-500 mb-6 max-w-xl">
             Verified JSON-LD profiles that machines can trust.
           </p>
 
-          {/* CTAs kept near the top to avoid scrolling */}
           <div className="flex flex-wrap gap-3">
-            {/* Primary CTA — label flips based on whether a profile exists */}
             <a
               href="/dashboard"
               className="inline-flex h-12 items-center justify-center rounded-xl bg-black px-5 font-medium text-white hover:bg-sky-600 transition-colors"
@@ -71,7 +67,6 @@ export default async function Home() {
               {ctaLabel}
             </a>
 
-            {/* Secondary CTA */}
             <a
               href="/pricing"
               className="inline-flex h-12 items-center justify-center rounded-xl border px-5 font-medium hover:border-sky-600 hover:text-sky-700 transition-colors"
