@@ -49,15 +49,45 @@ export default async function Home() {
             Help <span className="text-sky-500">AI</span> find you.
           </h1>
 
-          <p className="text-gray-700 max-w-xl">
-            AEOBRO optimizes your content to be picked up and displayed by AI.
-          </p>
-          <p className="text-gray-700 mb-4 max-w-xl">
-            Structured, efficient, trusted, and kept current in one place.
+          {/* New 3-paragraph subtext */}
+          <p className="text-gray-700 max-w-xl mb-2">
+            Your brand&rsquo;s information is out there.
           </p>
 
-          <p className="text-gray-500 mb-6 max-w-xl">
-            Verified JSON-LD profiles that machines can trust.
+          <p className="text-gray-700 max-w-xl mb-2">
+            AEOBRO organizes and optimizes your brand&rsquo;s information so
+            it&rsquo;s picked up and displayed by AI systems like ChatGPT,
+            Gemini, and Perplexity.
+          </p>
+
+          <p className="text-gray-700 max-w-xl mb-6">
+            AEOBRO creates and maintains verified{" "}
+            <span
+              className="relative inline-block group align-baseline"
+              tabIndex={0}
+            >
+              <span
+                className="underline decoration-dotted cursor-help"
+                title="JSON-LD (JavaScript Object Notation for Linked Data) is a format that organizes your business information so AI systems and search engines can understand it. It’s like a digital language that connects your brand to the web of knowledge machines use. See FAQ for more."
+              >
+                JSON-LD
+              </span>
+              {/* Hover/focus tooltip */}
+              <span
+                role="tooltip"
+                className="absolute z-10 left-0 mt-2 w-80 max-w-xs rounded-xl border bg-white p-3 text-gray-700 text-sm shadow-xl opacity-0 pointer-events-none transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100"
+              >
+                <strong>JSON-LD (JavaScript Object Notation for Linked Data)</strong>{" "}
+                is a format that organizes your business information so AI
+                systems and search engines can understand it. It’s like a
+                digital language that connects your brand to the web of
+                knowledge machines use.
+                <span className="block mt-2 italic">See FAQ for more.</span>
+              </span>
+            </span>{" "}
+            profiles — structured data that machines can trust — keeping your
+            presence accurate, current, and AI-ready. No technical skills
+            required.
           </p>
 
           <div className="flex flex-wrap gap-3">
