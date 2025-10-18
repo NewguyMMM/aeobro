@@ -102,11 +102,12 @@ export default function Page() {
       },
       {
         "@type": "Question",
-        name: "Why should I use AEOBRO instead of just publishing the same information on my own website?",
+        name:
+          "Why should I use AEOBRO instead of just publishing the same information on my own website?",
         acceptedAnswer: {
           "@type": "Answer",
           text:
-            "AEOBRO publishes structured, verified JSON-LD that AI engines prioritize. Regular pages may be inconsistently parsed. Verified profiles reduce impersonation and ensure AI systems pull the right facts.",
+            "AEOBRO publishes structured, verified JSON-LD that AI engines and assistants are designed to read more reliably. Regular pages may be inconsistently parsed. Verified profiles reduce impersonation and help AI systems pull the right facts.",
         },
       },
       {
@@ -293,7 +294,6 @@ export default function Page() {
           </div>
         </div>
 
-        {/* The rest follow in original order */}
         <div className="card">
           <h3 className="font-semibold">How do I create a profile on AEOBRO?</h3>
           <p className="text-gray-700 mt-2">
@@ -341,27 +341,7 @@ export default function Page() {
             businesses). This prevents impersonation and ensures AI search engines trust the
             information.
           </p>
-
-        {/* ...remaining cards unchanged... */}
-
-        </div>
-
-        <div className="card">
-          <h3 className="font-semibold">Why does AEOBRO require verification?</h3>
-          <ul className="list-disc list-inside text-gray-700 mt-2 space-y-1">
-            <li>To protect brands and creators from impersonation.</li>
-            <li>To ensure AI search engines only see information from verified sources.</li>
-            <li>To give your profile real authority and visibility once it’s connected.</li>
-          </ul>
-        </div>
-
-        <div className="card">
-          <h3 className="font-semibold">
-            I’m a small business with no website and only a non-business email (e.g.,
-            businessname@gmail.com). Can I still sign up?
-          </h3>
-          <p className="text-gray-700 mt-2">Yes. AEOBRO offers two pathways:</p>
-          {/* ...content unchanged... */}
+          {/* … additional long-answer content if needed … */}
         </div>
 
         <div className="card">
@@ -369,28 +349,133 @@ export default function Page() {
             Why should I use AEOBRO instead of just publishing the same information on my own
             website?
           </h3>
-          {/* ...content unchanged... */}
+          <p className="text-gray-700 mt-2">
+            AI engines don’t just read websites — they work best with{" "}
+            <strong>structured, verified data</strong>. AEOBRO publishes JSON-LD that AI engines and
+            assistants are <strong>designed to read more reliably</strong>.
+          </p>
+          <ul className="list-disc list-inside text-gray-700 mt-2 space-y-1">
+            <li>Your facts are formatted in machine-readable JSON-LD (schema.org).</li>
+            <li>Only verified profiles are published, raising trust signals.</li>
+            <li>Reduces impersonation risk by tying data to verified identities.</li>
+            <li>
+              Helps AI systems pull the <em>right</em> information directly, instead of scraping
+              inconsistently from the open web.
+            </li>
+          </ul>
+          <p className="text-gray-700 mt-2">
+            <em>Note:</em> AEOBRO improves clarity and consistency for machines, but does not
+            guarantee placement, ranking, or revenue.
+          </p>
         </div>
 
         <div className="card">
           <h3 className="font-semibold">How do I cancel?</h3>
-          {/* ...content unchanged... */}
+          <p className="text-gray-700 mt-2">
+            Click the <strong>Cancel subscription</strong> button in your billing settings. Canceling
+            stops future renewals, and your service continues until the end of your current billing
+            period.
+          </p>
         </div>
 
         <div className="card">
           <h3 className="font-semibold">How does AEOBRO handle refunds?</h3>
-          {/* ...content unchanged... */}
+          <p className="text-gray-700 mt-2">
+            There are <strong>no refunds</strong>. If your profile is taken down or frozen during an
+            investigation, refunds will not be issued. You may cancel at any time; cancellation stops
+            renewals, and your service continues until the end of the current billing period.
+          </p>
         </div>
 
         <div className="card">
           <h3 className="font-semibold">What happens to my profile if I cancel my subscription?</h3>
-          {/* ...content unchanged... */}
+          <p className="text-gray-700 mt-2">
+            After your subscription lapses, premium features and editing are disabled and your public
+            profile is unpublished (no longer crawlable). We retain your profile data for{" "}
+            <strong>90 days</strong> so you can reactivate. After 90 days with no reactivation, the
+            profile may be permanently deleted per our retention policy.
+          </p>
         </div>
 
         {/* --------- Feature explanations (UI section) ---------- */}
         <div className="card">
           <h3 className="font-semibold">What do the pricing features mean?</h3>
-          {/* ...content unchanged... */}
+
+          <h4 className="font-medium mt-4">Centralized AI Ready Profile</h4>
+          <p className="text-gray-700 mt-2">
+            A single, verified public page plus structured JSON-LD that consolidates your official
+            links and key facts. <em>Advantage:</em> simplifies discovery for AI systems by pointing
+            them at one consistent source. (No guarantees of placement or ranking.)
+          </p>
+
+          <h4 className="font-medium mt-4">Basic profile (links/images caps)</h4>
+          <p className="text-gray-700 mt-2">
+            Core fields (name, tagline, bio) with a limited number of links and images.
+            <em> Advantage:</em> fast setup with clean machine-readable output and minimal upkeep.
+          </p>
+
+          <h4 className="font-medium mt-4">
+            FAQ markup <span className="text-gray-500">(Coming soon)</span>
+          </h4>
+          <p className="text-gray-700 mt-2">
+            Publish common questions and answers in schema.org format. <em>Advantage:</em> helps AI
+            assistants retrieve accurate responses to routine questions.
+          </p>
+
+          <h4 className="font-medium mt-4">
+            Service markup <span className="text-gray-500">(Coming soon)</span>
+          </h4>
+          <p className="text-gray-700 mt-2">
+            Structured data describing offerings, service areas, and attributes. <em>Advantage:</em>
+            clearer machine understanding of what you do.
+          </p>
+
+          <h4 className="font-medium mt-4">
+            Change history <span className="text-gray-500">(Coming soon)</span>
+          </h4>
+          <p className="text-gray-700 mt-2">
+            A record of profile edits over time. <em>Advantage:</em> transparency and easier audits
+            for systems that prefer up-to-date, traceable sources.
+          </p>
+
+          <h4 className="font-medium mt-4">Everything in Pro</h4>
+          <p className="text-gray-700 mt-2">
+            Business includes all Pro features plus scalability options below. <em>Advantage:</em>
+            one tier to centralize multi-location/teams/automation needs. (Items labeled “Coming
+            soon” are not active yet.)
+          </p>
+
+          <h4 className="font-medium mt-4">
+            Multi-location (10) <span className="text-gray-500">(Coming soon)</span>
+          </h4>
+          <p className="text-gray-700 mt-2">
+            Manage structured data for up to 10 locations under one brand.
+            <em> Advantage:</em> consistent data across all sites/areas.
+          </p>
+
+          <h4 className="font-medium mt-4">
+            Team seats (3) <span className="text-gray-500">(Coming soon)</span>
+          </h4>
+          <p className="text-gray-700 mt-2">
+            Three user logins with role-appropriate access. <em>Advantage:</em> safer collaboration
+            without shared passwords.
+          </p>
+
+          <h4 className="font-medium mt-4">
+            Bulk import + webhooks <span className="text-gray-500">(Coming soon)</span>
+          </h4>
+          <p className="text-gray-700 mt-2">
+            Bring in data at scale and receive change notifications to your systems.
+            <em> Advantage:</em> reduces manual work and keeps sources synchronized.
+          </p>
+
+          <h4 className="font-medium mt-4">
+            Advanced analytics <span className="text-gray-500">(Coming soon)</span>
+          </h4>
+          <p className="text-gray-700 mt-2">
+            Reports on completeness and machine-readability signals. <em>Advantage:</em> helps you
+            prioritize improvements.
+          </p>
         </div>
       </div>
     </section>
