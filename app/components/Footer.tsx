@@ -10,7 +10,6 @@ export default function Footer() {
       <div className="container mx-auto flex flex-col md:flex-row justify-between items-start md:items-center gap-3">
         <div>
           <p className="mb-1">&copy; {year} AEOBRO</p>
-          {/* Non-affiliation note per legal-safe copy */}
           <p className="text-xs text-gray-500">
             AEOBRO is not affiliated with OpenAI, Google, or Perplexity. Names are used
             for identification only.
@@ -30,8 +29,9 @@ export default function Footer() {
           <Link href="/disputes" className="hover:text-gray-800">
             Disputes
           </Link>
-          {/* Add more links if desired, e.g. billing/cancel page */}
-          {/* <Link href="/billing" className="hover:text-gray-800">Cancel subscription</Link> */}
+          <Link href="/cancel" className="hover:text-gray-800">
+            Cancel subscription
+          </Link>
         </nav>
       </div>
     </footer>
