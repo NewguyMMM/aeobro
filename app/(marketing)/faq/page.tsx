@@ -36,7 +36,7 @@ export default function Page() {
           text: "AI Engine Optimization · Business Reach Optimization.",
         },
       },
-      // ⬇️ MOVED UP: What is JSON-LD? (now follows 'What does AEOBRO stand for?')
+      // ⬇️ What is JSON-LD? follows 'What does AEOBRO stand for?'
       {
         "@type": "Question",
         name: "What is JSON-LD?",
@@ -108,6 +108,16 @@ export default function Page() {
           "@type": "Answer",
           text:
             "AEOBRO publishes structured, verified JSON-LD that AI engines and assistants are designed to read more reliably. Regular pages may be inconsistently parsed. Verified profiles reduce impersonation and help AI systems pull the right facts.",
+        },
+      },
+      // ⬇️ NEW: Non-affiliation disclaimer Q&A (placed after the above)
+      {
+        "@type": "Question",
+        name: "Is AEOBRO affiliated with OpenAI, Google, or Perplexity?",
+        acceptedAnswer: {
+          "@type": "Answer",
+          text:
+            "AEOBRO is an independent service and is not affiliated with OpenAI, Google, Anthropic, or Perplexity. References to platforms such as ChatGPT, Gemini, and similar AI systems are provided solely to illustrate how AEOBRO’s structured data can improve visibility across modern AI and search ecosystems. All trademarks belong to their respective owners.",
         },
       },
       {
@@ -260,7 +270,7 @@ export default function Page() {
           </p>
         </div>
 
-        {/* ⬇️ MOVED UP: JSON-LD card now directly after 'What does AEOBRO stand for?' */}
+        {/* JSON-LD card follows the acronym explanation */}
         <div className="card">
           <h3 className="font-semibold">What is JSON-LD?</h3>
           <p className="text-gray-700 mt-2">
@@ -341,7 +351,6 @@ export default function Page() {
             businesses). This prevents impersonation and ensures AI search engines trust the
             information.
           </p>
-          {/* … additional long-answer content if needed … */}
         </div>
 
         <div className="card">
@@ -366,6 +375,20 @@ export default function Page() {
           <p className="text-gray-700 mt-2">
             <em>Note:</em> AEOBRO improves clarity and consistency for machines, but does not
             guarantee placement, ranking, or revenue.
+          </p>
+        </div>
+
+        {/* NEW: Non-affiliation disclaimer card */}
+        <div className="card">
+          <h3 className="font-semibold">
+            Is AEOBRO affiliated with OpenAI, Google, or Perplexity?
+          </h3>
+          <p className="text-gray-700 mt-2">
+            AEOBRO is an independent service and is not affiliated with OpenAI, Google, Anthropic,
+            or Perplexity. References to platforms such as ChatGPT, Gemini, and similar AI systems
+            are provided solely to illustrate how AEOBRO’s structured data can improve visibility
+            across modern AI and search ecosystems. All trademarks belong to their respective
+            owners.
           </p>
         </div>
 
