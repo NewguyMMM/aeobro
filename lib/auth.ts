@@ -1,44 +1,51 @@
 // lib/auth.ts
 import type { NextAuthOptions } from "next-auth";
-import { PrismaAdapter } from "@next-auth/prisma-adapter";
+import { PrismaAdapter } from "@auth/prisma-adapter";
 import { prisma } from "@/lib/prisma";
+
 import EmailProvider from "next-auth/providers/email";
 import CredentialsProvider from "next-auth/providers/credentials";
+
 import { verifyTurnstileToken } from "@/lib/verifyTurnstile";
-import { compare } from "bcryptjs"; // or your password verifier
+import { compare } from "bcryptjs";
+
+/**
+ * NOTE:
+ * - Ensure your User model includes a `passwordHash` string field if you use Credentials.
+ * - Your login form that posts to `/api/auth/callback/credentials` MUST include the
+ *   Cloudflare Turnstile widget so the hidden `cf-turnstile-response` input is present.
+ */
 
 export const authOptions: NextAuthOptions = {
   adapter: PrismaAdapter(prisma),
   session: { strategy: "jwt" },
 
   providers: [
-    // 1) Email (magic-link)
+    // 1) Email (magic link) sign-in
     EmailProvider({
-      server: process.env.EMAIL_SERVER!,
-      from: process.env.EMAIL_FROM!,
-      // You may already have additional options here (maxAge, etc.)
+      server: process.env.EMAIL_SERVER!, // e.g., SMTP URL
+      from: process.env.EMAIL_FROM!,     // e.g., hello@ytilt.com or hello@aeobro.com
+      // You may add `maxAge`, `normalizeIdentifier`, etc. if you already use them
     }),
 
-    // 2) Credentials with Turnstile inside `authorize`
+    // 2) Credentials sign-in with Turnstile enforcement inside `authorize`
     CredentialsProvider({
       name: "Credentials",
       credentials: {
         email: { label: "Email", type: "email" },
         password: { label: "Password", type: "password" },
-        // Not strictly required to declare, but harmless:
-        // "cf-turnstile-response": { label: "Turnstile", type: "text" },
       },
       async authorize(credentials, req) {
-        // ---- Turnstile verification ----
+        // --- Turnstile verification (App Router friendly) ---
         let token: string | undefined;
 
-        // Prefer: try to read token from the posted form (works in App Router)
         try {
-          // @ts-expect-error - `req` in App Router has formData()
+          // In the App Router, `req` has formData()
+          // @ts-expect-error - NextAuth's type here is looser; formData exists at runtime
           const form = await req?.formData?.();
           token = (form?.get?.("cf-turnstile-response") as string | undefined) ?? undefined;
         } catch {
-          // Fallback: read from declared credentials if present
+          // Fallback to posted credentials if present
           token = (credentials as any)?.["cf-turnstile-response"] as string | undefined;
         }
 
@@ -47,27 +54,28 @@ export const authOptions: NextAuthOptions = {
           throw new Error("CAPTCHA verification failed");
         }
 
-        // ---- Your normal credential check below ----
-        const email = credentials?.email;
+        // --- Your normal credential validation ---
+        const email = credentials?.email?.toLowerCase().trim();
         const password = credentials?.password;
         if (!email || !password) return null;
 
         const user = await prisma.user.findUnique({ where: { email } });
         if (!user) return null;
 
-        // Replace with your real hash check:
+        // Ensure your User model has `passwordHash` (string)
         if (!user.passwordHash) return null;
+
         const isValid = await compare(password, user.passwordHash);
         if (!isValid) return null;
 
+        // Return the minimal user object for NextAuth
         return { id: user.id, email: user.email, name: user.name ?? null };
       },
     }),
   ],
 
   callbacks: {
-    // Keep your existing callbacks if you already had them.
-    // We do NOT try to read `req` here anymore, to avoid the compile error.
+    // Keep basic JWT/session wiring
     async jwt({ token, user }) {
       if (user?.id) token.sub = user.id;
       return token;
@@ -79,7 +87,7 @@ export const authOptions: NextAuthOptions = {
   },
 
   pages: {
-    // Keep your custom pages if defined
+    // If you have a custom sign-in page, keep it here. Otherwise comment out.
     // signIn: "/signin",
   },
 };
