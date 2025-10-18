@@ -9,23 +9,16 @@ import CredentialsProvider from "next-auth/providers/credentials";
 import { verifyTurnstileToken } from "@/lib/verifyTurnstile";
 import { compare } from "bcryptjs";
 
-/**
- * NOTE:
- * - If you plan to support Credentials login, add a string column like `passwordHash` to your User model.
- *   Until then, this code treats it as optional and will reject credential logins when missing.
- */
 export const authOptions: NextAuthOptions = {
   adapter: PrismaAdapter(prisma),
   session: { strategy: "jwt" },
 
   providers: [
-    // 1) Email (magic link)
     EmailProvider({
-      server: process.env.EMAIL_SERVER!, // SMTP URL
-      from: process.env.EMAIL_FROM!,     // e.g., hello@aeobro.com
+      server: process.env.EMAIL_SERVER!,
+      from: process.env.EMAIL_FROM!,
     }),
 
-    // 2) Credentials with Turnstile in authorize()
     CredentialsProvider({
       name: "Credentials",
       credentials: {
@@ -36,14 +29,12 @@ export const authOptions: NextAuthOptions = {
         // --- Turnstile verification ---
         let token: string | undefined;
         try {
-          // In App Router, NextAuth's `req` has formData() at runtime
-          // @ts-expect-error - types don't show it, but it's available
+          // @ts-expect-error App Router runtime provides formData()
           const form = await req?.formData?.();
           token = (form?.get?.("cf-turnstile-response") as string | undefined) ?? undefined;
         } catch {
           token = (credentials as any)?.["cf-turnstile-response"] as string | undefined;
         }
-
         const { ok } = await verifyTurnstileToken(token);
         if (!ok) throw new Error("CAPTCHA verification failed");
 
@@ -55,10 +46,8 @@ export const authOptions: NextAuthOptions = {
         const user = await prisma.user.findUnique({ where: { email } });
         if (!user) return null;
 
-        // Treat passwordHash as optional in your current schema
         const passwordHash = (user as any)?.passwordHash as string | undefined | null;
         if (!passwordHash || typeof passwordHash !== "string" || passwordHash.length < 8) {
-          // No stored password → reject credential login gracefully
           return null;
         }
 
@@ -82,6 +71,6 @@ export const authOptions: NextAuthOptions = {
   },
 
   pages: {
-    // signIn: "/signin", // keep if you have a custom page
+    signIn: "/signin", // ← ensures your custom page is used
   },
 };
