@@ -1,9 +1,17 @@
 // lib/verifyTurnstile.ts
 
-type VerifyResult =
-  | { ok: true; raw?: any }
-  | { ok: false; reason: "missing_token" | "server_misconfig" | "network_error"; raw?: any };
+// Keep the result type flexible so the build doesn't break on edge cases.
+// You can tighten this later if you want strict discriminated unions.
+export type VerifyResult = {
+  ok: boolean;
+  raw?: any;
+  reason?: string;
+};
 
+/**
+ * Verify a Cloudflare Turnstile token server-side.
+ * Returns { ok: true } when challenge is passed.
+ */
 export async function verifyTurnstileToken(responseToken?: string): Promise<VerifyResult> {
   if (!responseToken) return { ok: false, reason: "missing_token" };
 
@@ -18,11 +26,17 @@ export async function verifyTurnstileToken(responseToken?: string): Promise<Veri
       method: "POST",
       headers: { "content-type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({ secret, response: responseToken }),
-      // Turnstile endpoint is external; no need for cache
     });
 
     const data = await res.json();
-    return { ok: !!data.success, raw: data };
+
+    if (data?.success) {
+      return { ok: true, raw: data };
+    }
+
+    // When not successful, Turnstile includes error-codes; surface one if present.
+    const code = Array.isArray(data?.["error-codes"]) ? data["error-codes"][0] : undefined;
+    return { ok: false, reason: code || "challenge_failed", raw: data };
   } catch (err) {
     console.error("Turnstile verify error", err);
     return { ok: false, reason: "network_error" };
@@ -36,19 +50,16 @@ export async function verifyTurnstileToken(responseToken?: string): Promise<Veri
 export async function extractAndVerifyFromRequest(req: Request): Promise<VerifyResult> {
   const ct = req.headers.get("content-type") || "";
 
-  let token: string | undefined;
-
   try {
     if (ct.includes("application/json")) {
       const body = await req.clone().json().catch(() => ({} as any));
-      token = body["cf-turnstile-response"];
+      return verifyTurnstileToken(body?.["cf-turnstile-response"]);
     } else {
       const form = await req.clone().formData().catch(() => undefined);
-      token = form?.get("cf-turnstile-response") as string | undefined;
+      const token = form?.get("cf-turnstile-response") as string | undefined;
+      return verifyTurnstileToken(token);
     }
-  } catch (e) {
-    // fall through with undefined token; downstream will return missing_token
+  } catch {
+    return { ok: false, reason: "parse_error" };
   }
-
-  return verifyTurnstileToken(token);
 }
