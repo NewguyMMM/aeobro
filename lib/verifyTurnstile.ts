@@ -19,18 +19,3 @@ export async function verifyTurnstileToken(responseToken?: string) {
     return { ok: false, reason: "network_error" };
   }
 }
-
-export async function extractAndVerifyFromRequest(req: Request) {
-  const ct = req.headers.get("content-type") || "";
-  let token: string | undefined;
-
-  if (ct.includes("application/json")) {
-    const body = await req.clone().json().catch(() => ({}));
-    token = body["cf-turnstile-response"];
-  } else {
-    const form = await req.clone().formData().catch(() => undefined);
-    token = form?.get("cf-turnstile-response") as string | undefined;
-  }
-
-  return verifyTurnstileToken(token);
-}
