@@ -12,45 +12,48 @@ import { compare } from "bcryptjs";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
-/**
- * NextAuth configuration
- */
+// Hard-coded brand blue to match site sign-in button
+const BRAND_BLUE = "#2563EB"; // Tailwind blue-600
+
 export const authOptions: NextAuthOptions = {
   adapter: PrismaAdapter(prisma),
   session: { strategy: "jwt" },
 
   providers: [
-    // Magic-link via Resend API (no SMTP)
     EmailProvider({
       from: process.env.EMAIL_FROM, // e.g., 'AEOBRO <login@aeobro.com>'
       async sendVerificationRequest({ identifier, url }) {
-        // Polished AEOBRO-branded HTML
+        const year = new Date().getFullYear();
+
         const html = `
-  <table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="background:#f9f9f9;padding:24px 0;text-align:center">
-    <tr>
-      <td>
-        <div style="max-width:480px;margin:0 auto;background:#ffffff;border-radius:12px;padding:32px 24px;font-family:Inter,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#222;text-align:left;box-shadow:0 2px 8px rgba(0,0,0,0.06)">
-          <div style="text-align:center;margin-bottom:16px">
-            <span style="font-size:22px;font-weight:600;color:#111;">AEOBRO</span>
-          </div>
-          <p style="font-size:16px;margin-bottom:24px">Click below to securely sign in:</p>
-          <p style="text-align:center;margin-bottom:32px">
-            <a href="${url}" style="display:inline-block;padding:12px 24px;background:#111;color:#fff;font-weight:500;border-radius:8px;text-decoration:none;">
-              Sign in to AEOBRO
-            </a>
-          </p>
-          <p style="font-size:13px;color:#777;line-height:1.4">
-            If you didn’t request this, you can safely ignore this email.<br />
-            This link will expire shortly for your security.
-          </p>
+<table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="background:#f9f9f9;padding:24px 0;text-align:center">
+  <tr>
+    <td>
+      <div style="max-width:480px;margin:0 auto;background:#ffffff;border-radius:12px;padding:32px 24px;font-family:Inter,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#222;text-align:left;box-shadow:0 2px 8px rgba(0,0,0,0.06)">
+        <div style="text-align:center;margin-bottom:16px;line-height:1">
+          <span style="font-size:22px;font-weight:700;color:#111;letter-spacing:0.2px;">AEO</span><span style="font-size:22px;font-weight:700;letter-spacing:0.2px;color:${BRAND_BLUE};">BRO</span>
         </div>
-        <p style="font-size:12px;color:#aaa;margin-top:16px">© ${new Date().getFullYear()} AEOBRO</p>
-      </td>
-    </tr>
-  </table>
+
+        <p style="font-size:16px;margin:0 0 24px">Click below to securely sign in:</p>
+
+        <p style="text-align:center;margin:0 0 32px">
+          <a href="${url}" style="display:inline-block;padding:12px 24px;background:${BRAND_BLUE};color:#ffffff !important;font-weight:600;border-radius:10px;text-decoration:none;border:1px solid ${BRAND_BLUE}">
+            Sign in to AEOBRO
+          </a>
+        </p>
+
+        <p style="font-size:13px;color:#777;line-height:1.5;margin:0">
+          If you didn’t request this, you can safely ignore this email.<br/>
+          This link will expire shortly for your security.
+        </p>
+      </div>
+
+      <p style="font-size:12px;color:#aaa;margin:16px 0 0">© ${year} AEOBRO</p>
+    </td>
+  </tr>
+</table>
         `.trim();
 
-        // Plain-text fallback (better spam deliverability and accessibility)
         const text = `Sign in to AEOBRO
 
 Use the link below to sign in:
@@ -72,7 +75,6 @@ If you did not request this, you can safely ignore this email.`;
       },
     }),
 
-    // Credentials login with Turnstile enforcement
     CredentialsProvider({
       name: "Credentials",
       credentials: {
@@ -80,7 +82,6 @@ If you did not request this, you can safely ignore this email.`;
         password: { label: "Password", type: "password" },
       },
       async authorize(credentials, req) {
-        // --- Turnstile verification ---
         let token: string | undefined;
         try {
           // @ts-expect-error: App Router runtime provides formData()
@@ -92,7 +93,6 @@ If you did not request this, you can safely ignore this email.`;
         const { ok } = await verifyTurnstileToken(token);
         if (!ok) throw new Error("CAPTCHA verification failed");
 
-        // --- Credential validation ---
         const email = credentials?.email?.toLowerCase().trim();
         const password = credentials?.password;
         if (!email || !password) return null;
