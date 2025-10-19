@@ -14,15 +14,11 @@ import { unstable_cache } from "next/cache";
 
 type PageProps = { params: { slug: string } };
 
-/** Ensure Prisma runs on Node runtime (not Edge) */
 export const runtime = "nodejs";
-
-/** ISR */
 export const revalidate = 3600;
 
 /* --------------------- Cached DB readers (schema-safe) -------------------- */
 
-// Meta: only fields we’re sure exist in prod DB
 const getProfileMetaCached = (slug: string) =>
   unstable_cache(
     async () => {
@@ -40,7 +36,6 @@ const getProfileMetaCached = (slug: string) =>
     { revalidate, tags: [`profile:${slug}`] }
   )();
 
-// Full: DO NOT use `select` → let Prisma fetch whatever columns exist
 const getProfileFullCached = (slug: string) =>
   unstable_cache(
     async () => {
@@ -52,7 +47,6 @@ const getProfileFullCached = (slug: string) =>
     { revalidate, tags: [`profile:${slug}`] }
   )();
 
-// FAQs (public)
 const getFaqsCached = (profileId: string, slug: string) =>
   unstable_cache(
     async () => {
@@ -66,7 +60,6 @@ const getFaqsCached = (profileId: string, slug: string) =>
     { revalidate, tags: [`profile:${slug}`] }
   )();
 
-// Services (public)
 const getServicesCached = (profileId: string, slug: string) =>
   unstable_cache(
     async () => {
@@ -92,7 +85,6 @@ const getServicesCached = (profileId: string, slug: string) =>
 
 /* -------------------------------- Utils ---------------------------------- */
 
-/** Only return valid http/https URLs; else null */
 function safeUrl(u?: string | null): string | null {
   const raw = typeof u === "string" ? u.trim() : "";
   if (!raw) return null;
@@ -107,6 +99,44 @@ function safeUrl(u?: string | null): string | null {
 function pickFirst<T>(arr: (T | null | undefined)[]): T | null {
   for (const x of arr) if (x != null) return x as T;
   return null;
+}
+
+/** Canonicalize a platform handle or url to an https URL (mirrors lib/schema.ts) */
+function handleToCanonicalUrl(key: string, raw: any): string | null {
+  // If full URL already:
+  const asUrl = safeUrl(typeof raw === "string" ? raw : (raw as any)?.url);
+  if (asUrl) return asUrl;
+
+  const vRaw = typeof raw === "string" ? raw : (raw as any)?.handle ?? "";
+  const v = String(vRaw).trim();
+  if (!v) return null;
+  const noAt = v.replace(/^@/, "");
+  if (/\s|["'<>\u0000]/.test(noAt)) return null;
+
+  const k = (key || "").toLowerCase();
+  switch (k) {
+    case "youtube":
+      return `https://www.youtube.com/@${noAt}`;
+    case "tiktok":
+      return `https://www.tiktok.com/@${noAt}`;
+    case "instagram":
+      return `https://www.instagram.com/${noAt}`;
+    case "x":
+    case "twitter":
+      return `https://twitter.com/${noAt}`;
+    case "linkedin":
+      return `https://www.linkedin.com/in/${noAt}`;
+    case "facebook":
+      return `https://www.facebook.com/${noAt}`;
+    case "github":
+      return `https://github.com/${noAt}`;
+    case "substack":
+      return `https://${noAt}.substack.com/`;
+    case "etsy":
+      return `https://www.etsy.com/shop/${noAt}`;
+    default:
+      return null;
+  }
 }
 
 function ErrorBlock({
@@ -161,7 +191,6 @@ export async function generateMetadata(
 export default async function PublicProfilePage({ params }: PageProps) {
   const { slug } = params;
 
-  // 1) Fetch profile with explicit logging + inline error surface
   let profile: any;
   try {
     profile = await getProfileFullCached(slug);
@@ -186,16 +215,12 @@ export default async function PublicProfilePage({ params }: PageProps) {
     notFound();
   }
 
-  // Helpful breadcrumb in logs
   try {
     console.log("[/p/[slug]] PROFILE OK", { slug, profileId: profile.id });
-  } catch {
-    /* ignore */
-  }
+  } catch {}
 
   const baseUrl = await getRuntimeBaseUrl();
 
-  // 2) Fetch Services + FAQs (log + inline error)
   const [servicesRes, faqsRes] = await Promise.allSettled([
     getServicesCached(profile.id, slug),
     getFaqsCached(profile.id, slug),
@@ -239,7 +264,7 @@ export default async function PublicProfilePage({ params }: PageProps) {
   const services = servicesRes.value;
   const faqs = faqsRes.value;
 
-  // 3) Build JSON-LD (wrap in try/catch to expose schema-related errors)
+  // 3) Build JSON-LD
   let schema: any, faqJsonLd: any, serviceJsonLd: any[];
   try {
     schema = buildProfileSchema(profile, baseUrl);
@@ -285,18 +310,42 @@ export default async function PublicProfilePage({ params }: PageProps) {
       : []),
   ]);
 
-  // Links
-  const toUrl = (x: any) => safeUrl(typeof x === "string" ? x : x?.url);
-  const linksArr = Array.isArray(profile.links) ? profile.links : [];
-  const sameAs: string[] = Array.from(
-    new Set(linksArr.map(toUrl).filter(Boolean) as string[])
-  );
+  // ======== Links (visible on page) should mirror JSON-LD sameAs ========
+  const sameAsSet = new Set<string>();
 
-  // Handles
-  const handles = profile?.handles || {};
-  const handlePairs: Array<{ label: string; url: string }> = Object.entries(handles)
-    .map(([k, v]) => ({ label: prettyHandleLabel(k), url: safeUrl(String(v)) }))
-    .filter((h): h is { label: string; url: string } => !!h.url);
+  const websiteUrl = safeUrl(profile.website);
+  if (websiteUrl) sameAsSet.add(websiteUrl);
+
+  const linksArr = Array.isArray(profile.links) ? profile.links : [];
+  linksArr.forEach((x: any) => {
+    const u = typeof x === "string" ? safeUrl(x) : safeUrl(x?.url);
+    if (u) sameAsSet.add(u);
+  });
+
+  const socialsArr = Array.isArray(profile.socialLinks) ? profile.socialLinks : [];
+  socialsArr.forEach((x: any) => {
+    const u = typeof x === "string" ? safeUrl(x) : safeUrl(x?.url);
+    if (u) sameAsSet.add(u);
+  });
+
+  const handlesObj = profile?.handles || {};
+  if (handlesObj && typeof handlesObj === "object") {
+    for (const [k, v] of Object.entries(handlesObj)) {
+      const canon = handleToCanonicalUrl(k, v);
+      if (canon) sameAsSet.add(canon);
+    }
+  }
+
+  const sameAs: string[] = Array.from(sameAsSet);
+
+  // Handles for the “Platforms” section (anchors keep human-friendly labels)
+  const handlePairs: Array<{ label: string; url: string }> =
+    Object.entries(profile?.handles || {})
+      .map(([k, v]) => {
+        const url = handleToCanonicalUrl(k, v);
+        return url ? { label: prettyHandleLabel(k), url } : null;
+      })
+      .filter(Boolean) as Array<{ label: string; url: string }>;
 
   // Press
   const press: Array<{ title?: string; url: string }> = Array.isArray(profile.press)
@@ -312,7 +361,7 @@ export default async function PublicProfilePage({ params }: PageProps) {
 
   return (
     <main className="mx-auto max-w-3xl px-6 py-12">
-      {/* JSON-LD (safe injection with JSON.stringify; no dangerouslySetInnerHTML) */}
+      {/* JSON-LD */}
       {schema ? (
         <Script id="profile-jsonld" type="application/ld+json" strategy="afterInteractive">
           {JSON.stringify(schema)}
@@ -545,21 +594,6 @@ export default async function PublicProfilePage({ params }: PageProps) {
               </li>
             ))}
           </ul>
-        </section>
-      )}
-
-      {/* FAQ */}
-      {faqs.length > 0 && (
-        <section id="faq" className="mb-10">
-          <h3 className="mb-2 text-lg font-medium">FAQ</h3>
-          <div className="divide-y rounded-xl border">
-            {faqs.map((f) => (
-              <details key={f.id} className="p-4">
-                <summary className="cursor-pointer font-medium">{f.question}</summary>
-                <div className="mt-2 text-gray-700 whitespace-pre-line">{f.answer}</div>
-              </details>
-            ))}
-          </div>
         </section>
       )}
 
