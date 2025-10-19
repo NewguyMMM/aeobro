@@ -1,5 +1,5 @@
 // lib/schema.ts
-// 📅 2025-10-04 02:58 PM ET
+// 📅 2025-10-18 04:22 PM ET
 import type { Profile } from "@prisma/client";
 import { sanitizeText, sanitizeUrl } from "@/lib/sanitize";
 
@@ -14,7 +14,6 @@ function schemaTypeFor(entityType?: string, orgHeuristic = false) {
     case "creator / person":
       return "Person";
     default:
-      // Fallback: if it looks like an org, use Organization; else Person
       return orgHeuristic ? "Organization" : "Person";
   }
 }
@@ -25,24 +24,68 @@ function applyVerificationGating(
   verificationStatus?: string | null
 ): "Organization" | "LocalBusiness" | "Person" | null {
   const status = (verificationStatus || "UNVERIFIED").toUpperCase();
-  // Only DOMAIN_VERIFIED can export org/localbusiness
   if (desiredType === "Organization" || desiredType === "LocalBusiness") {
     if (status === "DOMAIN_VERIFIED") return desiredType;
-    // Downgrade to Person if only platform-verified; otherwise block entirely
     if (status === "PLATFORM_VERIFIED") return "Person";
-    if (status === "UNVERIFIED") return "Person"; // safest default is to allow Person only
+    if (status === "UNVERIFIED") return "Person";
   }
-  // Person export allowed for PLATFORM_VERIFIED or DOMAIN_VERIFIED; also unverified minimal Person is okay
   return desiredType;
+}
+
+/** Turn a platform handle or url into a canonical https URL (if possible). */
+function handleToCanonicalUrl(key: string, raw: any): string | null {
+  // First: if they already gave us a full URL, honor it.
+  const asUrl = sanitizeUrl(typeof raw === "string" ? raw : raw?.url);
+  if (asUrl) return asUrl;
+
+  // Else try to build a canonical URL from a handle string
+  const vRaw = typeof raw === "string" ? raw : raw?.handle ?? "";
+  const v = sanitizeText(vRaw, 120);
+  if (!v) return null;
+
+  // strip leading @ for platforms that use @
+  const noAt = v.replace(/^@/, "");
+
+  // conservative guards: no spaces, no quotes
+  if (/\s|["'<>\u0000]/.test(noAt)) return null;
+
+  const k = (key || "").toLowerCase();
+
+  switch (k) {
+    case "youtube":
+      // prefer channel/handle-style URL
+      return `https://www.youtube.com/@${noAt}`;
+    case "tiktok":
+      return `https://www.tiktok.com/@${noAt}`;
+    case "instagram":
+      return `https://www.instagram.com/${noAt}`;
+    case "x":
+    case "twitter":
+      return `https://twitter.com/${noAt}`;
+    case "linkedin":
+      // could be company or in/username — we can't know; default to "in"
+      return `https://www.linkedin.com/in/${noAt}`;
+    case "facebook":
+      return `https://www.facebook.com/${noAt}`;
+    case "github":
+      return `https://github.com/${noAt}`;
+    case "substack":
+      // either full url or subdomain
+      return `https://${noAt}.substack.com/`;
+    case "etsy":
+      // shop name canonicalization
+      return `https://www.etsy.com/shop/${noAt}`;
+    default:
+      return null;
+  }
 }
 
 /**
  * Build the primary JSON-LD block for a public profile.
  * - Uses entityType to pick @type, then applies verification gating
  * - description prefers Bio → Tagline
- * - Consolidates links/socials into sameAs
- * - ❗️Does NOT inline FAQs/Services anymore (these now live in separate tables).
- *   Use buildFAQJsonLd() and buildServiceJsonLd() below.
+ * - Consolidates website + links + socials + handles into sameAs
+ * - FAQs/Services are separate JSON-LD builders (below)
  *
  * All user-controlled fields are sanitized.
  */
@@ -85,18 +128,37 @@ export function buildProfileSchema(profile: Partial<Profile>, baseUrl: string) {
   const email = emailRaw ? sanitizeText(emailRaw, 200) : undefined;
   const telephone = telephoneRaw ? sanitizeText(telephoneRaw, 50) : undefined;
 
-  // Links / socials → sameAs (URLs sanitized + deduped)
+  // sameAs: website + links + socialLinks + handles (canonicalized)
+  const sameAsSet = new Set<string>();
+
+  const websiteUrl = sanitizeUrl((profile as any)?.website as string | null);
+  if (websiteUrl) sameAsSet.add(websiteUrl);
+
   const toMaybeUrl = (x: any): string | null => {
     const u = typeof x === "string" ? x : x?.url;
     return sanitizeUrl(u);
   };
-  const linksArr = Array.isArray((profile as any)?.links) ? (profile as any)?.links : [];
-  const socialsArr = Array.isArray((profile as any)?.socialLinks) ? (profile as any)?.socialLinks : [];
-  const sameAsSet = new Set<string>();
+
+  const linksArr = Array.isArray((profile as any)?.links)
+    ? (profile as any)?.links
+    : [];
+  const socialsArr = Array.isArray((profile as any)?.socialLinks)
+    ? (profile as any)?.socialLinks
+    : [];
+
   ([] as any[]).concat(linksArr, socialsArr).forEach((v) => {
     const u = toMaybeUrl(v);
     if (u) sameAsSet.add(u);
   });
+
+  const handlesObj = (profile as any)?.handles || {};
+  if (handlesObj && typeof handlesObj === "object") {
+    for (const [key, val] of Object.entries(handlesObj)) {
+      const canon = handleToCanonicalUrl(key, val);
+      if (canon) sameAsSet.add(canon);
+    }
+  }
+
   const sameAs = Array.from(sameAsSet);
   const sameAsOut = sameAs.length ? sameAs : undefined;
 
@@ -125,12 +187,8 @@ export function buildProfileSchema(profile: Partial<Profile>, baseUrl: string) {
 
   // Apply verification gating
   const verificationStatus = (profile as any)?.verificationStatus as string | null;
-  const schemaType = applyVerificationGating(
-    preliminaryType as any,
-    verificationStatus
-  );
-
-  if (!schemaType) return null; // gated out entirely (shouldn't happen with our defaults)
+  const schemaType = applyVerificationGating(preliminaryType as any, verificationStatus);
+  if (!schemaType) return null;
 
   // Name rules: prefer displayName; for orgs fall back to legalName
   const name =
@@ -152,30 +210,25 @@ export function buildProfileSchema(profile: Partial<Profile>, baseUrl: string) {
     ...(address ? { address } : {}),
   };
 
-  // Organization / LocalBusiness extras
   if (schemaType === "Organization" || schemaType === "LocalBusiness") {
     base.legalName = legalName || undefined;
 
-    // Optional: opening hours if you store a simple string
     const hoursRaw = (profile as any)?.hours as string | null;
     const hours = hoursRaw ? sanitizeText(hoursRaw, 160) : null;
     if (hours) base.openingHours = hours;
 
-    // Optional: languages served (string[] on your model)
     const languagesRaw = (profile as any)?.languages as string[] | null;
     const languages = Array.isArray(languagesRaw)
       ? languagesRaw.map((s) => sanitizeText(s, 60)).filter(Boolean)
       : [];
     if (languages.length) base.availableLanguage = languages;
 
-    // Optional: service area (string[] on your model)
     const serviceAreaRaw = (profile as any)?.serviceArea as string[] | null;
     const serviceArea = Array.isArray(serviceAreaRaw)
       ? serviceAreaRaw.map((s) => sanitizeText(s, 80)).filter(Boolean)
       : [];
     if (serviceArea.length) base.areaServed = serviceArea;
 
-    // Optional: foundedYear / teamSize / pricingModel
     const foundedYear = (profile as any)?.foundedYear as number | null;
     if (foundedYear) base.foundingDate = String(foundedYear);
 
@@ -190,7 +243,6 @@ export function buildProfileSchema(profile: Partial<Profile>, baseUrl: string) {
       ];
     }
   } else {
-    // Person extras
     const jobTitleRaw = (profile as any)?.jobTitle as string | null;
     const jobTitle = jobTitleRaw ? sanitizeText(jobTitleRaw, 120) : null;
     if (jobTitle) base.jobTitle = jobTitle;
@@ -219,13 +271,7 @@ export function buildProfileSchema(profile: Partial<Profile>, baseUrl: string) {
   return base;
 }
 
-/**
- * Build a standalone FAQPage JSON-LD object.
- * Use this alongside the main profile script on the public profile page.
- *
- * @param slug - profile slug (used to form the FAQ section URL)
- * @param faqs - array of { question, answer }
- */
+/** FAQ JSON-LD unchanged */
 export function buildFAQJsonLd(
   slug: string,
   faqs: Array<{ question: string; answer: string }>
@@ -259,13 +305,7 @@ export function buildFAQJsonLd(
   };
 }
 
-/**
- * Build Service JSON-LD objects.
- * Returns an array (one schema object per Service).
- *
- * @param providerIdUrl - the @id or URL of the provider (e.g., `${baseUrl}/p/${slug}#profile`)
- * @param services - array of service definitions from DB
- */
+/** Services JSON-LD unchanged */
 export function buildServiceJsonLd(
   providerIdUrl: string,
   services: Array<{
@@ -333,7 +373,7 @@ export function buildServiceJsonLd(
         "@context": "https://schema.org",
         "@type": "Service",
         name,
-        provider, // link back to the main entity
+        provider,
       };
 
       if (description) obj.description = description;
