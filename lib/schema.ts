@@ -1,5 +1,5 @@
 // lib/schema.ts
-// 📅 2025-10-18 04:22 PM ET
+// 📅 2025-10-19 03:50 PM ET
 import type { Profile } from "@prisma/client";
 import { sanitizeText, sanitizeUrl } from "@/lib/sanitize";
 
@@ -53,7 +53,6 @@ function handleToCanonicalUrl(key: string, raw: any): string | null {
 
   switch (k) {
     case "youtube":
-      // prefer channel/handle-style URL
       return `https://www.youtube.com/@${noAt}`;
     case "tiktok":
       return `https://www.tiktok.com/@${noAt}`;
@@ -63,21 +62,63 @@ function handleToCanonicalUrl(key: string, raw: any): string | null {
     case "twitter":
       return `https://twitter.com/${noAt}`;
     case "linkedin":
-      // could be company or in/username — we can't know; default to "in"
       return `https://www.linkedin.com/in/${noAt}`;
     case "facebook":
       return `https://www.facebook.com/${noAt}`;
     case "github":
       return `https://github.com/${noAt}`;
     case "substack":
-      // either full url or subdomain
       return `https://${noAt}.substack.com/`;
     case "etsy":
-      // shop name canonicalization
       return `https://www.etsy.com/shop/${noAt}`;
     default:
       return null;
   }
+}
+
+/** Build Event object from a loose event/news shape */
+function buildEventLike(e: any) {
+  if (!e) return null;
+  const name =
+    sanitizeText(e.name ?? e.title ?? e.headline ?? "", 200) || null;
+  const url = sanitizeUrl(e.url ?? null) || undefined;
+  const startDate = e.startDate ?? e.date ?? e.start_time ?? undefined;
+  const endDate = e.endDate ?? e.end_time ?? undefined;
+  const description = e.description
+    ? sanitizeText(e.description, 500)
+    : undefined;
+
+  if (!name && !url && !startDate && !description) return null;
+
+  const obj: any = { "@type": "Event" };
+  if (name) obj.name = name;
+  if (url) obj.url = url;
+  if (startDate) obj.startDate = startDate;
+  if (endDate) obj.endDate = endDate;
+  if (description) obj.description = description;
+  return obj;
+}
+
+/** Build CreativeWork for “news” items */
+function buildNewsLike(n: any) {
+  if (!n) return null;
+  const headline =
+    sanitizeText(n.headline ?? n.title ?? n.name ?? "", 200) || null;
+  const url = sanitizeUrl(n.url ?? null) || undefined;
+  const datePublished =
+    n.datePublished ?? n.publishedAt ?? n.date ?? undefined;
+  const description = n.description
+    ? sanitizeText(n.description, 500)
+    : undefined;
+
+  if (!headline && !url && !datePublished && !description) return null;
+
+  const obj: any = { "@type": "CreativeWork" };
+  if (headline) obj.headline = headline;
+  if (url) obj.url = url;
+  if (datePublished) obj.datePublished = datePublished;
+  if (description) obj.description = description;
+  return obj;
 }
 
 /**
@@ -85,9 +126,8 @@ function handleToCanonicalUrl(key: string, raw: any): string | null {
  * - Uses entityType to pick @type, then applies verification gating
  * - description prefers Bio → Tagline
  * - Consolidates website + links + socials + handles into sameAs
- * - FAQs/Services are separate JSON-LD builders (below)
- *
- * All user-controlled fields are sanitized.
+ * - Adds: mentions (press), award (certifications), subjectOf (events/news)
+ * - Supports multiple images
  */
 export function buildProfileSchema(profile: Partial<Profile>, baseUrl: string) {
   const slug = (profile as any)?.slug as string | undefined;
@@ -110,11 +150,23 @@ export function buildProfileSchema(profile: Partial<Profile>, baseUrl: string) {
     sanitizeText(taglineRaw ?? "", 500) ||
     undefined;
 
-  // Image/Logo (URLs sanitized)
+  // Images: logo/avatar/image + imageUrls[] (URLs sanitized)
+  const imagesSet = new Set<string>();
   const logoUrl = sanitizeUrl((profile as any)?.logoUrl as string | null);
   const avatarUrl = sanitizeUrl((profile as any)?.avatarUrl as string | null);
   const imageUrl = sanitizeUrl((profile as any)?.image as string | null);
-  const image = logoUrl || avatarUrl || imageUrl || undefined;
+  if (logoUrl) imagesSet.add(logoUrl);
+  if (avatarUrl) imagesSet.add(avatarUrl);
+  if (imageUrl) imagesSet.add(imageUrl);
+  const imageUrls = Array.isArray((profile as any)?.imageUrls)
+    ? (profile as any).imageUrls
+    : [];
+  for (const u of imageUrls) {
+    const s = sanitizeUrl(u);
+    if (s) imagesSet.add(s);
+  }
+  const images = Array.from(imagesSet);
+  const imageOut = images.length === 0 ? undefined : images.length === 1 ? images[0] : images;
 
   // Contact (sanitized)
   const emailRaw =
@@ -203,13 +255,62 @@ export function buildProfileSchema(profile: Partial<Profile>, baseUrl: string) {
     url,
     name: name || sanitizeText(legalName || "Profile", 200),
     ...(description ? { description } : {}),
-    ...(image ? { image } : {}),
+    ...(imageOut ? { image: imageOut } : {}),
     ...(sameAsOut ? { sameAs: sameAsOut } : {}),
     ...(email ? { email } : {}),
     ...(telephone ? { telephone } : {}),
     ...(address ? { address } : {}),
   };
 
+  // ---- Optional: Press / Mentions -> CreativeWork ----
+  const pressArr = Array.isArray((profile as any)?.press)
+    ? (profile as any)?.press
+    : [];
+  const mentions = pressArr
+    .map((p: any) => {
+      const url = sanitizeUrl(p?.url);
+      const name = p?.title ? sanitizeText(p.title, 200) : undefined;
+      if (!url) return null;
+      const cw: any = { "@type": "CreativeWork", url };
+      if (name) cw.name = name;
+      return cw;
+    })
+    .filter(Boolean);
+  if (mentions.length) base.mentions = mentions;
+
+  // ---- Optional: Certifications / Awards ----
+  const certs = (profile as any)?.certifications;
+  if (Array.isArray(certs)) {
+    const awards = certs
+      .map((c: any) => sanitizeText(String(c), 160))
+      .filter(Boolean);
+    if (awards.length) base.award = awards;
+  } else if (typeof certs === "string" && certs.trim()) {
+    base.award = sanitizeText(certs, 400);
+  }
+
+  // ---- Optional: Upcoming Events / Latest News → subjectOf ----
+  const subjectOf: any[] = [];
+
+  const eventsArr = Array.isArray((profile as any)?.events)
+    ? (profile as any).events
+    : [];
+  for (const e of eventsArr) {
+    const ev = buildEventLike(e);
+    if (ev) subjectOf.push(ev);
+  }
+
+  const newsArr = Array.isArray((profile as any)?.news)
+    ? (profile as any).news
+    : [];
+  for (const n of newsArr) {
+    const nw = buildNewsLike(n);
+    if (nw) subjectOf.push(nw);
+  }
+
+  if (subjectOf.length) base.subjectOf = subjectOf;
+
+  // Organization / LocalBusiness extras
   if (schemaType === "Organization" || schemaType === "LocalBusiness") {
     base.legalName = legalName || undefined;
 
@@ -243,6 +344,7 @@ export function buildProfileSchema(profile: Partial<Profile>, baseUrl: string) {
       ];
     }
   } else {
+    // Person extras
     const jobTitleRaw = (profile as any)?.jobTitle as string | null;
     const jobTitle = jobTitleRaw ? sanitizeText(jobTitleRaw, 120) : null;
     if (jobTitle) base.jobTitle = jobTitle;
@@ -271,7 +373,7 @@ export function buildProfileSchema(profile: Partial<Profile>, baseUrl: string) {
   return base;
 }
 
-/** FAQ JSON-LD unchanged */
+/** FAQ JSON-LD (unchanged) */
 export function buildFAQJsonLd(
   slug: string,
   faqs: Array<{ question: string; answer: string }>
@@ -305,7 +407,7 @@ export function buildFAQJsonLd(
   };
 }
 
-/** Services JSON-LD unchanged */
+/** Services JSON-LD (unchanged) */
 export function buildServiceJsonLd(
   providerIdUrl: string,
   services: Array<{
