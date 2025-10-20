@@ -78,7 +78,6 @@ type Parsed = {
   hasTwitterCard: boolean;
   jsonLdBlocks: any[];
   hasOG: boolean;
-  lastModifiedAgeDays: number | null;
 };
 
 function extractMeta(
@@ -103,7 +102,7 @@ function extractLink(content: string, rel: string): string | null {
   return m ? m[1] : null;
 }
 
-function parseHtml(html: string, headers: Headers | null): Parsed {
+function parseHtml(html: string, _headers: Headers | null): Parsed {
   const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
   const title = titleMatch ? titleMatch[1].trim() : "";
 
@@ -111,17 +110,6 @@ function parseHtml(html: string, headers: Headers | null): Parsed {
   const hasOG = /<meta\s+property=["']og:/i.test(html);
   const canonicalHref = extractLink(html, "canonical");
   const hasTwitterCard = !!extractMeta(html, "twitter:card", "name");
-
-  // Last-Modified header age (days)
-  let lastModifiedAgeDays: number | null = null;
-  if (headers?.has("last-modified")) {
-    const lm = headers.get("last-modified")!;
-    const t = Date.parse(lm);
-    if (!Number.isNaN(t)) {
-      const diff = Date.now() - t;
-      lastModifiedAgeDays = Math.max(0, Math.round(diff / (1000 * 60 * 60 * 24)));
-    }
-  }
 
   // Extract all JSON-LD blocks
   const jsonLdBlocks: any[] = [];
@@ -148,7 +136,6 @@ function parseHtml(html: string, headers: Headers | null): Parsed {
     hasTwitterCard,
     jsonLdBlocks,
     hasOG,
-    lastModifiedAgeDays,
   };
 }
 
@@ -278,34 +265,8 @@ function hasFAQ(blocks: any[]): boolean {
   return types.includes("faqpage");
 }
 
-function hasReviews(blocks: any[]): boolean {
-  const types = getAllTypes(blocks).map((s) => s.toLowerCase());
-  return types.includes("aggregaterating") || types.includes("review");
-}
-
 function hasSpeakable(blocks: any[]): boolean {
   return anyHas(blocks, "speakable");
-}
-
-function hasGeo(blocks: any[]): boolean {
-  for (const b of blocks) {
-    if (b?.geo || (b?.latitude && b?.longitude)) return true;
-  }
-  return false;
-}
-
-function hasOpeningHours(blocks: any[]): boolean {
-  for (const b of blocks) {
-    if (b?.openingHoursSpecification) return true;
-  }
-  return false;
-}
-
-function hasPriceRange(blocks: any[]): boolean {
-  for (const b of blocks) {
-    if (typeof b?.priceRange === "string" && b.priceRange.trim()) return true;
-  }
-  return false;
 }
 
 function nameMatches(title: string, blocks: any[]): boolean {
@@ -317,7 +278,7 @@ function nameMatches(title: string, blocks: any[]): boolean {
   return names.some((n) => n && t.includes(n));
 }
 
-// ---------- Scoring ----------
+// ---------- Scoring (18 actionable parameters = 100 points) ----------
 type Check = {
   key: string;
   label: string;
@@ -343,8 +304,6 @@ const TOOLTIP: Record<string, string> = {
   logo: "Confirms a brand logo or primary image is defined.",
   publisher:
     "Compares the JSON-LD publisher to the site’s domain to confirm authorship.",
-  fresh:
-    "Considers Last-Modified recency; fresher content is favored by AI systems.",
   services:
     "Finds Service/Product/Offer schema so AIs can understand what you do.",
   faq: "Detects FAQPage schema to power Q&A-style summaries.",
@@ -354,21 +313,12 @@ const TOOLTIP: Record<string, string> = {
     "Checks that brand name and site signals align (title/OG vs JSON-LD).",
   readability:
     "Prefers a concise, clear description (40–160 chars, low jargon).",
-  reviews: "Detects AggregateRating/Review to support reputation snippets.",
   speakable:
     "Looks for speakable sections used by voice assistants.",
   canonical:
     "Checks for a canonical link to prevent duplicate-URL confusion.",
-  hreflang:
-    "Looks for hreflang tags to indicate language/region alternates.",
   twitter:
     "Detects Twitter Card tags for richer share cards and AI use.",
-  geo: "Checks for coordinates (geo) to improve local disambiguation.",
-  maps: "Looks for Google/Apple Maps links to tie the entity to a place.",
-  opening:
-    "Detects openingHoursSpecification for local business hours.",
-  price:
-    "Checks for priceRange to set expectations for cost-sensitive users.",
 };
 
 function scoreAll(baseOrigin: string, p: Parsed): { checks: Check[]; total: number } {
@@ -384,58 +334,37 @@ function scoreAll(baseOrigin: string, p: Parsed): { checks: Check[]; total: numb
   const publisherOK =
     !!publisherOrigin &&
     publisherOrigin.replace(/^www\./, "") === baseOrigin.replace(/^www\./, "");
-  const freshOK =
-    p.lastModifiedAgeDays !== null ? p.lastModifiedAgeDays <= 180 : false;
   const servicesOK = hasServices(p.jsonLdBlocks);
   const faqOK = hasFAQ(p.jsonLdBlocks);
-  const reviewsOK = hasReviews(p.jsonLdBlocks);
   const speakableOK = hasSpeakable(p.jsonLdBlocks);
   const canonicalOK = !!p.canonicalHref;
-  const hreflangOK = /<link[^>]+rel=["']alternate["'][^>]+hreflang=/i.test(p.html);
   const twitterOK = p.hasTwitterCard;
-  const geoOK = hasGeo(p.jsonLdBlocks);
-  const openingOK = hasOpeningHours(p.jsonLdBlocks);
-  const priceOK = hasPriceRange(p.jsonLdBlocks);
-  const mapsInSameAs =
-    sameAsList.some((u) => /google\.[^/]+\/maps|goo\.gl\/maps|maps\.apple\.com/i.test(u)) ||
-    /https?:\/\/(www\.)?google\.[^/]+\/maps/i.test(p.html);
   const idConsistencyOK =
     nameMatches(p.title, p.jsonLdBlocks) &&
     (!!p.ogSiteName ? p.title.includes(p.ogSiteName) || p.ogSiteName.includes(p.title) : true);
   const desc = pickFirstDesc(p.jsonLdBlocks);
   const readability = textScoreReadability(desc);
 
+  // Weights sum to 100
   const checks: Check[] = [
-    { key: "jsonld", label: "JSON-LD detected", points: 8, passed: p.jsonLdBlocks.length > 0 },
-    {
-      key: "type",
-      label: "Valid schema @type (Org/LocalBusiness/Person)",
-      points: 6,
-      passed: typesLower.some((t) => ["organization", "localbusiness", "person"].includes(t)),
-    },
-    { key: "og", label: "Open Graph tags present", points: 3, passed: p.hasOG },
-    { key: "robots", label: "robots.txt reachable", points: 4, passed: true }, // patched later
-    { key: "sitemap", label: "sitemap.xml reachable", points: 4, passed: true }, // patched later
-    { key: "sameas", label: "sameAs links (>=1)", points: 6, passed: sameAsList.length >= 1, note: `${sameAsList.length}` },
-    { key: "address", label: "Address completeness (locality/region)", points: 5, passed: hasAddress },
-    { key: "contact", label: "Contact info (phone or email)", points: 5, passed: contactOK },
-    { key: "logo", label: "Logo or image present", points: 3, passed: logoOK },
-    { key: "publisher", label: "Publisher/ownership consistency", points: 4, passed: publisherOK },
-    { key: "fresh", label: "Freshness (modified within 180 days)", points: 3, passed: freshOK },
-    { key: "services", label: "Service/Product/Offer schema", points: 5, passed: servicesOK },
-    { key: "faq", label: "FAQ schema present", points: 3, passed: faqOK },
-    { key: "graphdepth", label: "sameAs graph depth (≥3 unique domains)", points: 3, passed: sameAsDomains.length >= 3, note: `${sameAsDomains.length}` },
-    { key: "identity", label: "Entity identity consistency (JSON-LD vs title/OG)", points: 3, passed: idConsistencyOK },
-    { key: "readability", label: "AI-readable description (40–160 chars, low jargon)", points: 3, passed: readability.ok, note: `len=${readability.len}` },
-    { key: "reviews", label: "Review/Rating schema", points: 3, passed: reviewsOK },
-    { key: "speakable", label: "Speakable (voice search) present", points: 2, passed: speakableOK },
-    { key: "canonical", label: "Canonical tag present", points: 2, passed: canonicalOK },
-    { key: "hreflang", label: "Hreflang tags present", points: 2, passed: hreflangOK },
-    { key: "twitter", label: "Twitter Card tags present", points: 2, passed: twitterOK },
-    { key: "geo", label: "Geo/coordinates present", points: 2, passed: geoOK },
-    { key: "maps", label: "Google/Apple Maps link present", points: 2, passed: mapsInSameAs },
-    { key: "opening", label: "Opening hours present", points: 2, passed: openingOK },
-    { key: "price", label: "Price range present", points: 2, passed: priceOK },
+    { key: "jsonld",     label: "JSON-LD detected",                                   points: 14, passed: p.jsonLdBlocks.length > 0 },
+    { key: "type",       label: "Valid schema @type (Org/LocalBusiness/Person)",      points: 9,  passed: typesLower.some((t) => ["organization","localbusiness","person"].includes(t)) },
+    { key: "og",         label: "Open Graph tags present",                             points: 4,  passed: p.hasOG },
+    { key: "robots",     label: "robots.txt reachable",                                points: 4,  passed: true }, // patched after HEAD
+    { key: "sitemap",    label: "sitemap.xml reachable",                               points: 4,  passed: true }, // patched after HEAD
+    { key: "sameas",     label: "sameAs links (>=1)",                                  points: 9,  passed: sameAsList.length >= 1, note: `${sameAsList.length}` },
+    { key: "address",    label: "Address completeness (locality/region)",             points: 7,  passed: hasAddress },
+    { key: "contact",    label: "Contact info (phone or email)",                       points: 7,  passed: contactOK },
+    { key: "logo",       label: "Logo or image present",                               points: 3,  passed: logoOK },
+    { key: "publisher",  label: "Publisher/ownership consistency",                     points: 7,  passed: publisherOK },
+    { key: "services",   label: "Service/Product/Offer schema",                        points: 8,  passed: servicesOK },
+    { key: "faq",        label: "FAQ schema present",                                  points: 4,  passed: faqOK },
+    { key: "graphdepth", label: "sameAs graph depth (≥3 unique domains)",              points: 5,  passed: sameAsDomains.length >= 3, note: `${sameAsDomains.length}` },
+    { key: "identity",   label: "Entity identity consistency (JSON-LD vs title/OG)",   points: 4,  passed: idConsistencyOK },
+    { key: "readability",label: "AI-readable description (40–160 chars, low jargon)",  points: 4,  passed: readability.ok, note: `len=${readability.len}` },
+    { key: "speakable",  label: "Speakable (voice search) present",                    points: 2,  passed: speakableOK },
+    { key: "canonical",  label: "Canonical tag present",                               points: 3,  passed: canonicalOK },
+    { key: "twitter",    label: "Twitter Card tags present",                           points: 2,  passed: twitterOK },
   ];
 
   const total = checks.reduce((sum, c) => sum + (c.passed ? c.points : 0), 0);
@@ -478,14 +407,14 @@ export default async function Page({ searchParams }: PageProps) {
         : parseHtml("", htmlRes.headers);
       let { checks, total } = scoreAll(base.hostname.replace(/^www\./, ""), parsed);
 
-      // Patch robots/sitemap pass/fail from HEAD checks
+      // Patch robots/sitemap from HEAD results
       checks = checks.map((c) =>
         c.key === "robots" ? { ...c, passed: robotsOk } :
         c.key === "sitemap" ? { ...c, passed: sitemapOk } :
         c
       );
-      const patchedTotal = checks.reduce((s, c) => s + (c.passed ? c.points : 0), 0);
-      const clamped = Math.min(100, patchedTotal);
+
+      const clamped = Math.min(100, checks.reduce((s, c) => s + (c.passed ? c.points : 0), 0));
 
       const payload = {
         url: asUrl,
@@ -514,7 +443,7 @@ export default async function Page({ searchParams }: PageProps) {
     }
   }
 
-  // JSON-LD for page
+  // Page JSON-LD
   const jsonLd = {
     "@context": "https://schema.org",
     "@type": "WebPage",
@@ -529,18 +458,8 @@ export default async function Page({ searchParams }: PageProps) {
     "@context": "https://schema.org",
     "@type": "BreadcrumbList",
     itemListElement: [
-      {
-        "@type": "ListItem",
-        position: 1,
-        name: "Home",
-        item: "https://aeobro.com/",
-      },
-      {
-        "@type": "ListItem",
-        position: 2,
-        name: "AI-Visibility Audit",
-        item: "https://aeobro.com/audit",
-      },
+      { "@type": "ListItem", position: 1, name: "Home", item: "https://aeobro.com/" },
+      { "@type": "ListItem", position: 2, name: "AI-Visibility Audit", item: "https://aeobro.com/audit" },
     ],
   };
 
@@ -559,10 +478,9 @@ export default async function Page({ searchParams }: PageProps) {
         Enter a domain or brand name to get a quick, provisional score (demo).
       </p>
 
+      {/* Form */}
       <form className="mt-6 flex items-center gap-3" action="/audit" method="get">
-        <label className="sr-only" htmlFor="q">
-          Domain or brand
-        </label>
+        <label className="sr-only" htmlFor="q">Domain or brand</label>
         <input
           id="q"
           name="q"
@@ -587,6 +505,7 @@ export default async function Page({ searchParams }: PageProps) {
         </p>
       )}
 
+      {/* Results */}
       <div className="mt-6" aria-live="polite">
         {view.mode === "brand" && (
           <>
@@ -594,8 +513,7 @@ export default async function Page({ searchParams }: PageProps) {
               Provisional Score: <strong>{view.score}/100</strong>
             </p>
             <p className="text-sm text-gray-500">
-              Tip: Provide a full domain (e.g., <code>example.com</code>) for a
-              richer analysis.
+              Tip: Provide a full domain (e.g., <code>example.com</code>) for a richer analysis.
             </p>
           </>
         )}
@@ -604,8 +522,7 @@ export default async function Page({ searchParams }: PageProps) {
           <>
             <div className="flex items-center gap-3">
               <p className="text-lg">
-                AI-Readiness for{" "}
-                <span className="font-mono">{view.url}</span>:{" "}
+                AI-Readiness for <span className="font-mono">{view.url}</span>:{" "}
                 <strong>{view.score}/100</strong>
               </p>
 
@@ -619,12 +536,12 @@ export default async function Page({ searchParams }: PageProps) {
               </button>
             </div>
 
-            {/* Hidden JSON payload (read by the small script below) */}
+            {/* Hidden JSON payload for export */}
             <script
               id="audit-json"
               type="application/json"
               // eslint-disable-next-line react/no-danger
-              dangerouslySetInnerHTML={{ __html: view.payloadJson }}
+              dangerouslySetInnerHTML={{ __html: view.payloadJson ?? "{}" }}
             />
 
             <ul className="text-sm text-gray-800 list-disc pl-5 mt-3 space-y-1">
@@ -636,14 +553,12 @@ export default async function Page({ searchParams }: PageProps) {
                 >
                   {c.passed ? "✅" : "❌"} {c.label}
                   {typeof c.note !== "undefined" ? ` (${c.note})` : ""}
-                  {process.env.NODE_ENV !== "production" ? ` — +${c.points}` : ""}
                 </li>
               ))}
             </ul>
 
             <p className="text-xs text-gray-500 mt-3">
-              Demo-grade checks run server-side with short timeouts. For full
-              verification and export, create an AEOBRO profile.
+              Checks run server-side with short timeouts. For full verification and export, create an AEOBRO profile.
             </p>
           </>
         )}
@@ -654,10 +569,9 @@ export default async function Page({ searchParams }: PageProps) {
       <div className="prose">
         <h2>What this score means</h2>
         <p>
-          This is an analysis of various parameters such as structured data
-          (JSON-LD), verification status, entity disambiguation, link graph
-          health, and crawlability over time. The higher your score, the more
-          optimized your data is for AI visibility.
+          This is an analysis of various parameters such as structured data (JSON-LD),
+          verification status, entity disambiguation, link graph health, and crawlability over time.
+          The higher your score, the more optimized your data is for AI visibility.
         </p>
         <p className="text-sm text-gray-500">
           Last updated:{" "}
@@ -670,12 +584,6 @@ export default async function Page({ searchParams }: PageProps) {
       </div>
 
       {/* Tiny client-side helper for Export JSON */}
-      {/*
-        We attach a click handler after hydration that:
-        1) reads the <script id="audit-json"> content
-        2) creates a Blob
-        3) triggers a download named ai-visibility-audit.json
-      */}
       <Script id="audit-export-json" strategy="afterInteractive">
         {`
           (function () {
