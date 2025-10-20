@@ -29,7 +29,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                     FAQ
                   </a>
                   <a className="btn transition-colors duration-200" href="/audit">
-                    Audit
+                    Check AI Visibility
                   </a>
                   <AuthButton />
                 </nav>
