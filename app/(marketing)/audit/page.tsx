@@ -1,12 +1,12 @@
 // app/(marketing)/audit/page.tsx
 import Script from "next/script";
 import React from "react";
-import { headers } from "next/headers";
 
-// ✅ Revalidate (ISR) — marketing page; adjust as desired
-export const revalidate = 3600 as const;
+// Optional: guarantee this page evaluates the query on each request
+export const dynamic = "force-dynamic" as const;
+// Or keep ISR if you prefer, but dynamic is simplest when using searchParams
+// export const revalidate = 3600 as const;
 
-// ✅ SEO metadata
 export const metadata = {
   title: "AI-Visibility Audit | AEOBRO",
   description:
@@ -14,18 +14,18 @@ export const metadata = {
   alternates: { canonical: "/audit" },
 } as const;
 
-export default async function Page() {
-  // Read query (?q=...) server-side so we can render without client JS
-  const hdrs = await headers();
-  const url = hdrs.get("x-url") ?? ""; // may be undefined locally; we’ll fall back
-  const search = url ? new URL(url).searchParams : new URLSearchParams();
+type PageProps = {
+  searchParams?: { [key: string]: string | string[] | undefined };
+};
 
-  const q = search.get("q")?.trim() ?? "";
-  // Match your old heuristic: looks like a domain/URL -> 55, otherwise 35
+export default async function Page({ searchParams }: PageProps) {
+  // ✅ Read query from Next.js App Router
+  const rawQ = searchParams?.q;
+  const q = Array.isArray(rawQ) ? rawQ[0]?.trim() ?? "" : rawQ?.trim() ?? "";
+
+  // Simple heuristic: looks like a domain/URL -> 55, otherwise 35
   const looksLikeDomain =
-    q.startsWith("http://") ||
-    q.startsWith("https://") ||
-    q.includes("."); // crude but mirrors your previous behavior
+    q.startsWith("http://") || q.startsWith("https://") || q.includes(".");
   const score = q ? (looksLikeDomain ? 55 : 35) : undefined;
 
   // JSON-LD
@@ -90,7 +90,7 @@ export default async function Page() {
         </button>
       </form>
 
-      {/* Help/expectation text directly under the form */}
+      {/* Expectation helper (only when there's no query yet) */}
       {score === undefined && (
         <p id="audit-help" className="text-sm text-gray-500 mt-2">
           Example result: “✅ JSON-LD detected. AI-readiness score: 82 / 100 (Verified domain)”
