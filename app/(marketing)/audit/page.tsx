@@ -4,7 +4,7 @@ import React from "react";
 import { headers } from "next/headers";
 
 // ✅ Revalidate (ISR) — marketing page; adjust as desired
-export const revalidate = 3600;
+export const revalidate = 3600 as const;
 
 // ✅ SEO metadata
 export const metadata = {
@@ -32,34 +32,35 @@ export default async function Page() {
   const jsonLd = {
     "@context": "https://schema.org",
     "@type": "WebPage",
-    "name": "AI-Visibility Audit",
-    "url": "https://aeobro.com/audit",
-    "description":
+    name: "AI-Visibility Audit",
+    url: "https://aeobro.com/audit",
+    description:
       "Quick, provisional AI-visibility score for your brand or domain.",
-    "isPartOf": {
+    isPartOf: {
       "@type": "WebSite",
-      "name": "AEOBRO",
-      "url": "https://aeobro.com"
-    }
+      name: "AEOBRO",
+      url: "https://aeobro.com",
+    },
   };
+
   const breadcrumbLd = {
     "@context": "https://schema.org",
     "@type": "BreadcrumbList",
-    "itemListElement": [
-      { "@type": "ListItem", "position": 1, "name": "Home", "item": "https://aeobro.com/" },
-      { "@type": "ListItem", "position": 2, "name": "AI-Visibility Audit", "item": "https://aeobro.com/audit" }
-    ]
+    itemListElement: [
+      { "@type": "ListItem", position: 1, name: "Home", item: "https://aeobro.com/" },
+      { "@type": "ListItem", position: 2, name: "AI-Visibility Audit", item: "https://aeobro.com/audit" },
+    ],
   };
 
   return (
     <section className="container py-16">
       {/* JSON-LD */}
       <Script type="application/ld+json" strategy="afterInteractive">
-  {JSON.stringify(jsonLd)}
-</Script>
+        {JSON.stringify(jsonLd)}
+      </Script>
       <Script type="application/ld+json" strategy="afterInteractive">
-  {JSON.stringify(breadcrumbLd)}
-</Script>
+        {JSON.stringify(breadcrumbLd)}
+      </Script>
 
       <h1 className="text-4xl font-extrabold">AI-Visibility Audit</h1>
       <p className="mt-3 text-gray-600">
@@ -68,7 +69,9 @@ export default async function Page() {
 
       {/* Server-rendered form (no client JS needed) */}
       <form className="mt-6 flex items-center gap-3" action="/audit" method="get">
-        <label className="sr-only" htmlFor="q">Domain or brand</label>
+        <label className="sr-only" htmlFor="q">
+          Domain or brand
+        </label>
         <input
           id="q"
           name="q"
@@ -77,6 +80,7 @@ export default async function Page() {
           className="px-3 py-2 border rounded-lg w-full max-w-md"
           autoComplete="off"
           inputMode="url"
+          aria-describedby="audit-help"
         />
         <button
           type="submit"
@@ -86,16 +90,26 @@ export default async function Page() {
         </button>
       </form>
 
-      {score !== undefined && (
-        <div className="mt-6">
-          <p className="text-lg">
-            Provisional Score: <strong>{score}/100</strong>
-          </p>
-          <p className="text-sm text-gray-500 mt-2">
-            Heuristic used: values that look like a domain/URL (e.g., contain a dot or start with http/https) score 55; plain names score 35.
-          </p>
-        </div>
+      {/* Help/expectation text directly under the form */}
+      {score === undefined && (
+        <p id="audit-help" className="text-sm text-gray-500 mt-2">
+          Example result: “✅ JSON-LD detected. AI-readiness score: 82 / 100 (Verified domain)”
+        </p>
       )}
+
+      {/* Results area */}
+      <div className="mt-6" aria-live="polite">
+        {score !== undefined && (
+          <>
+            <p className="text-lg">
+              Provisional Score: <strong>{score}/100</strong>
+            </p>
+            <p className="text-sm text-gray-500 mt-2">
+              Heuristic used: values that look like a domain/URL (e.g., contain a dot or start with http/https) score 55; plain names score 35.
+            </p>
+          </>
+        )}
+      </div>
 
       <hr className="my-10" />
 
@@ -107,7 +121,12 @@ export default async function Page() {
           disambiguation, link graph health, and crawlability over time.
         </p>
         <p className="text-sm text-gray-500">
-          Last updated: {new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" })}
+          Last updated:{" "}
+          {new Date().toLocaleDateString("en-US", {
+            year: "numeric",
+            month: "long",
+            day: "numeric",
+          })}
         </p>
       </div>
     </section>
