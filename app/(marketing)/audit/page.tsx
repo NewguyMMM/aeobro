@@ -70,16 +70,7 @@ async function headOk(url: string, timeoutMs = 2500): Promise<boolean> {
   }
 }
 
-type Parsed = {
-  html: string;
-  title: string;
-  ogSiteName: string | null;
-  canonicalHref: string | null;
-  hasTwitterCard: boolean;
-  jsonLdBlocks: any[];
-  hasOG: boolean;
-};
-
+// ---------- Parsing helpers ----------
 function extractMeta(
   content: string,
   name: string,
@@ -100,42 +91,6 @@ function extractLink(content: string, rel: string): string | null {
   );
   const m = content.match(re);
   return m ? m[1] : null;
-}
-
-function parseHtml(html: string, _headers: Headers | null): Parsed {
-  const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
-  const title = titleMatch ? titleMatch[1].trim() : "";
-
-  const ogSiteName = extractMeta(html, "og:site_name");
-  const hasOG = /<meta\s+property=["']og:/i.test(html);
-  const canonicalHref = extractLink(html, "canonical");
-  const hasTwitterCard = !!extractMeta(html, "twitter:card", "name");
-
-  const jsonLdBlocks: any[] = [];
-  const scriptRe =
-    /<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi;
-  let m: RegExpExecArray | null;
-  while ((m = scriptRe.exec(html))) {
-    try {
-      const raw = m[1].trim();
-      if (!raw) continue;
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) jsonLdBlocks.push(...parsed);
-      else jsonLdBlocks.push(parsed);
-    } catch {
-      // ignore invalid JSON-LD
-    }
-  }
-
-  return {
-    html,
-    title,
-    ogSiteName,
-    canonicalHref,
-    hasTwitterCard,
-    jsonLdBlocks,
-    hasOG,
-  };
 }
 
 function arrify<T>(x: T | T[] | undefined | null): T[] {
@@ -168,6 +123,55 @@ function textScoreReadability(desc: string | null): {
   return { ok, len, jargonHits: hits };
 }
 
+// ---------- Parse HTML ----------
+type Parsed = {
+  html: string;
+  title: string;
+  ogSiteName: string | null;
+  canonicalHref: string | null;
+  hasTwitterCard: boolean;
+  jsonLdBlocks: any[];
+  hasOG: boolean;
+};
+
+function parseHtml(html: string, _headers: Headers | null): Parsed {
+  const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
+  const title = titleMatch ? titleMatch[1].trim() : "";
+
+  const ogSiteName = extractMeta(html, "og:site_name");
+  const hasOG = /<meta\s+property=["']og:/i.test(html);
+  const canonicalHref = extractLink(html, "canonical");
+  const hasTwitterCard = !!extractMeta(html, "twitter:card", "name");
+
+  // Extract all JSON-LD blocks
+  const jsonLdBlocks: any[] = [];
+  const scriptRe =
+    /<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi;
+  let m: RegExpExecArray | null;
+  while ((m = scriptRe.exec(html))) {
+    try {
+      const raw = m[1].trim();
+      if (!raw) continue;
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) jsonLdBlocks.push(...parsed);
+      else jsonLdBlocks.push(parsed);
+    } catch {
+      // ignore invalid JSON-LD
+    }
+  }
+
+  return {
+    html,
+    title,
+    ogSiteName,
+    canonicalHref,
+    hasTwitterCard,
+    jsonLdBlocks,
+    hasOG,
+  };
+}
+
+// ---------- Scoring helpers ----------
 function getAllTypes(blocks: any[]): string[] {
   const types: string[] = [];
   for (const b of blocks) {
@@ -344,12 +348,13 @@ function scoreAll(baseOrigin: string, p: Parsed): { checks: Check[]; total: numb
   const desc = pickFirstDesc(p.jsonLdBlocks);
   const readability = textScoreReadability(desc);
 
+  // Weights sum to 100
   const checks: Check[] = [
     { key: "jsonld",     label: "JSON-LD detected",                                   points: 14, passed: p.jsonLdBlocks.length > 0 },
     { key: "type",       label: "Valid schema @type (Org/LocalBusiness/Person)",      points: 9,  passed: typesLower.some((t) => ["organization","localbusiness","person"].includes(t)) },
     { key: "og",         label: "Open Graph tags present",                             points: 4,  passed: p.hasOG },
-    { key: "robots",     label: "robots.txt reachable",                                points: 4,  passed: true },
-    { key: "sitemap",    label: "sitemap.xml reachable",                               points: 4,  passed: true },
+    { key: "robots",     label: "robots.txt reachable",                                points: 4,  passed: true }, // patched after HEAD
+    { key: "sitemap",    label: "sitemap.xml reachable",                               points: 4,  passed: true }, // patched after HEAD
     { key: "sameas",     label: "sameAs links (>=1)",                                  points: 9,  passed: sameAsList.length >= 1, note: `${sameAsList.length}` },
     { key: "address",    label: "Address completeness (locality/region)",             points: 7,  passed: hasAddress },
     { key: "contact",    label: "Contact info (phone or email)",                       points: 7,  passed: contactOK },
@@ -385,7 +390,7 @@ export default async function Page({ searchParams }: PageProps) {
         parsed: Parsed;
         checks: Check[];
         score: number;
-        payloadJson: string;
+        payloadJson: string; // for export button
       } = { mode: "none" };
 
   if (q) {
@@ -405,6 +410,7 @@ export default async function Page({ searchParams }: PageProps) {
         : parseHtml("", htmlRes.headers);
       let { checks } = scoreAll(base.hostname.replace(/^www\./, ""), parsed);
 
+      // Patch robots/sitemap from HEAD results
       checks = checks.map((c) =>
         c.key === "robots" ? { ...c, passed: robotsOk } :
         c.key === "sitemap" ? { ...c, passed: sitemapOk } :
@@ -440,6 +446,7 @@ export default async function Page({ searchParams }: PageProps) {
     }
   }
 
+  // Page JSON-LD
   const jsonLd = {
     "@context": "https://schema.org",
     "@type": "WebPage",
@@ -454,11 +461,10 @@ export default async function Page({ searchParams }: PageProps) {
     "@context": "https://schema.org",
     "@type": "BreadcrumbList",
     itemListElement: [
-      { "@type": "List
       { "@type": "ListItem", position: 1, name: "Home", item: "https://aeobro.com/" },
       { "@type": "ListItem", position: 2, name: "AI-Visibility Audit", item: "https://aeobro.com/audit" },
     ],
-  };
+  } as const;
 
   return (
     <section className="container py-16">
@@ -489,7 +495,7 @@ export default async function Page({ searchParams }: PageProps) {
           className="px-3 py-2 border rounded-lg w-full max-w-md"
           autoComplete="off"
           inputMode="url"
-          aria-describedby="audit-help"
+          aria-describedby="audit-help-links audit-help"
         />
         <button
           type="submit"
@@ -499,9 +505,15 @@ export default async function Page({ searchParams }: PageProps) {
         </button>
       </form>
 
+      {/* Social link helper (always visible) */}
+      <p id="audit-help-links" className="mt-1 text-xs text-gray-500">
+        You can enter any website URL or public social media link
+        <span className="italic"> (partial results for Instagram / Facebook)</span>.
+      </p>
+
       {!q && (
         <p id="audit-help" className="text-sm text-gray-500 mt-2">
-          You can enter any website URL or public social media link (partial results for Instagram / Facebook).
+          Example result: “✅ JSON-LD detected. AI-readiness score: 82 / 100 (Verified domain)”
         </p>
       )}
 
@@ -536,15 +548,21 @@ export default async function Page({ searchParams }: PageProps) {
               </button>
             </div>
 
+            {/* Hidden JSON payload for export */}
             <script
               id="audit-json"
               type="application/json"
+              // eslint-disable-next-line react/no-danger
               dangerouslySetInnerHTML={{ __html: view.payloadJson ?? "{}" }}
             />
 
             <ul className="text-sm text-gray-800 list-disc pl-5 mt-3 space-y-1">
               {view.checks.map((c) => (
-                <li key={c.key} title={TOOLTIP[c.key] ?? ""} className="cursor-help">
+                <li
+                  key={c.key}
+                  title={TOOLTIP[c.key] ?? ""}
+                  className="cursor-help"
+                >
                   {c.passed ? "✅" : "❌"} {c.label}
                   {typeof c.note !== "undefined" ? ` (${c.note})` : ""}
                 </li>
@@ -563,10 +581,15 @@ export default async function Page({ searchParams }: PageProps) {
       <div className="prose">
         <h2>What this score means</h2>
         <p>
-          This is an analysis of various parameters such as structured data (JSON-LD), verification status, entity disambiguation, link graph health, and crawlability over time. The higher your score, the more optimized your data is for AI visibility.
+          This is an analysis of various parameters such as structured data (JSON-LD),
+          verification status, entity disambiguation, link graph health, and crawlability over time.
+          The higher your score, the more optimized your data is for AI visibility.
         </p>
+        {/* Proprietary disclaimer */}
         <p className="mt-2 text-xs text-gray-500">
-          <strong>Disclaimer:</strong> The AEOBRO AI Visibility Score is a proprietary analysis based on 18 parameters measuring how machine-readable and AI-accessible your public web data is. It is intended for informational and demonstration purposes only.
+          <strong>Disclaimer:</strong> The AEOBRO AI Visibility Score is a proprietary analysis
+          based on 18 parameters measuring how machine-readable and AI-accessible your public web data is.
+          It is intended for informational and demonstration purposes only.
         </p>
         <p className="text-sm text-gray-500">
           Last updated:{" "}
@@ -578,6 +601,7 @@ export default async function Page({ searchParams }: PageProps) {
         </p>
       </div>
 
+      {/* Tiny client-side helper for Export JSON */}
       <Script id="audit-export-json" strategy="afterInteractive">
         {`
           (function () {
