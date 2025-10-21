@@ -475,7 +475,7 @@ export default async function Page({ searchParams }: PageProps) {
 
       <h1 className="text-4xl font-extrabold">AI-Visibility Audit</h1>
       <p className="mt-3 text-gray-600">
-        Enter a domain or brand name to get a quick, provisional score (demo).
+        Enter a domain or brand name to get a quick, provisional score.
       </p>
 
       {/* Form */}
@@ -489,7 +489,7 @@ export default async function Page({ searchParams }: PageProps) {
           className="px-3 py-2 border rounded-lg w-full max-w-md"
           autoComplete="off"
           inputMode="url"
-          aria-describedby="audit-help"
+          aria-describedby="audit-help audit-help-links"
         />
         <button
           type="submit"
@@ -498,6 +498,12 @@ export default async function Page({ searchParams }: PageProps) {
           Get score
         </button>
       </form>
+
+      {/* Social link helper (always visible) */}
+      <p id="audit-help-links" className="mt-1 text-xs text-gray-500">
+        You can enter any website URL or public social media link
+        <span className="italic"> (partial results for Instagram / Facebook)</span>.
+      </p>
 
       {!q && (
         <p id="audit-help" className="text-sm text-gray-500 mt-2">
@@ -572,6 +578,12 @@ export default async function Page({ searchParams }: PageProps) {
           This is an analysis of various parameters such as structured data (JSON-LD),
           verification status, entity disambiguation, link graph health, and crawlability over time.
           The higher your score, the more optimized your data is for AI visibility.
+        </p>
+        {/* Proprietary disclaimer */}
+        <p className="mt-2 text-xs text-gray-500">
+          <strong>Disclaimer:</strong> The AEOBRO AI Visibility Score is a proprietary analysis
+          based on 18 parameters measuring how machine-readable and AI-accessible your public web data is.
+          It is intended for informational and demonstration purposes only.
         </p>
         <p className="text-sm text-gray-500">
           Last updated:{" "}
