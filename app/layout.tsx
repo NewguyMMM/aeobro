@@ -1,10 +1,11 @@
 // app/layout.tsx
+import React, { type ReactNode } from "react";
 import "./globals.css";
 import Providers from "./providers";
 import AuthButton from "./components/AuthButton";
 import { ToastProvider } from "@/components/Toast";
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en">
       <body>
@@ -35,3 +36,22 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 </nav>
               </div>
             </header>
+
+            <main>{children}</main>
+
+            <footer className="border-t mt-16">
+              <div className="container py-8 text-sm text-gray-600 flex gap-4">
+                <span>© {new Date().getFullYear()} AEOBRO</span>
+                <a href="/privacy">Privacy</a>
+                <a href="/terms">Terms</a>
+                <a href="/aup">AUP</a>
+                <a href="/disputes">Disputes</a>
+                <a href="/cancel">Cancel subscription</a>
+              </div>
+            </footer>
+          </ToastProvider>
+        </Providers>
+      </body>
+    </html>
+  );
+}
