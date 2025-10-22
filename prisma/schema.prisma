@@ -49,6 +49,13 @@ enum ChangeAction {
   DELETE
 }
 
+/* NEW: Profile-level verification status for gating & badge */
+enum VerificationLevel {
+  UNVERIFIED
+  PLATFORM_VERIFIED
+  DOMAIN_VERIFIED
+}
+
 /* ===============================
    Models
    =============================== */
@@ -161,6 +168,13 @@ model Profile {
   // Platforms & extra links
   handles    Json?      // { youtube, tiktok, ... }
   links      Json?      // [{ label, url }]
+
+  // --- NEW: Verified Badge & gating state ---
+  verificationStatus  VerificationLevel @default(UNVERIFIED)
+  verificationToken   String?  @unique
+  domainVerifiedAt    DateTime?
+  platformVerifiedAt  DateTime?
+  verifiedPlatforms   Json?    // e.g., {"google": {"channelId":"...", "connectedAt":"..."}}
 
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
