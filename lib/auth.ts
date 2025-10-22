@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 
 import EmailProvider from "next-auth/providers/email";
 import CredentialsProvider from "next-auth/providers/credentials";
+import GoogleProvider from "next-auth/providers/google";
 
 import { Resend } from "resend";
 import { verifyTurnstileToken } from "@/lib/verifyTurnstile";
@@ -20,6 +21,7 @@ export const authOptions: NextAuthOptions = {
   session: { strategy: "jwt" },
 
   providers: [
+    // --- Email magic link via Resend ---
     EmailProvider({
       from: process.env.EMAIL_FROM, // e.g., 'AEOBRO <login@aeobro.com>'
       async sendVerificationRequest({ identifier, url }) {
@@ -69,12 +71,11 @@ If you did not request this, you can safely ignore this email.`;
           text,
         });
 
-        if (error) {
-          throw new Error(`Resend error: ${error.message || String(error)}`);
-        }
+        if (error) throw new Error(`Resend error: ${error.message || String(error)}`);
       },
     }),
 
+    // --- Credentials (with Cloudflare Turnstile) ---
     CredentialsProvider({
       name: "Credentials",
       credentials: {
@@ -101,9 +102,7 @@ If you did not request this, you can safely ignore this email.`;
         if (!user) return null;
 
         const passwordHash = (user as any)?.passwordHash as string | undefined | null;
-        if (!passwordHash || typeof passwordHash !== "string" || passwordHash.length < 8) {
-          return null;
-        }
+        if (!passwordHash || typeof passwordHash !== "string" || passwordHash.length < 8) return null;
 
         const isValid = await compare(password, passwordHash);
         if (!isValid) return null;
@@ -111,16 +110,49 @@ If you did not request this, you can safely ignore this email.`;
         return { id: user.id, email: user.email, name: user.name ?? null };
       },
     }),
+
+    // --- Google OAuth (for Platform Verification: YouTube) ---
+    GoogleProvider({
+      clientId: process.env.GOOGLE_CLIENT_ID!,
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
+      authorization: {
+        params: {
+          scope: "openid email profile https://www.googleapis.com/auth/youtube.readonly",
+          prompt: "consent",
+          access_type: "offline",
+        },
+      },
+    }),
   ],
 
   callbacks: {
-    async jwt({ token, user }) {
+    // Persist user id and capture Google tokens
+    async jwt({ token, user, account }) {
       if (user?.id) token.sub = user.id;
+
+      // On initial Google sign-in, store access/refresh in the JWT
+      if (account?.provider === "google") {
+        if (account.access_token) token.googleAccessToken = account.access_token;
+        if (account.refresh_token) token.googleRefreshToken = account.refresh_token;
+        if (typeof account.expires_at === "number") token.googleExpiresAt = account.expires_at;
+      }
+
       return token;
     },
+
+    // Expose Google access token on the session for API routes to use
     async session({ session, token }) {
       if (token?.sub) (session.user as any).id = token.sub;
+      if (token?.googleAccessToken) (session as any).googleAccessToken = token.googleAccessToken;
+      if (token?.googleRefreshToken) (session as any).googleRefreshToken = token.googleRefreshToken;
+      if (token?.googleExpiresAt) (session as any).googleExpiresAt = token.googleExpiresAt;
       return session;
+    },
+
+    // (Optional) you could restrict Google sign-ins here if needed
+    async signIn({ account }) {
+      // Allow all providers; verification flow is handled post-login.
+      return true;
     },
   },
 
