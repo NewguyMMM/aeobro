@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "npm run migrate:deploy && prisma generate && next build",
+    "build": "prisma generate && next build",
     "start": "next start",
     "postinstall": "next telemetry disable",
     "migrate:deploy": "sh -c 'export DATABASE_DIRECT_URL=${DATABASE_DIRECT_URL:-$DATABASE_URL}; prisma migrate deploy'",
