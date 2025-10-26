@@ -1,12 +1,31 @@
-// Example snippet to drop into your dashboard editor UI
+// app/(app)/dashboard/page.tsx
 "use client";
+
 import { useState } from "react";
 
-export function DevVerifyControls() {
+export const dynamic = "force-dynamic";
+
+export default function DashboardPage() {
+  return (
+    <main className="mx-auto max-w-3xl px-6 py-10 space-y-6">
+      <header>
+        <h1 className="text-2xl font-semibold">Dashboard</h1>
+        <p className="text-sm opacity-70">Owner-only controls for verification (dev).</p>
+      </header>
+
+      <DevVerifyControls />
+    </main>
+  );
+}
+
+/** Owner-only: flip verification status for your profile */
+function DevVerifyControls() {
   const [busy, setBusy] = useState<false | "plat" | "dom" | "un">(false);
   const [msg, setMsg] = useState<string>("");
 
-  async function setLevel(level: "PLATFORM_VERIFIED" | "DOMAIN_VERIFIED" | "UNVERIFIED") {
+  async function setLevel(
+    level: "PLATFORM_VERIFIED" | "DOMAIN_VERIFIED" | "UNVERIFIED"
+  ) {
     try {
       setBusy(level === "PLATFORM_VERIFIED" ? "plat" : level === "DOMAIN_VERIFIED" ? "dom" : "un");
       setMsg("");
