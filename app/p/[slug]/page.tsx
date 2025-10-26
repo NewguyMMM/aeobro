@@ -39,6 +39,7 @@ const getProfileMetaCached = (slug: string) =>
 const getProfileFullCached = (slug: string) =>
   unstable_cache(
     async () => {
+      // NOTE: no select → includes verificationStatus and other fields needed for badge & JSON-LD
       return prisma.profile.findUnique({
         where: { slug },
       });
@@ -395,7 +396,12 @@ export default async function PublicProfilePage({ params }: PageProps) {
           </div>
         ) : null}
 
-        <h1 className="text-3xl font-semibold">{displayName}</h1>
+        <div className="flex items-center gap-3">
+          <h1 className="text-3xl font-semibold">{displayName}</h1>
+          {/* ✅ Verified badge (hidden when UNVERIFIED) */}
+          <Verified status={profile?.verificationStatus} />
+        </div>
+
         {headline ? <p className="mt-2 text-muted-foreground">{headline}</p> : null}
       </header>
 
@@ -645,6 +651,20 @@ function renderPrice(
       {c}
       {range}
       {unit ? ` ${unit}` : ""}
+    </span>
+  );
+}
+
+/** Simple inline verified badge (kept here to avoid adding new files) */
+function Verified({ status }: { status?: string | null }) {
+  if (!status || status === "UNVERIFIED") return null;
+  const label = status === "DOMAIN_VERIFIED" ? "Verified (Domain)" : "Verified";
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs bg-emerald-600 text-white">
+      <svg width="14" height="14" viewBox="0 0 24 24" aria-hidden>
+        <path d="M9 16.2 5.5 12.7l1.4-1.4L9 13.4 16.1 6.3l1.4 1.4z" fill="currentColor" />
+      </svg>
+      {label}
     </span>
   );
 }
