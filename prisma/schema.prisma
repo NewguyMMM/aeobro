@@ -6,10 +6,8 @@ generator client {
 
 datasource db {
   provider  = "postgresql"
-  // Pooled URL for app runtime
-  url       = env("DATABASE_URL")
-  // Direct (non-pooler) URL for migrations to avoid advisory-lock timeouts
-  directUrl = env("DATABASE_DIRECT_URL")
+  url       = env("DATABASE_URL")           // pooled URL for app runtime
+  directUrl = env("DATABASE_DIRECT_URL")    // direct (non-pooler) URL for migrations
 }
 
 /* ===============================
@@ -36,7 +34,7 @@ enum Plan {
   BUSINESS
 }
 
-/* New enums for change history */
+/* Change-history entities */
 enum ChangeEntity {
   PROFILE
   FAQ
@@ -49,7 +47,7 @@ enum ChangeAction {
   DELETE
 }
 
-/* NEW: Profile-level verification status for gating & badge */
+/* Profile-level verification status for gating & badge */
 enum VerificationLevel {
   UNVERIFIED
   PLATFORM_VERIFIED
@@ -61,12 +59,12 @@ enum VerificationLevel {
    =============================== */
 
 model User {
-  id            String    @id @default(cuid())
-  name          String?
-  email         String?   @unique
-  emailVerified DateTime?
-  image         String?
-  welcomeSentAt DateTime?
+  id                  String    @id @default(cuid())
+  name                String?
+  email               String?   @unique
+  emailVerified       DateTime?
+  image               String?
+  welcomeSentAt       DateTime?
 
   // Billing / Paywall
   plan                 Plan     @default(FREE)
@@ -152,12 +150,11 @@ model Profile {
   serviceArea String[]  @default([])
 
   // Trust & authority
-  foundedYear Int?
-  teamSize    Int?
-  languages   String[]  @default([])
+  foundedYear  Int?
+  teamSize     Int?
+  languages    String[]  @default([])
   pricingModel String?
-  hours       String?
-
+  hours        String?
   certifications String?
 
   // Media & authority signals
@@ -169,12 +166,12 @@ model Profile {
   handles    Json?      // { youtube, tiktok, ... }
   links      Json?      // [{ label, url }]
 
-  // --- NEW: Verified Badge & gating state ---
+  // --- Verified Badge & gating state ---
   verificationStatus  VerificationLevel @default(UNVERIFIED)
   verificationToken   String?  @unique
   domainVerifiedAt    DateTime?
   platformVerifiedAt  DateTime?
-  verifiedPlatforms   Json?    // e.g., {"google": {"channelId":"...", "connectedAt":"..."}}
+  verifiedPlatforms   Json?    // e.g. {"google": {"channelId":"...", "connectedAt":"..."}}
 
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -238,7 +235,7 @@ model BioCode {
 }
 
 /* ===============================
-   Content Models: FAQ, Service, ChangeLog
+   Content Models
    =============================== */
 
 model FAQItem {
