@@ -3,6 +3,11 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { revalidateTag } from "next/cache";
+
+export const dynamic = "force-dynamic";
+
+type Level = "PLATFORM_VERIFIED" | "DOMAIN_VERIFIED" | "UNVERIFIED";
 
 // Accepts: { level: "PLATFORM_VERIFIED" | "DOMAIN_VERIFIED" | "UNVERIFIED" }
 export async function POST(req: Request) {
@@ -12,9 +17,11 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { level } = await req.json().catch(() => ({}));
-    const allowed = ["PLATFORM_VERIFIED", "DOMAIN_VERIFIED", "UNVERIFIED"] as const;
-    if (!allowed.includes(level)) {
+    const body = await req.json().catch(() => ({} as { level?: Level }));
+    const level = body.level as Level | undefined;
+
+    const allowed: Level[] = ["PLATFORM_VERIFIED", "DOMAIN_VERIFIED", "UNVERIFIED"];
+    if (!level || !allowed.includes(level)) {
       return NextResponse.json({ error: "Invalid level" }, { status: 400 });
     }
 
@@ -29,22 +36,21 @@ export async function POST(req: Request) {
     }
 
     // Update verification status + timestamp fields
-    const data: any = { verificationStatus: level };
     const now = new Date();
+    const data: Record<string, any> = { verificationStatus: level };
+    if (level === "PLATFORM_VERIFIED") data.platformVerifiedAt = now;
+    if (level === "DOMAIN_VERIFIED") data.domainVerifiedAt = now;
 
-    if (level === "PLATFORM_VERIFIED") {
-      data.platformVerifiedAt = now;
-      // optional: clear domainVerifiedAt if you want them mutually exclusive
-    } else if (level === "DOMAIN_VERIFIED") {
-      data.domainVerifiedAt = now;
-    }
-
-    // (Optional) prevent downgrade unless explicitly requested
     const updated = await prisma.profile.update({
       where: { id: user.profile.id },
       data,
       select: { id: true, slug: true, verificationStatus: true },
     });
+
+    // 🔄 Invalidate cached profile pages that use this tag
+    if (updated?.slug) {
+      revalidateTag(`profile:${updated.slug}`);
+    }
 
     return NextResponse.json({ ok: true, profile: updated });
   } catch (err) {
