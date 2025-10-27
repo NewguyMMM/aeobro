@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
+import { prisma } from "@/lib/prisma";
 
 async function txtLookup(host: string): Promise<string[]> {
   try {
@@ -17,13 +17,17 @@ async function txtLookup(host: string): Promise<string[]> {
 
 export async function POST(req: Request) {
   const session = await getServerSession(authOptions);
-  if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const email = session?.user?.email || null;
+  if (!email) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const user = await prisma.user.findUnique({ where: { email }, select: { id: true } });
+  if (!user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { domain } = await req.json();
   if (!domain) return NextResponse.json({ error: "Missing domain" }, { status: 400 });
 
   const claim = await prisma.domainClaim.findUnique({ where: { domain } });
-  if (!claim || claim.userId !== session.user.id) {
+  if (!claim || claim.userId !== user.id) {
     return NextResponse.json({ error: "No claim for this domain" }, { status: 404 });
   }
 
@@ -32,18 +36,17 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, message: "TXT not found yet" }, { status: 404 });
   }
 
-  // Mark claim + upgrade profile
   await prisma.$transaction(async (tx) => {
     await tx.domainClaim.update({
       where: { domain },
       data: { dnsVerified: true, status: "VERIFIED", verifiedAt: new Date() },
     });
 
-    // Set website if empty; flip badge to DOMAIN_VERIFIED
+    const prof = await tx.profile.findUnique({ where: { userId: user.id } });
     await tx.profile.update({
-      where: { userId: session.user.id },
+      where: { userId: user.id },
       data: {
-        website: (await tx.profile.findUnique({ where: { userId: session.user.id } }))?.website ?? `https://${domain}`,
+        website: prof?.website ?? `https://${domain}`,
         verificationStatus: "DOMAIN_VERIFIED",
         domainVerifiedAt: new Date(),
       },
