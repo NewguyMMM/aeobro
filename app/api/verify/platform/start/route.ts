@@ -1,12 +1,16 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
+import { prisma } from "@/lib/prisma";
 import crypto from "crypto";
 
 export async function POST(req: Request) {
   const session = await getServerSession(authOptions);
-  if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const email = session?.user?.email || null;
+  if (!email) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const user = await prisma.user.findUnique({ where: { email }, select: { id: true } });
+  if (!user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { platform, profileUrl } = await req.json();
   if (!platform || !profileUrl) {
@@ -15,10 +19,9 @@ export async function POST(req: Request) {
 
   const code = `aeobro-${crypto.randomUUID().slice(0, 8)}`;
 
-  // Invalidate/replace any pending code for this platform
   await prisma.bioCode.create({
     data: {
-      userId: session.user.id,
+      userId: user.id,
       platform,
       profileUrl,
       code,
