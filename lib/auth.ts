@@ -1,5 +1,5 @@
 // lib/auth.ts
-// Updated: 2025-10-27 12:22 ET
+// Updated: 2025-10-27 12:38 ET
 import type { NextAuthOptions } from "next-auth";
 import { PrismaAdapter } from "@auth/prisma-adapter";
 import { prisma } from "@/lib/prisma";
@@ -176,7 +176,15 @@ If you did not request this, you can safely ignore this email.`;
   events: {
     async signIn({ user }) {
       try {
-        if (user?.id && !user.emailVerified) {
+        if (!user?.id) return;
+
+        // Read from Prisma to avoid TS issues and needless writes
+        const existing = await prisma.user.findUnique({
+          where: { id: user.id },
+          select: { emailVerified: true },
+        });
+
+        if (!existing?.emailVerified) {
           await prisma.user.update({
             where: { id: user.id },
             data: { emailVerified: new Date() },
