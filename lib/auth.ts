@@ -1,4 +1,5 @@
 // lib/auth.ts
+// Updated: 2025-10-27 12:22 ET
 import type { NextAuthOptions } from "next-auth";
 import { PrismaAdapter } from "@auth/prisma-adapter";
 import { prisma } from "@/lib/prisma";
@@ -24,8 +25,20 @@ export const authOptions: NextAuthOptions = {
     // --- Email magic link via Resend ---
     EmailProvider({
       from: process.env.EMAIL_FROM, // e.g., 'AEOBRO <login@aeobro.com>'
+      maxAge: 10 * 60, // 10 minutes; tokens are single-use by NextAuth
       async sendVerificationRequest({ identifier, url }) {
         const year = new Date().getFullYear();
+
+        // Optional device/IP hints (best-effort, safe to fail silently)
+        let ip = "Unknown IP";
+        let ua = "Unknown device";
+        try {
+          const { headers } = await import("next/headers");
+          ip = headers().get("x-forwarded-for") || ip;
+          ua = headers().get("user-agent") || ua;
+        } catch {
+          // noop for build/edge differences
+        }
 
         const html = `
 <table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="background:#f9f9f9;padding:24px 0;text-align:center">
@@ -45,8 +58,11 @@ export const authOptions: NextAuthOptions = {
         </p>
 
         <p style="font-size:13px;color:#777;line-height:1.5;margin:0">
-          If you didn’t request this, you can safely ignore this email.<br/>
-          This link will expire shortly for your security.
+          This link expires in <strong>10 minutes</strong> and can only be used once.<br/>
+          If you didn’t request this, you can safely ignore this email.
+        </p>
+        <p style="font-size:11px;color:#9aa3b2;line-height:1.4;margin-top:10px">
+          Request from: ${ip} — ${ua}
         </p>
       </div>
 
@@ -58,7 +74,7 @@ export const authOptions: NextAuthOptions = {
 
         const text = `Sign in to AEOBRO
 
-Use the link below to sign in:
+Use the link below to sign in (expires in 10 minutes, single-use):
 ${url}
 
 If you did not request this, you can safely ignore this email.`;
@@ -153,6 +169,22 @@ If you did not request this, you can safely ignore this email.`;
     async signIn({ account }) {
       // Allow all providers; verification flow is handled post-login.
       return true;
+    },
+  },
+
+  // Auto-stamp emailVerified on first successful sign-in (magic-link)
+  events: {
+    async signIn({ user }) {
+      try {
+        if (user?.id && !user.emailVerified) {
+          await prisma.user.update({
+            where: { id: user.id },
+            data: { emailVerified: new Date() },
+          });
+        }
+      } catch {
+        // non-fatal
+      }
     },
   },
 
