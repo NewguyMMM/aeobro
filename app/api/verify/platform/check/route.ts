@@ -22,11 +22,16 @@ export async function POST(req: Request) {
   const user = await prisma.user.findUnique({ where: { email }, select: { id: true } });
   if (!user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const { platform } = await req.json().catch(() => ({} as any));
+  const body = await req.json().catch(() => ({} as any));
+  const platform = body?.platform as string | undefined;
+
   const where = { userId: user.id, status: "PENDING" as const, ...(platform ? { platform } : {}) };
 
-  const pending = await prisma.bioCode.findMany({ where, orderBy: { createdAt: "desc" } });
-  if (pending.length === 0) return NextResponse.json({ error: "No pending code-in-bio to check" }, { status: 404 });
+  // BioCode has no createdAt column; order by id for recency-ish sorting
+  const pending = await prisma.bioCode.findMany({ where, orderBy: { id: "desc" } });
+  if (pending.length === 0) {
+    return NextResponse.json({ error: "No pending code-in-bio to check" }, { status: 404 });
+  }
 
   for (const p of pending) {
     if (await pageContains(p.profileUrl, p.code)) {
@@ -49,7 +54,10 @@ export async function POST(req: Request) {
         });
       });
 
-      const final = await prisma.profile.findUnique({ where: { userId: user.id }, select: { verificationStatus: true } });
+      const final = await prisma.profile.findUnique({
+        where: { userId: user.id },
+        select: { verificationStatus: true },
+      });
       return NextResponse.json({ ok: true, profile: final });
     }
   }
