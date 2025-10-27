@@ -10,6 +10,7 @@ import EntityTypeHelp from "@/components/EntityTypeHelp";
 import LogoUploader from "@/components/LogoUploader";
 import LinkTypeSelect from "@/components/LinkTypeSelect";
 import PublicUrlReadonly from "@/components/PublicUrlReadonly";
+import SchemaPreviewButton from "@/components/SchemaPreviewButton";
 
 /** -------- Types -------- */
 type EntityType =
@@ -423,21 +424,6 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
     return null;
   }
 
-  /** ---- View public profile with guard if dirty ---- */
-  function handleViewPublic() {
-    if (dirty) setConfirmOpen(true);
-    else openPublic();
-  }
-
-  function openPublic() {
-    const path = getPublicPath();
-    if (!path) {
-      toast("Not yet published — please Save & Publish first.", "error");
-      return;
-    }
-    window.open(path, "_blank", "noopener,noreferrer");
-  }
-
   /** ---- Status pill ---- */
   const hasEverSaved = Boolean(serverSlug || profileId);
   const status = !hasEverSaved ? "Not yet published" : dirty ? "Unsaved changes" : "Published";
@@ -508,7 +494,18 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
           <span className={`text-xs px-2.5 py-1 rounded-full ${statusClasses}`}>{status}</span>
           <button
             type="button"
-            onClick={handleViewPublic}
+            onClick={() => {
+              if (dirty) {
+                setConfirmOpen(true);
+              } else {
+                const path = getPublicPath();
+                if (!path) {
+                  toast("Not yet published — please Save & Publish first.", "error");
+                  return;
+                }
+                window.open(path, "_blank", "noopener,noreferrer");
+              }
+            }}
             className="text-blue-600 hover:text-blue-800 underline underline-offset-2"
           >
             View public profile
@@ -997,6 +994,25 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
         </p>
       </div>
 
+      {/* === JSON-LD Preview (Editor) === */}
+      <div className="mt-4">
+        {serverSlug || profileId ? (
+          <SchemaPreviewButton
+            slug={(serverSlug as string) || (profileId as string)}
+            includeAll={true}
+            pretty={true}
+          />
+        ) : (
+          <button
+            className="px-3 py-2 border rounded-lg opacity-60 cursor-not-allowed"
+            title="Save & Publish first to enable JSON-LD preview"
+            disabled
+          >
+            Preview &amp; Copy JSON-LD
+          </button>
+        )}
+      </div>
+
       {/* Unsaved changes modal */}
       {confirmOpen && (
         <div className="fixed inset-0 z-50 grid place-items-center bg-black/30">
@@ -1017,7 +1033,14 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
               <button
                 type="button"
                 className="px-3 py-2 border rounded-lg"
-                onClick={openPublic}
+                onClick={() => {
+                  const path = getPublicPath();
+                  if (!path) {
+                    toast("Not yet published — please Save & Publish first.", "error");
+                    return;
+                  }
+                  window.open(path, "_blank", "noopener,noreferrer");
+                }}
               >
                 View Anyway
               </button>
