@@ -6,7 +6,6 @@ import {
   buildServiceJsonLd,
 } from "@/lib/schema";
 import { getRuntimeBaseUrl } from "@/lib/getBaseUrl";
-import Script from "next/script";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import OptimizedImg from "@/components/OptimizedImg";
@@ -162,6 +161,11 @@ function ErrorBlock({
       </pre>
     </main>
   );
+}
+
+/** Escape `<` so `</script>` can’t prematurely close the tag */
+function escapeForJsonLd(obj: unknown) {
+  return JSON.stringify(obj).replace(/</g, "\\u003c");
 }
 
 /* --------------------------------- SEO ----------------------------------- */
@@ -362,21 +366,27 @@ export default async function PublicProfilePage({ params }: PageProps) {
 
   return (
     <main className="mx-auto max-w-3xl px-6 py-12">
-      {/* JSON-LD */}
+      {/* JSON-LD (server-rendered, no JS execution required) */}
       {schema ? (
-        <Script id="profile-jsonld" type="application/ld+json" strategy="afterInteractive">
-          {JSON.stringify(schema)}
-        </Script>
+        <script
+          id="profile-jsonld"
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: escapeForJsonLd(schema) }}
+        />
       ) : null}
       {faqJsonLd ? (
-        <Script id="faq-jsonld" type="application/ld+json" strategy="afterInteractive">
-          {JSON.stringify(faqJsonLd)}
-        </Script>
+        <script
+          id="faq-jsonld"
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: escapeForJsonLd(faqJsonLd) }}
+        />
       ) : null}
       {serviceJsonLd.map((obj, i) => (
-        <Script key={`service-jsonld-${i}`} type="application/ld+json" strategy="afterInteractive">
-          {JSON.stringify(obj)}
-        </Script>
+        <script
+          key={`service-jsonld-${i}`}
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: escapeForJsonLd(obj) }}
+        />
       ))}
 
       {/* Header */}
@@ -627,6 +637,7 @@ function prettyHandleLabel(key: string) {
     substack: "Substack",
     etsy: "Etsy",
     x: "X (Twitter)",
+    twitter: "Twitter",
     linkedin: "LinkedIn",
     facebook: "Facebook",
     github: "GitHub",
