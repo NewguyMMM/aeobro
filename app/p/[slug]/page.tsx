@@ -10,6 +10,7 @@ import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import OptimizedImg from "@/components/OptimizedImg";
 import { unstable_cache } from "next/cache";
+import SchemaPreviewButton from "@/components/SchemaPreviewButton";
 
 type PageProps = { params: { slug: string } };
 
@@ -613,8 +614,9 @@ export default async function PublicProfilePage({ params }: PageProps) {
         </section>
       )}
 
-      {/* Raw schema link */}
-      <section className="mt-6">
+      {/* Preview & raw schema */}
+      <section className="mt-6 flex items-center gap-3">
+        <SchemaPreviewButton slug={slug} includeAll={true} pretty={true} />
         <a
           className="text-sm underline"
           href={`/api/profile/${encodeURIComponent(slug)}/schema`}
