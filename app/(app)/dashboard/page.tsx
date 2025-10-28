@@ -1,5 +1,5 @@
 // app/(app)/dashboard/page.tsx
-// 📅 Updated: 2025-10-27 09:28 PM ET
+// 📅 Updated: 2025-10-27 09:33 PM ET
 
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
@@ -17,7 +17,7 @@ export const dynamic = "force-dynamic";
  * - Resolves user via session.user.email (no reliance on user.id typing)
  * - Loads the user’s Profile
  * - Displays UnverifiedBanner if status === "UNVERIFIED"
- * - Renders ProfileEditor underneath
+ * - Renders ProfileEditor with `initial` prop
  */
 export default async function DashboardPage() {
   const session = await getServerSession(authOptions);
@@ -41,7 +41,7 @@ export default async function DashboardPage() {
   });
 
   if (!profile) {
-    // No profile yet? Keep existing behavior and send them to the editor/onboarding flow
+    // If no profile yet, keep your existing behavior:
     redirect("/dashboard/editor");
   }
 
@@ -51,7 +51,7 @@ export default async function DashboardPage() {
       <UnverifiedBanner status={profile.verificationStatus as any} />
 
       {/* Main profile editor */}
-      <ProfileEditor profile={profile} />
+      <ProfileEditor initial={profile} />
     </div>
   );
 }
