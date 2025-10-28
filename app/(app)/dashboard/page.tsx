@@ -1,5 +1,5 @@
 // app/(app)/dashboard/page.tsx
-// 📅 Updated: 2025-10-27 02:24 PM ET
+// 📅 Updated: 2025-10-27 09:28 PM ET
 
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
@@ -14,22 +14,34 @@ export const dynamic = "force-dynamic";
 /**
  * Dashboard page
  * - Redirects to sign-in if unauthenticated
+ * - Resolves user via session.user.email (no reliance on user.id typing)
  * - Loads the user’s Profile
  * - Displays UnverifiedBanner if status === "UNVERIFIED"
  * - Renders ProfileEditor underneath
  */
 export default async function DashboardPage() {
   const session = await getServerSession(authOptions);
-  if (!session?.user?.id) {
+  const email = session?.user?.email;
+
+  if (!email) {
+    redirect("/signin");
+  }
+
+  const user = await prisma.user.findUnique({
+    where: { email },
+    select: { id: true },
+  });
+
+  if (!user?.id) {
     redirect("/signin");
   }
 
   const profile = await prisma.profile.findUnique({
-    where: { userId: session.user.id },
+    where: { userId: user.id },
   });
 
   if (!profile) {
-    // No profile yet? Redirect to editor or onboarding flow
+    // No profile yet? Keep existing behavior and send them to the editor/onboarding flow
     redirect("/dashboard/editor");
   }
 
