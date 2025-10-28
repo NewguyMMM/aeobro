@@ -1,4 +1,5 @@
 // prisma/schema.prisma
+// 📅 Updated: 2025-10-27 02:33 PM ET
 
 generator client {
   provider = "prisma-client-js"
@@ -166,12 +167,19 @@ model Profile {
   handles    Json?      // { youtube, tiktok, ... }
   links      Json?      // [{ label, url }]
 
-  // --- Verified Badge & gating state ---
+  // --- Verified Badge & gating state (existing) ---
   verificationStatus  VerificationLevel @default(UNVERIFIED)
   verificationToken   String?  @unique
   domainVerifiedAt    DateTime?
   platformVerifiedAt  DateTime?
   verifiedPlatforms   Json?    // e.g. {"google": {"channelId":"...", "connectedAt":"..."}}
+
+  // --- NEW: Verification workflow fields used by UI/API ---
+  verifyMethod        String?   // "DNS" | "PLATFORM"
+  verifyToken         String?   // per-flow token (distinct from verificationToken)
+  verifyDomain        String?   // current domain under verification (DNS flow)
+  verifyMarker        String?   // current marker for platform bio flow
+  verifyCheckedAt     DateTime? // last time we checked verification state
 
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -197,6 +205,10 @@ model DomainClaim {
   emailVerified  Boolean     @default(false)
   status         ClaimStatus @default(PENDING)
   verifiedAt     DateTime?
+
+  // NEW: timestamps for recency ordering in API
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
 
   user           User        @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade)
 
@@ -227,6 +239,9 @@ model BioCode {
   code       String
   status     VerifyStatus @default(PENDING)
   verifiedAt DateTime?
+
+  // Optional: createdAt for auditability
+  createdAt  DateTime     @default(now())
 
   user       User         @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade)
 
