@@ -1,4 +1,6 @@
 // lib/rateLimit.ts
+import "server-only"; // ensure never bundled on the client
+
 // 🧠 Lightweight, dependency-free rate limiter (in-memory with optional Upstash support)
 
 type Key = string;
