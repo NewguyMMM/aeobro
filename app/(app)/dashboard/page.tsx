@@ -1,5 +1,8 @@
 // app/(app)/dashboard/page.tsx
-// 📅 Updated: 2025-10-27 09:46 PM ET
+// 📅 Updated: 2025-10-27 10:58 PM ET
+
+export const runtime = "nodejs";          // ensure Prisma-compatible runtime
+export const dynamic = "force-dynamic";   // always render on server
 
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
@@ -9,11 +12,7 @@ import { redirect } from "next/navigation";
 import UnverifiedBanner from "@/components/UnverifiedBanner";
 import ProfileEditor from "@/components/ProfileEditor";
 
-export const dynamic = "force-dynamic";
-// (Optional) uncomment if you pin to Node runtime
-// export const runtime = "nodejs";
-
-/** Helpers to coerce JSON to the UI shapes ProfileEditor expects */
+/** Helpers to coerce JSON to the UI shapes ProfileEditor expects (must be serializable) */
 function asArray<T = any>(v: unknown, fallback: T[] = []): T[] {
   if (!v) return fallback;
   if (Array.isArray(v)) return v as T[];
@@ -36,49 +35,73 @@ function asObject<T extends object = Record<string, any>>(v: unknown, fallback: 
 }
 
 export default async function DashboardPage() {
-  const session = await getServerSession(authOptions);
+  // --- 1) Session guard
+  let session;
+  try {
+    session = await getServerSession(authOptions);
+  } catch {
+    // If auth throws for any reason, bounce to sign-in
+    redirect("/signin");
+  }
   const email = session?.user?.email;
   if (!email) redirect("/signin");
 
-  const user = await prisma.user.findUnique({
-    where: { email },
-    select: { id: true },
-  });
-  if (!user?.id) redirect("/signin");
+  // --- 2) User lookup
+  let userId: string | null = null;
+  try {
+    const user = await prisma.user.findUnique({
+      where: { email },
+      select: { id: true },
+    });
+    userId = user?.id ?? null;
+  } catch {
+    // Prisma error → treat as not authenticated
+    redirect("/signin");
+  }
+  if (!userId) redirect("/signin");
 
-  const db = await prisma.profile.findUnique({
-    where: { userId: user.id },
-  });
-  if (!db) redirect("/dashboard/editor");
+  // --- 3) Profile lookup
+  let db: any = null;
+  try {
+    db = await prisma.profile.findUnique({
+      where: { userId },
+    });
+  } catch {
+    // On DB error, show empty editor rather than crash
+    db = null;
+  }
 
-  const uiProfile = {
-    id: db.id,
-    displayName: db.displayName ?? null,
-    legalName: db.legalName ?? null,
-    entityType: db.entityType ?? null,
-    tagline: db.tagline ?? null,
-    bio: db.bio ?? null,
-    website: db.website ?? null,
-    location: db.location ?? null,
-    serviceArea: asArray<string>(db.serviceArea, []),
-    foundedYear: db.foundedYear ?? null,
-    teamSize: db.teamSize ?? null,
-    languages: asArray<string>(db.languages, []),
-    pricingModel: db.pricingModel ?? null,
-    hours: db.hours ?? null,
-    certifications: db.certifications ?? null,
-    press: asArray<{ title: string; url: string }>(db.press, []),
-    logoUrl: db.logoUrl ?? null,
-    imageUrls: asArray<string>(db.imageUrls, []),
-    handles: asObject<Record<string, string | undefined>>(db.handles, {}),
-    links: asArray<{ label: string; url: string }>(db.links, []),
-    verificationStatus: db.verificationStatus,
-    slug: db.slug,
-  };
+  // If there is no profile yet, render the editor with empty initial state (no redirect to a missing route)
+  const uiProfile = db
+    ? {
+        id: db.id,
+        displayName: db.displayName ?? null,
+        legalName: db.legalName ?? null,
+        entityType: db.entityType ?? null,
+        tagline: db.tagline ?? null,
+        bio: db.bio ?? null,
+        website: db.website ?? null,
+        location: db.location ?? null,
+        serviceArea: asArray<string>(db.serviceArea, []),
+        foundedYear: db.foundedYear ?? null,
+        teamSize: db.teamSize ?? null,
+        languages: asArray<string>(db.languages, []),
+        pricingModel: db.pricingModel ?? null,
+        hours: db.hours ?? null,
+        certifications: db.certifications ?? null,
+        press: asArray<{ title: string; url: string }>(db.press, []),
+        logoUrl: db.logoUrl ?? null,
+        imageUrls: asArray<string>(db.imageUrls, []),
+        handles: asObject<Record<string, string | undefined>>(db.handles, {}),
+        links: asArray<{ label: string; url: string }>(db.links, []),
+        verificationStatus: db.verificationStatus ?? "UNVERIFIED",
+        slug: db.slug ?? null,
+      }
+    : null;
 
   return (
     <div className="mx-auto max-w-4xl space-y-6 p-4 sm:p-6">
-      <UnverifiedBanner status={db.verificationStatus as any} />
+      <UnverifiedBanner status={(db?.verificationStatus ?? "UNVERIFIED") as any} />
       <ProfileEditor initial={uiProfile as any} />
     </div>
   );
