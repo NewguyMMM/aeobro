@@ -1,119 +1,135 @@
-// app/(app)/dashboard/page.tsx
-// 📅 Updated: 2025-10-27 09:36 PM ET
+// app/api/verify/dns/check/route.ts
+// 📅 Updated: 2025-10-27 09:39 PM ET
 
+import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { redirect } from "next/navigation";
 
-import UnverifiedBanner from "@/components/UnverifiedBanner";
-import ProfileEditor from "@/components/ProfileEditor";
-
-export const dynamic = "force-dynamic";
-
-// Simple JSON coercers to satisfy the UI's expected types
-function asArray<T = any>(v: unknown, fallback: T[] = []): T[] {
-  if (!v) return fallback;
-  if (Array.isArray(v)) return v as T[];
+/** ---- Minimal DNS-over-HTTPS (Google) TXT lookup ---- */
+async function dohTxtLookup(host: string): Promise<string[]> {
   try {
-    const parsed = typeof v === "string" ? JSON.parse(v) : v;
-    return Array.isArray(parsed) ? (parsed as T[]) : fallback;
+    const url = `https://dns.google/resolve?name=${encodeURIComponent(host)}&type=TXT`;
+    const r = await fetch(url, { cache: "no-store" });
+    if (!r.ok) return [];
+    const j = await r.json();
+    const answers = (j?.Answer || []) as Array<{ data: string }>;
+    // Answers can be multiple quoted chunks; normalize to lowercase plain strings
+    return answers
+      .map(a => a.data)
+      .map(s => s.replace(/^"|"$/g, "")) // strip first/last quote
+      .map(s => s.replace(/\\"/g, `"`))   // unescape quotes
+      .map(s => s.toLowerCase().trim());
   } catch {
-    return fallback;
+    return [];
   }
 }
 
-function asObject<T extends object = Record<string, any>>(v: unknown, fallback: T = {} as T): T {
-  if (!v) return fallback;
-  if (typeof v === "object" && v !== null && !Array.isArray(v)) return v as T;
-  try {
-    const parsed = typeof v === "string" ? JSON.parse(v) : v;
-    return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed) ? (parsed as T) : fallback;
-  } catch {
-    return fallback;
+/** Accept any of the supported record styles across the supported hosts */
+async function dnsHasAnyAcceptedPattern(domain: string, token: string): Promise<boolean> {
+  const needle = token.trim().toLowerCase();
+  const patterns = [
+    `aeobro-site-verify=${needle}`,  // new preferred
+    `aeobro-verification=${needle}`, // legacy key
+    needle,                          // bare token
+  ];
+
+  const hosts = [
+    `_aeobro-verify.${domain}`, // new preferred host
+    `_aeobro.${domain}`,        // legacy host
+    domain,                     // root fallback
+  ];
+
+  for (const host of hosts) {
+    const txts = await dohTxtLookup(host);
+    if (txts.length === 0) continue;
+    const match = txts.some(s => patterns.some(p => s === p || s.includes(p)));
+    if (match) return true;
   }
+  return false;
 }
 
-/**
- * Dashboard page
- * - Redirects to sign-in if unauthenticated
- * - Resolves user via session.user.email
- * - Loads Prisma Profile, maps JSON fields to the UI shape expected by <ProfileEditor initial={...}>
- * - Shows UnverifiedBanner
- */
-export default async function DashboardPage() {
-  const session = await getServerSession(authOptions);
-  const email = session?.user?.email;
-  if (!email) redirect("/signin");
+export async function POST(req: Request) {
+  try {
+    const session = await getServerSession(authOptions);
+    const email = session?.user?.email || null;
+    if (!email) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const user = await prisma.user.findUnique({
-    where: { email },
-    select: { id: true },
-  });
-  if (!user?.id) redirect("/signin");
+    // Resolve user by email (avoids relying on session.user.id typing)
+    const user = await prisma.user.findUnique({ where: { email }, select: { id: true } });
+    if (!user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const db = await prisma.profile.findUnique({
-    where: { userId: user.id },
-  });
+    // Optional domain in body; normalize if present
+    let bodyDomain: string | undefined;
+    try {
+      const body = await req.json();
+      if (body?.domain && typeof body.domain === "string") {
+        bodyDomain = body.domain.trim().replace(/^https?:\/\//i, "").replace(/\/+$/, "");
+      }
+    } catch {
+      // empty or invalid JSON is fine
+    }
 
-  if (!db) {
-    // Keep current behavior if profile hasn't been created yet
-    redirect("/dashboard/editor");
+    // Load claim: specific domain if provided, else latest for this user
+    let claim = null as null | (typeof prisma.domainClaim extends never ? never : any);
+
+    if (bodyDomain) {
+      claim = await prisma.domainClaim.findUnique({ where: { domain: bodyDomain } });
+      if (!claim || claim.userId !== user.id) {
+        return NextResponse.json({ error: "No claim for this domain" }, { status: 404 });
+      }
+    } else {
+      const claims = await prisma.domainClaim.findMany({
+        where: { userId: user.id },
+        orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }],
+        take: 1,
+      });
+      claim = claims[0] || null;
+      if (!claim) {
+        return NextResponse.json({ error: "No pending domain claim found for your account" }, { status: 404 });
+      }
+    }
+
+    const domain = claim.domain as string;
+    const token = (claim.txtToken as string) || "";
+    if (!domain || !token) {
+      return NextResponse.json({ error: "Claim record incomplete" }, { status: 400 });
+    }
+
+    const ok = await dnsHasAnyAcceptedPattern(domain, token);
+    if (!ok) {
+      return NextResponse.json(
+        { ok: false, message: "TXT not found yet. It can take time to propagate—try again shortly." },
+        { status: 200 }
+      );
+    }
+
+    // Mark verified and flip profile status
+    await prisma.$transaction(async (tx) => {
+      await tx.domainClaim.update({
+        where: { domain },
+        data: { dnsVerified: true, status: "VERIFIED", verifiedAt: new Date() },
+      });
+
+      const prof = await tx.profile.findUnique({ where: { userId: user.id } });
+      await tx.profile.update({
+        where: { userId: user.id },
+        data: {
+          website: prof?.website ?? `https://${domain}`,
+          verificationStatus: "DOMAIN_VERIFIED",
+          domainVerifiedAt: new Date(),
+          verifyCheckedAt: new Date(),
+        },
+      });
+    });
+
+    const final = await prisma.profile.findUnique({
+      where: { userId: user.id },
+      select: { verificationStatus: true },
+    });
+
+    return NextResponse.json({ ok: true, profile: final });
+  } catch (err: any) {
+    return NextResponse.json({ error: err?.message || "Server error" }, { status: 500 });
   }
-
-  // --- Map Prisma Profile -> UI ProfileEditor expected shape ---
-  // ProfileEditor (from your pasted code) expects arrays/objects (not Prisma JsonValue)
-  const uiProfile = {
-    // server identity
-    id: db.id,
-
-    // Core identity
-    displayName: db.displayName ?? null,
-    legalName: db.legalName ?? null,
-    entityType: db.entityType ?? null,
-
-    // Story
-    tagline: db.tagline ?? null,
-    bio: db.bio ?? null,
-
-    // Anchors
-    website: db.website ?? null,
-    location: db.location ?? null,
-    serviceArea: asArray<string>(db.serviceArea, []),
-
-    // Trust & authority
-    foundedYear: db.foundedYear ?? null,
-    teamSize: db.teamSize ?? null,
-    languages: asArray<string>(db.languages, []),
-    pricingModel: db.pricingModel ?? null,
-    hours: db.hours ?? null,
-    certifications: db.certifications ?? null,
-
-    // Media & authority
-    press: asArray<{ title: string; url: string }>(db.press, []),
-    logoUrl: db.logoUrl ?? null,
-    imageUrls: asArray<string>(db.imageUrls, []),
-
-    // Platforms & links
-    // Your newer code uses `handles: Json?`; older editor types had explicit fields.
-    // Map the JSON object if present; the editor will read the shape it defined.
-    handles: asObject<Record<string, string | undefined>>(db.handles, {}),
-    links: asArray<{ label: string; url: string }>(db.links, []),
-
-    // Verification (editor might display or ignore)
-    verificationStatus: db.verificationStatus,
-
-    // Slug (if editor needs it)
-    slug: db.slug,
-  };
-
-  return (
-    <div className="mx-auto max-w-4xl space-y-6 p-4 sm:p-6">
-      {/* 🔶 Always-visible banner for unverified users */}
-      <UnverifiedBanner status={db.verificationStatus as any} />
-
-      {/* Main profile editor expects `initial` prop shaped for its UI types */}
-      <ProfileEditor initial={uiProfile as any} />
-    </div>
-  );
 }
