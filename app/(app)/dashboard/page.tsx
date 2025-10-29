@@ -1,5 +1,5 @@
 // app/(app)/dashboard/page.tsx
-// 📅 Updated: 2025-10-29 11:58 ET
+// 📅 Updated: 2025-10-29 12:16 ET
 
 export const runtime = "nodejs";          // ensure Prisma-compatible runtime (Prisma needs Node)
 export const dynamic = "force-dynamic";   // always render on server (no static cache)
@@ -53,7 +53,6 @@ export default async function DashboardPage() {
   try {
     session = await getServerSession(authOptions);
   } catch {
-    // If auth throws for any reason, bounce to sign-in
     redirect("/signin");
   }
   const email = session?.user?.email;
@@ -68,7 +67,6 @@ export default async function DashboardPage() {
     });
     userId = user?.id ?? null;
   } catch {
-    // Prisma error → treat as not authenticated
     redirect("/signin");
   }
   if (!userId) redirect("/signin");
@@ -80,11 +78,10 @@ export default async function DashboardPage() {
       where: { userId },
     });
   } catch {
-    // On DB error, show empty editor rather than crash
     db = null;
   }
 
-  // If there is no profile yet, render the editor with empty initial state (no redirect to a missing route)
+  // If there is no profile yet, render the editor with empty initial state
   const uiProfile = db
     ? {
         id: db.id,
@@ -121,9 +118,6 @@ export default async function DashboardPage() {
         profileId={db?.id ?? undefined}
         initialDomain={db?.website ?? ""}
         initialStatus={(db?.verificationStatus ?? "UNVERIFIED") as any}
-        onStatusChange={() => {
-          // Optional: hook to revalidate or toast
-        }}
       />
 
       <ProfileEditor initial={uiProfile as any} />
