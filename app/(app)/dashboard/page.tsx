@@ -1,8 +1,8 @@
 // app/(app)/dashboard/page.tsx
-// 📅 Updated: 2025-10-29 10:45 ET
+// 📅 Updated: 2025-10-29 11:58 ET
 
-export const runtime = "nodejs";          // ensure Prisma-compatible runtime
-export const dynamic = "force-dynamic";   // always render on server
+export const runtime = "nodejs";          // ensure Prisma-compatible runtime (Prisma needs Node)
+export const dynamic = "force-dynamic";   // always render on server (no static cache)
 
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
@@ -11,7 +11,9 @@ import { redirect } from "next/navigation";
 
 import UnverifiedBanner from "@/components/UnverifiedBanner";
 import ProfileEditor from "@/components/ProfileEditor";
-import dynamicImport from "next/dynamic"; // ← alias to avoid name clash
+
+// IMPORTANT: Alias this import so it doesn’t collide with the `export const dynamic` above
+import dynamicImport from "next/dynamic";
 
 // ✅ Load the verification UI purely on the client to avoid SSR crashes
 const VerificationCard = dynamicImport(() => import("@/components/VerificationCard"), {
@@ -51,6 +53,7 @@ export default async function DashboardPage() {
   try {
     session = await getServerSession(authOptions);
   } catch {
+    // If auth throws for any reason, bounce to sign-in
     redirect("/signin");
   }
   const email = session?.user?.email;
@@ -65,6 +68,7 @@ export default async function DashboardPage() {
     });
     userId = user?.id ?? null;
   } catch {
+    // Prisma error → treat as not authenticated
     redirect("/signin");
   }
   if (!userId) redirect("/signin");
@@ -72,12 +76,15 @@ export default async function DashboardPage() {
   // --- 3) Profile lookup
   let db: any = null;
   try {
-    db = await prisma.profile.findUnique({ where: { userId } });
+    db = await prisma.profile.findUnique({
+      where: { userId },
+    });
   } catch {
+    // On DB error, show empty editor rather than crash
     db = null;
   }
 
-  // If there is no profile yet, render the editor with empty initial state
+  // If there is no profile yet, render the editor with empty initial state (no redirect to a missing route)
   const uiProfile = db
     ? {
         id: db.id,
@@ -109,13 +116,13 @@ export default async function DashboardPage() {
     <div className="mx-auto max-w-4xl space-y-6 p-4 sm:p-6">
       <UnverifiedBanner status={(db?.verificationStatus ?? "UNVERIFIED") as any} />
 
-      {/* ✅ Client-only verification card (DNS TXT + code-in-bio UI) */}
+      {/* ✅ DNS TXT + Code-in-bio verification (client-only) */}
       <VerificationCard
         profileId={db?.id ?? undefined}
         initialDomain={db?.website ?? ""}
         initialStatus={(db?.verificationStatus ?? "UNVERIFIED") as any}
         onStatusChange={() => {
-          // Optional: trigger a refresh/revalidate, or show a toast
+          // Optional: hook to revalidate or toast
         }}
       />
 
