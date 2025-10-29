@@ -1,4 +1,6 @@
 // app/p/[slug]/page.tsx
+// Updated: 2025-10-29 09:56 ET – add <link rel="alternate" type="application/ld+json"> via Metadata API
+
 import { prisma } from "@/lib/prisma";
 import {
   buildProfileSchema,
@@ -187,7 +189,13 @@ export async function generateMetadata(
   return {
     title,
     description,
-    alternates: { canonical: url },
+    alternates: {
+      canonical: url,
+      // ✅ This injects: <link rel="alternate" type="application/ld+json" href="/api/profile/[slug]/schema">
+      types: {
+        "application/ld+json": `${baseUrl}/api/profile/${params.slug}/schema`,
+      },
+    },
     openGraph: { title, description, url, images },
   };
 }
