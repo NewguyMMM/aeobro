@@ -1,4 +1,6 @@
 // app/api/profile/[slug]/schema/route.ts
+// Updated: 2025-10-29 09:56 ET – add X-Robots-Tag, HTTP Link header back to human page, keep strong caching
+
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import {
@@ -44,12 +46,14 @@ export async function GET(req: Request, { params }: Params) {
         headers: {
           "Cache-Control": "public, s-maxage=60, max-age=30",
           "Content-Type": "application/json; charset=utf-8",
+          "X-Robots-Tag": "noindex",
         },
       }
     );
   }
 
   const baseUrl = getBaseUrl();
+  const humanUrl = `${baseUrl}/p/${encodeURIComponent(profile.slug ?? slug)}`;
 
   try {
     // Always include the main Profile JSON-LD (gating happens inside buildProfileSchema)
@@ -67,8 +71,13 @@ export async function GET(req: Request, { params }: Params) {
           ...(download
             ? { "Content-Disposition": `attachment; filename="${slug}-schema.json"` }
             : {}),
-          // Edge/CDN caching with generous SWR; HTML page will still be revalidated separately
+          // Edge/CDN caching with generous SWR; HTML page revalidates separately
           "Cache-Control": "public, s-maxage=3600, stale-while-revalidate=604800",
+          // ✅ Signal that this is indexable and points to the human-readable page
+          "X-Robots-Tag": "all",
+          // ✅ Machine-readable association back to the human page
+          // rel="describes" is well-understood; include "alternate" + type hint
+          "Link": `<${humanUrl}>; rel="describes alternate"; type="text/html"`,
         },
       });
     }
@@ -96,7 +105,7 @@ export async function GET(req: Request, { params }: Params) {
     ]);
 
     const serviceJsonLd = buildServiceJsonLd(
-      `${baseUrl}/p/${encodeURIComponent(profile.slug ?? slug)}#profile`,
+      `${humanUrl}#profile`,
       services.map((s) => ({
         name: s.name,
         description: s.description ?? undefined,
@@ -129,6 +138,8 @@ export async function GET(req: Request, { params }: Params) {
             }
           : {}),
         "Cache-Control": "public, s-maxage=3600, stale-while-revalidate=604800",
+        "X-Robots-Tag": "all",
+        "Link": `<${humanUrl}>; rel="describes alternate"; type="text/html"`,
       },
     });
   } catch (err: any) {
