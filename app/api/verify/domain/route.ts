@@ -1,6 +1,9 @@
 // app/api/verify/domain/route.ts
-// AEOBRO — DNS TXT verification (with rate limiting)
-// Updated: 2025-10-29 15:33 ET
+// AEOBRO — DNS TXT verification (with safe runtime + graceful rate limiting)
+// Updated: 2025-10-29 10:58 ET
+
+export const runtime = "nodejs";          // ensure Node (dns lookups etc.)
+export const dynamic = "force-dynamic";   // always execute on server
 
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
@@ -8,17 +11,32 @@ import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { ensureProfileToken, checkDomainTxtForToken } from "@/lib/verification";
 
-import { Ratelimit } from "@upstash/ratelimit";
-import { Redis } from "@upstash/redis";
+// ───────────────────────────────────────────────────────────────────────────────
+// Rate limiting: 10 POSTs / hour per IP (graceful when Upstash env is missing)
+// ───────────────────────────────────────────────────────────────────────────────
+type Limiter = { limit: (key: string) => Promise<{ success: boolean }> };
 
-// ───────────────────────────────────────────────────────────────────────────────
-// Rate limiting: 10 POSTs / hour per IP
-// ───────────────────────────────────────────────────────────────────────────────
-const redis = Redis.fromEnv();
-const limiter = new Ratelimit({
-  redis,
-  limiter: Ratelimit.fixedWindow(10, "1 h"),
-});
+let limiter: Limiter = {
+  // default: no-op limiter (always allow)
+  async limit() {
+    return { success: true };
+  },
+};
+
+try {
+  // Only initialize if Upstash env vars exist; otherwise stay in "allow all" mode
+  if (process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN) {
+    const { Ratelimit } = await import("@upstash/ratelimit");
+    const { Redis } = await import("@upstash/redis");
+    const redis = Redis.fromEnv();
+    limiter = new Ratelimit({
+      redis,
+      limiter: Ratelimit.fixedWindow(10, "1 h"),
+    }) as unknown as Limiter;
+  }
+} catch {
+  // If Upstash packages/env are absent in some environments, keep permissive limiter
+}
 
 // Normalize an input like "https://www.example.com/path" → "example.com"
 function normalizeDomain(input: string): string {
@@ -58,8 +76,14 @@ export async function POST(req: Request) {
     );
   }
 
-  // Parse
-  const body = await req.json();
+  // Parse body safely
+  let body: any;
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ ok: false, error: "Invalid JSON body" }, { status: 400 });
+  }
+
   const profileId = body?.profileId as string | undefined;
   const inputDomain = body?.domain as string | undefined;
   const init = Boolean(body?.init);
@@ -88,20 +112,17 @@ export async function POST(req: Request) {
   // INIT: issue token & show preferred TXT format
   if (init) {
     const token = await ensureProfileToken(profile.id);
-
-    // UI uses these helpers; backend still accepts legacy formats in checkDomainTxtForToken()
     return NextResponse.json({
       ok: true,
       token,
       status: profile.verificationStatus || "UNVERIFIED",
-      // Optional human-readable tips if you want to surface them somewhere:
       instructions: [
         `Add a TXT record at Host: ${preferredHost(domain)}`,
         `Type: TXT`,
         `Value: ${preferredValue(token)}`,
         `Note: DNS changes can take time to propagate.`,
       ],
-      // For backward compat if anything relies on these fields
+      // for any legacy consumers
       recordHost: preferredHost(domain),
       recordType: "TXT",
       recordValue: preferredValue(token),
@@ -111,9 +132,7 @@ export async function POST(req: Request) {
   // CHECK: look up TXT & promote if matched
   const token = profile.verificationToken ?? (await ensureProfileToken(profile.id));
 
-  // Your lib function should accept/try both preferred and legacy shapes under the hood.
-  // e.g., try _aeobro-verify.<apex> with aeobro-site-verify=<token>,
-  // and (legacy) any older host/value you previously accepted.
+  // Accept preferred + legacy formats under the hood
   const found = await checkDomainTxtForToken(domain, token);
 
   if (!found) {
@@ -121,7 +140,7 @@ export async function POST(req: Request) {
       ok: true,
       verified: false,
       status: profile.verificationStatus || "UNVERIFIED",
-      token, // helps the UI show the exact value to copy
+      token, // UI can echo the exact value to copy
       message: "TXT record not detected yet",
     });
   }
