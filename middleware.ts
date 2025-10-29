@@ -1,34 +1,17 @@
 // middleware.ts
-// Updated: 2025-10-29 10:36 ET
-// - Legacy auth redirects → /login
-// - Add HTTP Link header: <.../api/profile/[slug]/schema>; rel="alternate"; type="application/ld+json" on /p/[slug]
-// - Anti-enumeration: rate-limit probes on /p/*
-//   • Preferred: Upstash Redis (env: UPSTASH_REDIS_REST_URL, UPSTASH_REDIS_REST_TOKEN)
-//   • Fallback: Cookie-based soft limiter (per-IP-ish via client) if Upstash not configured
-//
-// When a client exceeds the threshold, we rewrite to /tarpit (200 OK) to avoid leak via 404-counting.
+// Updated: 2025-10-29 10:59 ET
+// - Fix TypeScript cookie option casing: sameSite: "lax" (was "Lax")
+// - Use Edge-safe dynamic import() for Upstash libs
+// - Preserve: legacy auth redirects, Link header on /p/[slug], anti-enumeration
 
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
 // ---------- Config ----------
-const PROBE_LIMIT_PER_MIN = parseInt(process.env.AEO_PROBE_LIMIT_PER_MIN || "", 10) || 30; // reasonable default
+const PROBE_LIMIT_PER_MIN =
+  parseInt(process.env.AEO_PROBE_LIMIT_PER_MIN || "", 10) || 30;
 const TARPIT_PATH = "/tarpit";
 const ENABLE_ANTI_ENUM = (process.env.AEO_ANTI_ENUM ?? "1") !== "0";
-
-// ---------- Optional Upstash ----------
-let useUpstash = false;
-let Ratelimit: any;
-let Redis: any;
-
-if (process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN) {
-  useUpstash = true;
-  // Lazy import at edge
-  // @ts-ignore
-  Ratelimit = require("@upstash/ratelimit").Ratelimit;
-  // @ts-ignore
-  Redis = require("@upstash/redis").Redis;
-}
 
 const legacy = new Set([
   "/sign-in",
@@ -40,7 +23,7 @@ const legacy = new Set([
 ]);
 
 export async function middleware(req: NextRequest) {
-  const { pathname, origin, search } = req.nextUrl;
+  const { pathname, origin } = req.nextUrl;
 
   // ---- 1) Legacy auth redirects ----
   if (legacy.has(pathname)) {
@@ -48,7 +31,7 @@ export async function middleware(req: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  // Only operate on /p/* pages for the features below
+  // Only operate on /p/* pages below
   const isProfilePage = pathname.startsWith("/p/");
   if (!isProfilePage) {
     return NextResponse.next();
@@ -77,8 +60,16 @@ export async function middleware(req: NextRequest) {
       "unknown";
 
     try {
-      if (useUpstash) {
-        // Robust IP rate limit using Upstash
+      // Prefer robust Upstash limiter if configured
+      if (
+        process.env.UPSTASH_REDIS_REST_URL &&
+        process.env.UPSTASH_REDIS_REST_TOKEN
+      ) {
+        const [{ Ratelimit }, { Redis }] = await Promise.all([
+          import("@upstash/ratelimit"),
+          import("@upstash/redis"),
+        ]);
+
         const redis = Redis.fromEnv();
         const limiter = new Ratelimit({
           redis,
@@ -88,20 +79,17 @@ export async function middleware(req: NextRequest) {
 
         const key = `ip:${ip}`;
         const { success } = await limiter.limit(key);
+
         if (!success) {
-          // Too many requests → rewrite to tarpit (200 OK)
           const url = req.nextUrl.clone();
           url.pathname = TARPIT_PATH;
-          url.search = ""; // normalize
+          url.search = "";
           return NextResponse.rewrite(url, {
-            headers: {
-              // Prevent caching of the tarpit response
-              "Cache-Control": "no-store",
-            },
+            headers: { "Cache-Control": "no-store" },
           });
         }
       } else {
-        // Cookie-based soft limiter (best-effort)
+        // Cookie-based soft limiter (best-effort fallback)
         const cookieName = "aeo_peek";
         const now = Date.now();
         const windowMs = 60_000;
@@ -121,36 +109,34 @@ export async function middleware(req: NextRequest) {
               windowStart = now;
               count = 0;
             }
-          } catch {}
+          } catch {
+            // ignore parse errors
+          }
         }
 
         count += 1;
         const tooMany = count > PROBE_LIMIT_PER_MIN;
 
-        // Set/refresh cookie on the response we’re already returning
-        res.cookies.set(
-          cookieName,
-          JSON.stringify({ s: windowStart, c: count }),
-          {
-            path: "/",
-            httpOnly: false, // client-visible; this is a deterrent only
-            sameSite: "Lax",
-            secure: true,
-            maxAge: 60, // seconds
-          }
-        );
+        // ✅ FIX: sameSite must be lowercase ("lax" | "strict" | "none")
+        res.cookies.set(cookieName, JSON.stringify({ s: windowStart, c: count }), {
+          path: "/",
+          httpOnly: false, // deterrent only
+          sameSite: "lax",
+          secure: true,
+          maxAge: 60, // seconds
+        });
 
         if (tooMany) {
           const url = req.nextUrl.clone();
           url.pathname = TARPIT_PATH;
-          url.search = ""; // normalize
+          url.search = "";
           return NextResponse.rewrite(url, {
             headers: { "Cache-Control": "no-store" },
           });
         }
       }
     } catch {
-      // On any limiter error, fail open (return normal page) to avoid accidental blocking
+      // Fail open on limiter errors to avoid accidental blocking
     }
   }
 
@@ -158,14 +144,13 @@ export async function middleware(req: NextRequest) {
 }
 
 export const config = {
-  // Apply to legacy auth routes (redirects) and all /p/* pages (headers + anti-enum)
   matcher: [
     "/sign-in",
     "/signin",
     "/auth/sign-in",
     "/sign-up",
     "/signup",
-    "/auth/sign-up",
+    "/auth-sign-up",
     "/p/:path*",
   ],
 };
