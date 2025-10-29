@@ -1,5 +1,5 @@
 // app/(app)/dashboard/page.tsx
-// 📅 Updated: 2025-10-29 11:38 ET
+// 📅 Updated: 2025-10-29 11:52 ET
 
 export const runtime = "nodejs";          // ensure Prisma-compatible runtime
 export const dynamic = "force-dynamic";   // always render on server
@@ -11,7 +11,17 @@ import { redirect } from "next/navigation";
 
 import UnverifiedBanner from "@/components/UnverifiedBanner";
 import ProfileEditor from "@/components/ProfileEditor";
-import VerificationCard from "@/components/VerificationCard"; // ✅ NEW
+import dynamic from "next/dynamic";
+
+// ✅ Load the verification UI purely on the client to avoid SSR crashes
+const VerificationCard = dynamic(() => import("@/components/VerificationCard"), {
+  ssr: false,
+  loading: () => (
+    <div className="rounded-2xl border bg-white p-5 shadow-sm text-sm text-neutral-600">
+      Loading verification…
+    </div>
+  ),
+});
 
 /** Helpers to coerce JSON to the UI shapes ProfileEditor expects (must be serializable) */
 function asArray<T = any>(v: unknown, fallback: T[] = []): T[] {
@@ -104,14 +114,13 @@ export default async function DashboardPage() {
     <div className="mx-auto max-w-4xl space-y-6 p-4 sm:p-6">
       <UnverifiedBanner status={(db?.verificationStatus ?? "UNVERIFIED") as any} />
 
-      {/* ✅ Mounted verification card (DNS TXT + code-in-bio UI) */}
+      {/* ✅ Client-only verification card (DNS TXT + code-in-bio UI) */}
       <VerificationCard
         profileId={db?.id ?? undefined}
         initialDomain={db?.website ?? ""}
         initialStatus={(db?.verificationStatus ?? "UNVERIFIED") as any}
         onStatusChange={() => {
-          // Optional: could trigger a revalidate or toast here if desired.
-          // For now, the card shows its own inline status/messages.
+          // Optional: trigger a refresh/revalidate, or show a toast
         }}
       />
 
