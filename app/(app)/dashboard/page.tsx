@@ -1,5 +1,5 @@
 // app/(app)/dashboard/page.tsx
-// 📅 Updated: 2025-10-29 11:52 ET
+// 📅 Updated: 2025-10-29 10:45 ET
 
 export const runtime = "nodejs";          // ensure Prisma-compatible runtime
 export const dynamic = "force-dynamic";   // always render on server
@@ -11,10 +11,10 @@ import { redirect } from "next/navigation";
 
 import UnverifiedBanner from "@/components/UnverifiedBanner";
 import ProfileEditor from "@/components/ProfileEditor";
-import dynamic from "next/dynamic";
+import dynamicImport from "next/dynamic"; // ← alias to avoid name clash
 
 // ✅ Load the verification UI purely on the client to avoid SSR crashes
-const VerificationCard = dynamic(() => import("@/components/VerificationCard"), {
+const VerificationCard = dynamicImport(() => import("@/components/VerificationCard"), {
   ssr: false,
   loading: () => (
     <div className="rounded-2xl border bg-white p-5 shadow-sm text-sm text-neutral-600">
@@ -51,7 +51,6 @@ export default async function DashboardPage() {
   try {
     session = await getServerSession(authOptions);
   } catch {
-    // If auth throws for any reason, bounce to sign-in
     redirect("/signin");
   }
   const email = session?.user?.email;
@@ -66,7 +65,6 @@ export default async function DashboardPage() {
     });
     userId = user?.id ?? null;
   } catch {
-    // Prisma error → treat as not authenticated
     redirect("/signin");
   }
   if (!userId) redirect("/signin");
@@ -74,15 +72,12 @@ export default async function DashboardPage() {
   // --- 3) Profile lookup
   let db: any = null;
   try {
-    db = await prisma.profile.findUnique({
-      where: { userId },
-    });
+    db = await prisma.profile.findUnique({ where: { userId } });
   } catch {
-    // On DB error, show empty editor rather than crash
     db = null;
   }
 
-  // If there is no profile yet, render the editor with empty initial state (no redirect to a missing route)
+  // If there is no profile yet, render the editor with empty initial state
   const uiProfile = db
     ? {
         id: db.id,
