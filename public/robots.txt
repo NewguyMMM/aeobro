@@ -1,0 +1,20 @@
+# AEOBRO robots.txt
+# Updated: 2025-10-29 10:36 ET
+# Goal: Preserve AI/SEO for human profiles and their JSON-LD schema,
+# while minimizing enumeration signals and blocking private areas.
+
+User-agent: *
+# Allow public human profiles and associated schema
+Allow: /p/
+Allow: /api/profile/
+Allow: /api/profile/*
+
+# Block other internal/API routes and private areas
+Disallow: /api/
+Disallow: /dashboard/
+Disallow: /login
+Disallow: /cancel
+Disallow: /terms-old
+
+# Intentionally no public Sitemap to avoid creating a direct URL inventory.
+# (You can serve a restricted sitemap to trusted crawlers separately if desired.)
