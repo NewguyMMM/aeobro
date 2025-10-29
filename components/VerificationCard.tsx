@@ -1,6 +1,6 @@
 // components/VerificationCard.tsx
 // AEOBRO — Reconciled Domain + Platform Verification Card
-// Updated: 2025-10-29 14:20 ET
+// Updated: 2025-10-29 14:27 ET
 
 "use client";
 
@@ -13,12 +13,9 @@ type VerificationStatus =
   | "DOMAIN_VERIFIED";
 
 type StartDnsResponse = {
-  // legacy shape (from /api/verify/dns/start)
   recordHost?: string;
   recordType?: "TXT";
   recordValue?: string;
-
-  // new shape (from /api/verify/domain { init: true })
   token?: string;
   status?: VerificationStatus;
   error?: string;
@@ -45,16 +42,12 @@ type CheckPlatformResponse = {
 };
 
 type Props = {
-  /** Required for /api/verify/domain */
-  profileId: string;
+  /** Optional now (so callers that don't have it yet won't break builds) */
+  profileId?: string;
 
-  /** Optional initial values if you have them on the profile */
   initialDomain?: string | null;
   initialStatus?: VerificationStatus | null;
-
-  /** Optional callback when status changes */
   onStatusChange?: (status: VerificationStatus) => void;
-
   className?: string;
 };
 
@@ -86,15 +79,12 @@ export default function VerificationCard({
   const [platformMarker, setPlatformMarker] = React.useState<string>("");
 
   React.useEffect(() => {
-    // normalize domain once (idempotent)
     if (domainInput?.trim()) {
       setNormalizedDomain(normalizeDomain(domainInput));
     } else {
       setNormalizedDomain("");
     }
   }, [domainInput]);
-
-  // --- Helpers ---
 
   function normalizeDomain(input: string): string {
     const raw = (input || "").trim();
@@ -134,12 +124,11 @@ export default function VerificationCard({
     onStatusChange?.(s);
   }
 
-  // --- DNS Flow (NEW endpoints) ---
-
+  /** ------ DNS Flow (new endpoints) ------ */
   async function handleDnsGenerate() {
     setMessage("");
     if (!profileId) {
-      setMessage("Missing profileId.");
+      setMessage("Profile not loaded yet. Save your profile to get a profileId.");
       return;
     }
     if (!normalizedDomain) {
@@ -148,7 +137,6 @@ export default function VerificationCard({
     }
     setLoading(true);
     try {
-      // New contract: POST /api/verify/domain { profileId, domain, init: true }
       const r = await fetch("/api/verify/domain", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -161,7 +149,6 @@ export default function VerificationCard({
       const j: StartDnsResponse = await r.json();
       if (!r.ok) throw new Error(j?.error || "Failed to generate DNS record");
 
-      // Prefer new shape: token + preferred format
       if (j?.token) {
         setDnsToken(j.token);
         setDnsRecordHost(preferredHost(normalizedDomain));
@@ -173,7 +160,6 @@ export default function VerificationCard({
         return;
       }
 
-      // Back-compat: legacy shape (recordHost/Type/Value)
       if (j?.recordHost || j?.recordValue) {
         setDnsRecordHost(j.recordHost || preferredHost(normalizedDomain));
         setDnsRecordType("TXT");
@@ -195,7 +181,7 @@ export default function VerificationCard({
   async function handleDnsCheck() {
     setMessage("");
     if (!profileId) {
-      setMessage("Missing profileId.");
+      setMessage("Profile not loaded yet. Save your profile to get a profileId.");
       return;
     }
     if (!normalizedDomain) {
@@ -204,7 +190,6 @@ export default function VerificationCard({
     }
     setLoading(true);
     try {
-      // New contract: POST /api/verify/domain { profileId, domain }
       const r = await fetch("/api/verify/domain", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -249,8 +234,7 @@ export default function VerificationCard({
     }
   }
 
-  // --- Platform Flow (existing endpoints retained) ---
-
+  /** ------ Platform Flow (existing endpoints) ------ */
   async function handlePlatformStart() {
     setMessage("");
     setLoading(true);
@@ -291,7 +275,7 @@ export default function VerificationCard({
     }
   }
 
-  // --- UI ---
+  const profileMissing = !profileId;
 
   return (
     <div className={`w-full max-w-2xl rounded-2xl border bg-white p-5 shadow-sm ${className || ""}`}>
@@ -304,6 +288,13 @@ export default function VerificationCard({
         </div>
         <StatusBadge status={status} />
       </div>
+
+      {profileMissing && (
+        <div className="mb-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+          Save your profile to obtain a <span className="font-semibold">profileId</span>. Verification actions are
+          disabled until then.
+        </div>
+      )}
 
       {/* Domain input (used for DNS flow) */}
       <div className="mt-2">
@@ -336,7 +327,7 @@ export default function VerificationCard({
         <div className="mt-4 flex flex-wrap gap-2">
           <button
             onClick={handleDnsGenerate}
-            disabled={loading}
+            disabled={loading || profileMissing}
             className="rounded-xl bg-[#2563EB] px-4 py-2 text-white disabled:opacity-50"
             type="button"
           >
@@ -344,7 +335,7 @@ export default function VerificationCard({
           </button>
           <button
             onClick={handlePlatformStart}
-            disabled={loading}
+            disabled={loading || profileMissing}
             className="rounded-xl border px-4 py-2 disabled:opacity-50"
             type="button"
           >
@@ -403,7 +394,7 @@ export default function VerificationCard({
 
           <button
             onClick={handleDnsCheck}
-            disabled={loading}
+            disabled={loading || profileMissing}
             className="mt-3 rounded-xl border px-4 py-2 disabled:opacity-50"
             type="button"
           >
@@ -419,7 +410,7 @@ export default function VerificationCard({
           <pre className="whitespace-pre-wrap rounded bg-white p-2 text-xs">{platformMarker || "<marker>"}</pre>
           <button
             onClick={handlePlatformCheck}
-            disabled={loading}
+            disabled={loading || profileMissing}
             className="mt-3 rounded-xl border px-4 py-2 disabled:opacity-50"
             type="button"
           >
