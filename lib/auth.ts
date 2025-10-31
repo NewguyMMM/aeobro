@@ -1,5 +1,5 @@
 // lib/auth.ts
-// ✅ Updated: 2025-10-31 06:34 ET
+// ✅ Updated: 2025-10-31 07:32 ET
 import type { NextAuthOptions } from "next-auth";
 import { PrismaAdapter } from "@auth/prisma-adapter";
 import { prisma } from "@/lib/prisma";
@@ -278,7 +278,7 @@ type FinalizeParams = {
   scope?: string;
 };
 
-async function finalizePlatformVerification({
+export async function finalizePlatformVerification({
   userId,
   provider,
   accessToken,
@@ -302,8 +302,6 @@ async function finalizePlatformVerification({
   // Provider-specific canonical identity
   if (provider === "google") {
     // Use YouTube Data API to fetch channel identity
-    // Avoid adding googleapis SDK to keep bundle light: call REST directly
-    // GET https://www.googleapis.com/youtube/v3/channels?part=id,snippet&mine=true
     if (!accessToken) throw new Error("Missing Google access token");
 
     const resp = await fetch(
