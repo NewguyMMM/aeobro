@@ -1,5 +1,5 @@
 // prisma/schema.prisma
-// 📅 Updated: 2025-10-31 05:22 ET
+// 📅 Updated: 2025-10-31 05:16 ET
 
 generator client {
   provider = "prisma-client-js"
@@ -185,14 +185,16 @@ model Profile {
   updatedAt   DateTime @updatedAt
 
   // Relations
-  faqItems      FAQItem[]
-  serviceItems  ServiceItem[]
-  changeLogs    ChangeLog[]
+  faqItems          FAQItem[]
+  serviceItems      ServiceItem[]
+  changeLogs        ChangeLog[]
+  // 🔁 Back-relation required for PlatformAccount.profile
+  platformAccounts  PlatformAccount[]
 }
 
-/* ===============================
-   Verification models
-   =============================== */
+// ===============================
+// Verification models
+// ===============================
 
 model DomainClaim {
   id             String      @id @default(cuid())
