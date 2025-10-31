@@ -1,5 +1,5 @@
 // prisma/schema.prisma
-// 📅 Updated: 2025-10-27 02:33 PM ET
+// 📅 Updated: 2025-10-31 05:22 ET
 
 generator client {
   provider = "prisma-client-js"
@@ -190,9 +190,9 @@ model Profile {
   changeLogs    ChangeLog[]
 }
 
-// ===============================
-// Verification models
-// ===============================
+/* ===============================
+   Verification models
+   =============================== */
 
 model DomainClaim {
   id             String      @id @default(cuid())
@@ -216,19 +216,39 @@ model DomainClaim {
 }
 
 model PlatformAccount {
-  id         String       @id @default(cuid())
-  userId     String
-  provider   String
-  externalId String
-  handle     String?
-  url        String?
-  status     VerifyStatus @default(PENDING)
-  verifiedAt DateTime?
+  id              String       @id @default(cuid())
+  userId          String
+  /** Optional link to the current Profile (keeps working even if you add multi-profiles later) */
+  profileId       String?
+  /** OAuth provider id (e.g., "google", "tiktok", "facebook", "twitter"/"x") */
+  provider        String
+  /** External account id we verified (e.g., YouTube channelId, TikTok open_id, FB page id, X user id) */
+  externalId      String
+  /** Human-friendly handle or display name (e.g., @mybrand) */
+  handle          String?
+  /** Public URL to the verified presence */
+  url             String?
+  /** Verification status for this linked platform account */
+  status          VerifyStatus @default(PENDING)
+  verifiedAt      DateTime?
 
-  user       User         @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  /** NEW: how this was verified (for OAuth flow it will be "OAUTH") */
+  method          String       @default("OAUTH")
+  /** NEW: finer-grained context like "google-youtube", "facebook-page", "instagram-graph", "x" */
+  platformContext String?
+  /** NEW: scopes granted at the time of verification (for auditing / future checks) */
+  scopes          String?
+
+  /** NEW: timestamps */
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  profile  Profile? @relation(fields: [profileId], references: [id], onDelete: Cascade, onUpdate: Cascade)
 
   @@unique([provider, externalId])
   @@index([userId])
+  @@index([profileId])
 }
 
 model BioCode {
