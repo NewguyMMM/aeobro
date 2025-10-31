@@ -1,5 +1,5 @@
 // app/api/profile/[slug]/schema/route.ts
-// Updated: 2025-10-29 09:56 ET – add X-Robots-Tag, HTTP Link header back to human page, keep strong caching
+// ✅ Updated: 2025-10-31 08:12 ET – explicit syndication gate + keep strong caching, X-Robots-Tag, Link back to human page
 
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
@@ -9,6 +9,7 @@ import {
   buildServiceJsonLd,
 } from "@/lib/schema";
 import { getBaseUrl } from "@/lib/getBaseUrl";
+import { isSyndicationAllowed } from "@/lib/verificationPolicy";
 
 type Params = { params: { slug: string } };
 
@@ -35,6 +36,10 @@ export async function GET(req: Request, { params }: Params) {
   // Accept either canonical slug or internal id as the URL segment
   const profile = await prisma.profile.findFirst({
     where: { OR: [{ slug }, { id: slug }] },
+    include: {
+      // Plan-based gating (optional but recommended)
+      user: { select: { plan: true, planStatus: true } },
+    },
   });
 
   if (!profile) {
@@ -55,8 +60,33 @@ export async function GET(req: Request, { params }: Params) {
   const baseUrl = getBaseUrl();
   const humanUrl = `${baseUrl}/p/${encodeURIComponent(profile.slug ?? slug)}`;
 
+  // 🔒 Explicit external-syndication gate:
+  // Only emit public JSON-LD if DOMAIN_VERIFIED or PLATFORM_VERIFIED
+  // AND (optionally) plan is active and eligible.
+  const allowed = isSyndicationAllowed(profile, { enforcePlan: true });
+  if (!allowed) {
+    return NextResponse.json(
+      {
+        error:
+          "Syndication disabled. Verify your domain or connect a platform (or activate an eligible plan).",
+        // (Optional: include minimal hints that won’t leak private data)
+        verificationStatus: profile.verificationStatus,
+      },
+      {
+        status: 403,
+        headers: {
+          // Keep crawlers from indexing error payloads
+          "X-Robots-Tag": "noindex, nofollow",
+          "Cache-Control": "public, s-maxage=300, max-age=120",
+          // Still point machines to the human-readable page
+          "Link": `<${humanUrl}>; rel="alternate"; type="text/html"`,
+        },
+      }
+    );
+  }
+
   try {
-    // Always include the main Profile JSON-LD (gating happens inside buildProfileSchema)
+    // ✅ Build the main Profile JSON-LD
     const profileSchema = buildProfileSchema(profile, baseUrl);
 
     // If only profile requested
@@ -125,7 +155,6 @@ export async function GET(req: Request, { params }: Params) {
     // Return an array so validators/tools can handle each block:
     // [ ProfileObject, ServiceObject..., FAQObject ]
     const payload: any[] = [profileSchema, ...serviceJsonLd, faqJsonLd];
-
     const body = pretty ? JSON.stringify(payload, null, 2) : escapeForJsonLd(payload);
 
     return new NextResponse(body, {
