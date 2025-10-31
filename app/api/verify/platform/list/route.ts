@@ -1,6 +1,6 @@
 // app/api/verify/platform/list/route.ts
-// ✅ Updated: 2025-10-31 07:06 ET
-export const runtime = "nodejs"; // Prisma needs Node runtime
+// ✅ Updated: 2025-10-31 07:24 ET
+export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
@@ -15,7 +15,8 @@ import { prisma } from "@/lib/prisma";
 export async function GET(req: Request) {
   try {
     const session = await getServerSession(authOptions);
-    if (!session?.user?.id) {
+    const userId = (session?.user as any)?.id as string | undefined;
+    if (!userId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
@@ -23,10 +24,7 @@ export async function GET(req: Request) {
     const profileId = url.searchParams.get("profileId") || undefined;
 
     const accounts = await prisma.platformAccount.findMany({
-      where: {
-        userId: session.user.id,
-        ...(profileId ? { profileId } : {}),
-      },
+      where: { userId, ...(profileId ? { profileId } : {}) },
       orderBy: { createdAt: "desc" },
       select: {
         id: true,
