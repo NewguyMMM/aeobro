@@ -1,5 +1,5 @@
 // app/p/[slug]/page.tsx
-// Updated: 2025-10-29 09:56 ET – add <link rel="alternate" type="application/ld+json"> via Metadata API
+// ✅ Updated: 2025-10-31 08:29 ET – show Domain/Platform badges and list verified platform accounts
 
 import { prisma } from "@/lib/prisma";
 import {
@@ -41,9 +41,16 @@ const getProfileMetaCached = (slug: string) =>
 const getProfileFullCached = (slug: string) =>
   unstable_cache(
     async () => {
-      // NOTE: no select → includes verificationStatus and other fields needed for badge & JSON-LD
+      // Include verified platform accounts for the Platform Verified badge + list
       return prisma.profile.findUnique({
         where: { slug },
+        include: {
+          platformAccounts: {
+            where: { status: "VERIFIED" },
+            orderBy: { createdAt: "desc" },
+            select: { id: true, provider: true, url: true, handle: true },
+          },
+        },
       });
     },
     ["profile:full", slug],
@@ -191,7 +198,7 @@ export async function generateMetadata(
     description,
     alternates: {
       canonical: url,
-      // ✅ This injects: <link rel="alternate" type="application/ld+json" href="/api/profile/[slug]/schema">
+      // ✅ <link rel="alternate" type="application/ld+json"> -> schema endpoint
       types: {
         "application/ld+json": `${baseUrl}/api/profile/${params.slug}/schema`,
       },
@@ -373,6 +380,12 @@ export default async function PublicProfilePage({ params }: PageProps) {
       )
     : [];
 
+  // ✅ Badge booleans
+  const isDomainVerified = profile.verificationStatus === "DOMAIN_VERIFIED";
+  const hasPlatformVerified =
+    profile.verificationStatus === "PLATFORM_VERIFIED" ||
+    ((profile.platformAccounts?.length ?? 0) > 0);
+
   return (
     <main className="mx-auto max-w-3xl px-6 py-12">
       {/* JSON-LD (server-rendered, no JS execution required) */}
@@ -415,10 +428,10 @@ export default async function PublicProfilePage({ params }: PageProps) {
           </div>
         ) : null}
 
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <h1 className="text-3xl font-semibold">{displayName}</h1>
-          {/* ✅ Verified badge (hidden when UNVERIFIED) */}
-          <Verified status={profile?.verificationStatus} />
+          {/* 🔰 Dual badges */}
+          <VerifiedBadgesInline domain={isDomainVerified} platform={hasPlatformVerified} />
         </div>
 
         {headline ? <p className="mt-2 text-muted-foreground">{headline}</p> : null}
@@ -574,7 +587,7 @@ export default async function PublicProfilePage({ params }: PageProps) {
         </section>
       )}
 
-      {/* Platforms */}
+      {/* Platforms (handles you entered manually) */}
       {handlePairs.length > 0 && (
         <section className="mb-8">
           <h3 className="mb-2 text-lg font-medium">Platforms</h3>
@@ -589,6 +602,35 @@ export default async function PublicProfilePage({ params }: PageProps) {
           </ul>
         </section>
       )}
+
+      {/* ✅ Verified platform accounts (from OAuth) */}
+      {profile.platformAccounts?.length ? (
+        <section className="mb-8">
+          <h3 className="mb-2 text-sm font-semibold text-neutral-700">Verified on</h3>
+          <ul className="space-y-1 text-sm text-neutral-800">
+            {profile.platformAccounts.map((a: any) => (
+              <li key={a.id}>
+                <span className="font-medium">{a.provider}</span>
+                {a.handle ? <span> · {a.handle}</span> : null}
+                {a.url ? (
+                  <>
+                    {" "}
+                    —{" "}
+                    <a
+                      href={a.url}
+                      className="underline"
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      View
+                    </a>
+                  </>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
 
       {/* Links */}
       {sameAs.length > 0 && (
@@ -676,17 +718,22 @@ function renderPrice(
   );
 }
 
-/** Simple inline verified badge (kept here to avoid adding new files) */
-function Verified({ status }: { status?: string | null }) {
-  if (!status || status === "UNVERIFIED") return null;
-  const label = status === "DOMAIN_VERIFIED" ? "Verified (Domain)" : "Verified";
+/** 🔰 Dual-badge inline component (no extra file) */
+function VerifiedBadgesInline({ domain, platform }: { domain?: boolean; platform?: boolean }) {
+  if (!domain && !platform) return null;
   return (
-    <span className="inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs bg-emerald-600 text-white">
-      <svg width="14" height="14" viewBox="0 0 24 24" aria-hidden>
-        <path d="M9 16.2 5.5 12.7l1.4-1.4L9 13.4 16.1 6.3l1.4 1.4z" fill="currentColor" />
-      </svg>
-      {label}
-    </span>
+    <div className="flex items-center gap-2">
+      {platform ? (
+        <span className="inline-flex items-center rounded-full bg-indigo-100 px-3 py-1 text-xs font-medium text-indigo-800">
+          Platform Verified
+        </span>
+      ) : null}
+      {domain ? (
+        <span className="inline-flex items-center rounded-full bg-emerald-100 px-3 py-1 text-xs font-medium text-emerald-800">
+          Domain Verified
+        </span>
+      ) : null}
+    </div>
   );
 }
 
