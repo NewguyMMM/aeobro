@@ -1,10 +1,11 @@
 // components/VerificationCard.tsx
-// AEOBRO — Reconciled Domain + Platform Verification Card
-// Updated: 2025-10-29 14:27 ET
+// AEOBRO — Domain + Platform Verification Card (DNS • Code-in-Bio • OAuth Connect)
+// ✅ Updated: 2025-10-31 06:57 ET
 
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
 
 type VerificationStatus =
   | "UNVERIFIED"
@@ -41,6 +42,22 @@ type CheckPlatformResponse = {
   error?: string;
 };
 
+type PlatformAccount = {
+  id: string;
+  provider: string; // "google" | "facebook" | "twitter" | "tiktok" | ...
+  externalId: string;
+  handle?: string | null;
+  url?: string | null;
+  status: "PENDING" | "VERIFIED" | "FAILED";
+  platformContext?: string | null;
+  verifiedAt?: string | null;
+};
+
+type ListAccountsResponse = {
+  accounts?: PlatformAccount[];
+  error?: string;
+};
+
 type Props = {
   /** Optional now (so callers that don't have it yet won't break builds) */
   profileId?: string;
@@ -49,6 +66,8 @@ type Props = {
   initialStatus?: VerificationStatus | null;
   onStatusChange?: (status: VerificationStatus) => void;
   className?: string;
+  /** Optional: return path after OAuth completes (defaults to /dashboard?verified=1) */
+  returnTo?: string;
 };
 
 export default function VerificationCard({
@@ -57,6 +76,7 @@ export default function VerificationCard({
   initialStatus = "UNVERIFIED",
   onStatusChange,
   className,
+  returnTo = "/dashboard?verified=1",
 }: Props) {
   const [mode, setMode] = React.useState<"dns" | "platform" | null>(null);
   const [loading, setLoading] = React.useState(false);
@@ -75,8 +95,12 @@ export default function VerificationCard({
   const [dnsRecordType, setDnsRecordType] = React.useState<"TXT">("TXT");
   const [dnsRecordValue, setDnsRecordValue] = React.useState<string>("");
 
-  // Platform state
+  // Platform (code-in-bio) state
   const [platformMarker, setPlatformMarker] = React.useState<string>("");
+
+  // OAuth-linked accounts state
+  const [accounts, setAccounts] = React.useState<PlatformAccount[] | null>(null);
+  const [accountsMsg, setAccountsMsg] = React.useState<string>("");
 
   React.useEffect(() => {
     if (domainInput?.trim()) {
@@ -85,6 +109,13 @@ export default function VerificationCard({
       setNormalizedDomain("");
     }
   }, [domainInput]);
+
+  React.useEffect(() => {
+    // Load linked accounts (if API exists)
+    refreshAccounts().catch(() => {
+      /* ignore */
+    });
+  }, []);
 
   function normalizeDomain(input: string): string {
     const raw = (input || "").trim();
@@ -124,7 +155,12 @@ export default function VerificationCard({
     onStatusChange?.(s);
   }
 
-  /** ------ DNS Flow (new endpoints) ------ */
+  function callbackUrl() {
+    // You can extend to include current pathname+search if desired.
+    return encodeURIComponent(returnTo || "/dashboard?verified=1");
+  }
+
+  /** ------ DNS Flow ------ */
   async function handleDnsGenerate() {
     setMessage("");
     if (!profileId) {
@@ -234,7 +270,7 @@ export default function VerificationCard({
     }
   }
 
-  /** ------ Platform Flow (existing endpoints) ------ */
+  /** ------ Platform Flow: Code-in-Bio (legacy/manual) ------ */
   async function handlePlatformStart() {
     setMessage("");
     setLoading(true);
@@ -275,6 +311,51 @@ export default function VerificationCard({
     }
   }
 
+  /** ------ OAuth Connect buttons ------ */
+  function startOAuth(provider: string) {
+    // NextAuth sign-in route: /api/auth/signin/<provider>?callbackUrl=<...>
+    const url = `/api/auth/signin/${provider}?callbackUrl=${callbackUrl()}`;
+    // Use hard navigation so the OAuth window can control redirects
+    window.location.href = url;
+  }
+
+  /** ------ Linked Accounts (via API) ------ */
+  async function refreshAccounts() {
+    try {
+      const r = await fetch("/api/verify/platform/list", { method: "GET" });
+      if (!r.ok) {
+        // If the route doesn't exist yet, fail silently
+        setAccounts(null);
+        return;
+      }
+      const j: ListAccountsResponse = await r.json();
+      setAccounts(j?.accounts || []);
+      setAccountsMsg("");
+    } catch (e: any) {
+      setAccounts(null);
+      setAccountsMsg("Could not load linked accounts.");
+    }
+  }
+
+  async function disconnectAccount(id: string) {
+    if (!id) return;
+    setAccountsMsg("");
+    try {
+      const r = await fetch(`/api/verify/platform/${id}`, {
+        method: "DELETE",
+      });
+      if (!r.ok) {
+        const text = await r.text();
+        setAccountsMsg(text || "Failed to disconnect.");
+      } else {
+        setAccountsMsg("Disconnected.");
+        refreshAccounts();
+      }
+    } catch (e: any) {
+      setAccountsMsg(e?.message || "Error disconnecting.");
+    }
+  }
+
   const profileMissing = !profileId;
 
   return (
@@ -283,7 +364,7 @@ export default function VerificationCard({
         <div>
           <div className="text-base font-semibold">Verify</div>
           <p className="text-sm text-neutral-600">
-            Prefer DNS TXT verification. We accept legacy values under the hood, but we recommend the new format below.
+            Prefer DNS TXT verification. You can also connect a platform account via OAuth, or use a code-in-bio fallback.
           </p>
         </div>
         <StatusBadge status={status} />
@@ -296,8 +377,115 @@ export default function VerificationCard({
         </div>
       )}
 
+      {/* OAuth Connect — quick path to Platform Verified */}
+      <section className="mt-2 rounded-xl border bg-neutral-50 p-4">
+        <div className="mb-2 text-sm font-medium">Connect a platform (OAuth)</div>
+        <p className="mb-3 text-xs text-neutral-600">
+          We’ll fetch your canonical identity (e.g., YouTube Channel ID, Twitter/X User ID) and mark your profile{" "}
+          <span className="font-medium">PLATFORM_VERIFIED</span>.
+        </p>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => startOAuth("google")}
+            disabled={loading || profileMissing}
+            className="rounded-xl border px-3 py-2 text-sm disabled:opacity-50"
+            title="Google / YouTube"
+          >
+            Connect Google · YouTube
+          </button>
+          <button
+            type="button"
+            onClick={() => startOAuth("facebook")}
+            disabled={loading || profileMissing}
+            className="rounded-xl border px-3 py-2 text-sm disabled:opacity-50"
+            title="Facebook (and Facebook Pages/IG Business via Graph later)"
+          >
+            Connect Facebook
+          </button>
+          <button
+            type="button"
+            onClick={() => startOAuth("twitter")}
+            disabled={loading || profileMissing}
+            className="rounded-xl border px-3 py-2 text-sm disabled:opacity-50"
+            title="X (Twitter)"
+          >
+            Connect X (Twitter)
+          </button>
+          {/* Uncomment when TikTok provider is enabled server-side
+          <button
+            type="button"
+            onClick={() => startOAuth("tiktok")}
+            disabled={loading || profileMissing}
+            className="rounded-xl border px-3 py-2 text-sm disabled:opacity-50"
+            title="TikTok"
+          >
+            Connect TikTok
+          </button>
+          */}
+        </div>
+
+        {/* Linked accounts list (if API route exists) */}
+        <div className="mt-4">
+          <div className="text-xs font-medium text-neutral-700">Linked accounts</div>
+          {accounts === null ? (
+            <p className="mt-1 text-xs text-neutral-500">
+              (Linked accounts will appear here once available.)
+            </p>
+          ) : accounts?.length ? (
+            <ul className="mt-2 divide-y rounded-xl border bg-white">
+              {accounts.map((a) => (
+                <li key={a.id} className="flex items-center justify-between gap-3 p-3 text-sm">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="rounded border px-2 py-0.5 text-xs uppercase text-neutral-700">
+                        {a.provider}
+                      </span>
+                      {a.status === "VERIFIED" ? (
+                        <span className="rounded bg-emerald-100 px-2 py-0.5 text-xs text-emerald-800">Verified</span>
+                      ) : a.status === "PENDING" ? (
+                        <span className="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-800">Pending</span>
+                      ) : (
+                        <span className="rounded bg-rose-100 px-2 py-0.5 text-xs text-rose-800">Failed</span>
+                      )}
+                    </div>
+                    <div className="mt-1 truncate font-mono text-xs text-neutral-700">
+                      {a.externalId}
+                    </div>
+                    {a.handle && (
+                      <div className="truncate text-xs text-neutral-600">{a.handle}</div>
+                    )}
+                    {a.url ? (
+                      <Link
+                        href={a.url}
+                        target="_blank"
+                        className="truncate text-xs text-blue-700 underline"
+                      >
+                        {a.url}
+                      </Link>
+                    ) : null}
+                  </div>
+                  <div className="shrink-0">
+                    <button
+                      onClick={() => disconnectAccount(a.id)}
+                      className="rounded-lg border px-3 py-1 text-xs hover:bg-neutral-50"
+                      type="button"
+                    >
+                      Disconnect
+                    </button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="mt-1 text-xs text-neutral-500">No accounts linked yet.</p>
+          )}
+          {!!accountsMsg && <p className="mt-2 text-xs text-neutral-700">{accountsMsg}</p>}
+        </div>
+      </section>
+
       {/* Domain input (used for DNS flow) */}
-      <div className="mt-2">
+      <div className="mt-5">
         <label htmlFor="domain" className="text-sm font-medium">Your domain</label>
         <div className="mt-2 flex items-center gap-2">
           <input
@@ -322,7 +510,7 @@ export default function VerificationCard({
         )}
       </div>
 
-      {/* Mode selector (initial) */}
+      {/* Mode selector (for DNS / Code-in-Bio) */}
       {!mode && (
         <div className="mt-4 flex flex-wrap gap-2">
           <button
@@ -403,7 +591,7 @@ export default function VerificationCard({
         </div>
       )}
 
-      {/* Platform instructions */}
+      {/* Code-in-Bio instructions */}
       {mode === "platform" && (
         <div className="mt-5 rounded-xl border bg-neutral-50 p-4">
           <p className="mb-2 text-sm font-medium">Add this code to one connected platform bio, then click “Check”:</p>
