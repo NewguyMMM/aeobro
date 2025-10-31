@@ -1,5 +1,5 @@
 // lib/auth.ts
-// ✅ Updated: 2025-10-31 07:32 ET
+// ✅ Updated: 2025-10-31 07:52 ET
 import type { NextAuthOptions } from "next-auth";
 import { PrismaAdapter } from "@auth/prisma-adapter";
 import { prisma } from "@/lib/prisma";
@@ -13,6 +13,9 @@ import TwitterProvider from "next-auth/providers/twitter";
 import { Resend } from "resend";
 import { verifyTurnstileToken } from "@/lib/verifyTurnstile";
 import { compare } from "bcryptjs";
+
+// 🆕 Provider identity dispatcher (see: lib/verify/providers/*)
+import { fetchProviderIdentity } from "@/lib/verify/providers";
 
 // ───────────────────────────────────────────────────────────
 // Branding / transactional email
@@ -267,7 +270,7 @@ If you did not request this, you can safely ignore this email.`;
 
 // ───────────────────────────────────────────────────────────
 // finalizePlatformVerification helper
-// - Fetch canonical identity for each provider
+// - Fetch canonical identity for each provider (via dispatcher)
 // - Upsert PlatformAccount
 // - Lift Profile.verificationStatus to PLATFORM_VERIFIED
 // ───────────────────────────────────────────────────────────
@@ -284,100 +287,21 @@ export async function finalizePlatformVerification({
   accessToken,
   scope,
 }: FinalizeParams) {
-  // Load user + profile
+  // 1) Load user + profile
   const user = await prisma.user.findUnique({
     where: { id: userId },
     include: { profile: true },
   });
   if (!user?.profile) return; // no profile to verify against
-
   const profile = user.profile;
 
-  let externalId = "";
-  let handle: string | undefined;
-  let url: string | undefined;
-  let platformContext: string | undefined;
-  const scopes = scope ?? "";
+  // 2) Canonical identity via provider module
+  const { externalId, handle, url, platformContext } =
+    await fetchProviderIdentity(provider, accessToken);
 
-  // Provider-specific canonical identity
-  if (provider === "google") {
-    // Use YouTube Data API to fetch channel identity
-    if (!accessToken) throw new Error("Missing Google access token");
+  if (!externalId) return; // safety
 
-    const resp = await fetch(
-      "https://www.googleapis.com/youtube/v3/channels?part=id%2Csnippet&mine=true",
-      {
-        headers: { Authorization: `Bearer ${accessToken}` },
-      }
-    );
-    if (!resp.ok) {
-      const text = await resp.text();
-      throw new Error(`YouTube channels list failed: ${resp.status} ${text}`);
-    }
-    const data: any = await resp.json();
-    const ch = data?.items?.[0];
-    if (!ch?.id) throw new Error("No YouTube channel found for this Google account");
-
-    externalId = ch.id;
-    handle = ch?.snippet?.title || undefined;
-    url = `https://www.youtube.com/channel/${externalId}`;
-    platformContext = "google-youtube";
-  }
-
-  if (provider === "facebook") {
-    // Minimal: get /me (id, name) and profile URL if available
-    if (!accessToken) throw new Error("Missing Facebook access token");
-    const meResp = await fetch(
-      "https://graph.facebook.com/v19.0/me?fields=id,name,link",
-      { headers: { Authorization: `Bearer ${accessToken}` } }
-    );
-    if (!meResp.ok) {
-      const text = await meResp.text();
-      throw new Error(`Facebook /me failed: ${meResp.status} ${text}`);
-    }
-    const me: any = await meResp.json();
-    externalId = me.id;
-    handle = me.name;
-    url = me.link || `https://www.facebook.com/${externalId}`;
-    platformContext = "facebook-user";
-    // NOTE: If you want to verify a Page or IG Business, fetch /me/accounts and choose one to store instead.
-  }
-
-  if (provider === "twitter") {
-    // X API v2: GET /2/users/me
-    if (!accessToken) throw new Error("Missing Twitter access token");
-    const twResp = await fetch("https://api.twitter.com/2/users/me", {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
-    if (!twResp.ok) {
-      const text = await twResp.text();
-      throw new Error(`Twitter /2/users/me failed: ${twResp.status} ${text}`);
-    }
-    const me: any = await twResp.json();
-    const userObj = me?.data;
-    if (!userObj?.id) throw new Error("No Twitter user id returned");
-    externalId = userObj.id;
-    handle = userObj.username ? `@${userObj.username}` : undefined;
-    url = userObj.username ? `https://twitter.com/${userObj.username}` : undefined;
-    platformContext = "twitter-user";
-  }
-
-  // // TikTok (custom) – implement when ready
-  // if (provider === "tiktok") {
-  //   if (!accessToken) throw new Error("Missing TikTok access token");
-  //   // Call TikTok userinfo endpoint to get open_id + display name
-  //   // externalId = open_id;
-  //   // handle = display_name;
-  //   // url = `https://www.tiktok.com/@${...}`;
-  //   // platformContext = "tiktok-user";
-  // }
-
-  if (!externalId) {
-    // Nothing to persist (provider not implemented)
-    return;
-  }
-
-  // Upsert PlatformAccount (unique on [provider, externalId])
+  // 3) Upsert PlatformAccount (unique on [provider, externalId])
   const pa = await prisma.platformAccount.upsert({
     where: { provider_externalId: { provider, externalId } },
     update: {
@@ -387,7 +311,7 @@ export async function finalizePlatformVerification({
       verifiedAt: new Date(),
       method: "OAUTH",
       platformContext,
-      scopes,
+      scopes: scope ?? "",
       profileId: profile.id, // (re)attach to current profile
       updatedAt: new Date(),
     },
@@ -402,11 +326,11 @@ export async function finalizePlatformVerification({
       verifiedAt: new Date(),
       method: "OAUTH",
       platformContext,
-      scopes,
+      scopes: scope ?? "",
     },
   });
 
-  // Lift profile to PLATFORM_VERIFIED (idempotent) and record provider details
+  // 4) Lift profile to PLATFORM_VERIFIED (idempotent) and record provider details
   const prevStatus = profile.verificationStatus;
   const verifiedMap = (profile.verifiedPlatforms as any) ?? {};
   verifiedMap[provider] = {
@@ -426,7 +350,7 @@ export async function finalizePlatformVerification({
     },
   });
 
-  // ChangeLog (optional but nice)
+  // 5) ChangeLog (optional)
   try {
     await prisma.changeLog.create({
       data: {
