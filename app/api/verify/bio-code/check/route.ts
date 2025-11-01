@@ -34,6 +34,7 @@ export async function POST(req: Request) {
       );
     }
 
+    // Soft plan gate (same policy as generate)
     const allowed = await ensurePlanAllowsBioCode(userId);
     if (!allowed.ok) {
       return NextResponse.json(
@@ -42,11 +43,13 @@ export async function POST(req: Request) {
       );
     }
 
+    // Resolve a usable handle + canonical URL
     const resolved = await resolveHandleAndUrl(userId, platform, handle, profileUrl);
     if (!resolved.ok) {
       return NextResponse.json({ error: resolved.message }, { status: 400 });
     }
 
+    // Find active code (by expiry window)
     const latest = await findActiveBioCode(userId, platform);
     if (!latest) {
       return NextResponse.json(
@@ -55,11 +58,13 @@ export async function POST(req: Request) {
       );
     }
 
+    // Pull the public bio/about text (or page HTML fallback) and look for the token
     const { bioText, rawHtml } = await fetchPlatformAbout(platform, resolved.handle!, resolved.url!);
     const haystack = `${bioText ?? ""}\n${rawHtml ?? ""}`.toLowerCase();
     const needle = latest.code.toLowerCase();
 
     if (!haystack.includes(needle)) {
+      // Touch account (optional last-checked)
       await touchPlatformAccount(userId, platform, resolved.handle, resolved.url);
       return NextResponse.json(
         { verified: false, message: "Code not found in public bio/about yet. Give it a minute and try again." },
@@ -69,16 +74,12 @@ export async function POST(req: Request) {
 
     const now = new Date();
 
+    // Success: delete the code (one-time use) and upsert PlatformAccount with BIO_CODE
     await prisma.$transaction(async (tx) => {
-      await tx.bioCode.update({
-        where: { id: latest.id },
-        data: { usedAt: now },
-      });
+      await tx.bioCode.delete({ where: { id: latest.id } });
 
       await tx.platformAccount.upsert({
-        where: {
-          userId_platform: { userId, platform },
-        },
+        where: { userId_platform: { userId, platform } },
         create: {
           userId,
           platform,
@@ -106,7 +107,7 @@ export async function POST(req: Request) {
     return NextResponse.json({
       verified: true,
       platformAccountId: platformAccount?.id,
-      matchedAt: (platformAccount?.verifiedAt ?? new Date()).toISOString(),
+      matchedAt: (platformAccount?.verifiedAt ?? now).toISOString(),
     });
   } catch (err: any) {
     console.error("[bio-code/check] error:", err);
@@ -119,7 +120,23 @@ export async function POST(req: Request) {
 
 /* -------------------- helpers -------------------- */
 
-async function ensurePlanAllowsBioCode(userId: string): Promise<{ ok: true } | { ok: false; message?: string }> {
+// Session → userId resolver (runtime safety)
+async function getAuthUserId(session: any): Promise<string | null> {
+  const id = session?.user?.id;
+  if (typeof id === "string" && id) return id;
+
+  const email = session?.user?.email;
+  if (typeof email === "string" && email) {
+    const user = await prisma.user.findUnique({ where: { email }, select: { id: true } });
+    if (user?.id) return user.id;
+  }
+  return null;
+}
+
+// Soft-gating helper (adjust to your schema as needed)
+async function ensurePlanAllowsBioCode(
+  userId: string
+): Promise<{ ok: true } | { ok: false; message?: string }> {
   try {
     const profile = await prisma.profile.findFirst({
       where: { userId },
@@ -136,6 +153,7 @@ async function ensurePlanAllowsBioCode(userId: string): Promise<{ ok: true } | {
   }
 }
 
+// Resolve a usable handle and canonical URL from (handle | profileUrl | existing PlatformAccount)
 async function resolveHandleAndUrl(
   userId: string,
   platform: string,
@@ -205,6 +223,7 @@ function buildDefaultUrl(platform: string, handle: string): string | undefined {
     case "etsy":
       return `https://www.etsy.com/shop/${handle}`;
     case "linkedin":
+      // users: /in/<handle>, companies: /company/<handle> — refine later as needed
       return `https://www.linkedin.com/in/${handle}`;
     case "facebook":
       return `https://www.facebook.com/${handle}`;
@@ -216,7 +235,7 @@ function buildDefaultUrl(platform: string, handle: string): string | undefined {
 async function findActiveBioCode(userId: string, platform: string) {
   const now = new Date();
   return prisma.bioCode.findFirst({
-    where: { userId, platform, usedAt: null, expiresAt: { gt: now } },
+    where: { userId, platform, /* usedAt: null, */ expiresAt: { gt: now } },
     orderBy: { createdAt: "desc" },
     select: { id: true, code: true, expiresAt: true },
   });
@@ -264,12 +283,16 @@ async function fetchPlatformAbout(
         return { bioText: [name, bio, blog].filter(Boolean).join("\n") };
       }
     }
+
     if (platform === "substack") {
+      // Try /about first, then home
       const about = await safeFetchText(`${url.replace(/\/+$/, "")}/about`);
       if (about) return { rawHtml: about };
       const home = await safeFetchText(url);
       return { rawHtml: home ?? "" };
     }
+
+    // Generic HTML fallback for other platforms
     const html = await safeFetchText(url);
     return { rawHtml: html ?? "" };
   } catch {
@@ -282,21 +305,9 @@ async function safeFetchText(url: string): Promise<string | undefined> {
     const res = await fetch(url, { cache: "no-store" });
     if (!res.ok) return;
     const text = await res.text();
+    // normalize superfluous whitespace
     return text.replace(/\s+/g, " ");
   } catch {
     return;
   }
-}
-
-// --- Session → userId resolver (runtime safety) ---
-async function getAuthUserId(session: any): Promise<string | null> {
-  const id = session?.user?.id;
-  if (typeof id === "string" && id) return id;
-
-  const email = session?.user?.email;
-  if (typeof email === "string" && email) {
-    const user = await prisma.user.findUnique({ where: { email }, select: { id: true } });
-    if (user?.id) return user.id;
-  }
-  return null;
 }
