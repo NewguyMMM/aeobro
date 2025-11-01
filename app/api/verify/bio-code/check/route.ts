@@ -34,7 +34,7 @@ export async function POST(req: Request) {
       );
     }
 
-    // Soft plan gate (same policy as generate)
+    // Soft plan gate (schema-agnostic)
     const allowed = await ensurePlanAllowsBioCode(userId);
     if (!allowed.ok) {
       return NextResponse.json(
@@ -101,8 +101,7 @@ export async function POST(req: Request) {
         // Build a create payload that tolerates different URL field names
         const createData: Record<string, any> = {
           userId,
-          // if your model uses a different field (e.g. provider), map it here:
-          platform: platform as any,
+          platform: platform as any, // if your schema uses `provider`, map it here
           method: "BIO_CODE",
           verifiedAt: now,
           lastCheckedAt: now,
@@ -119,7 +118,7 @@ export async function POST(req: Request) {
     const platformAccount = await prisma.platformAccount.findFirst({
       where: { userId, platform } as any,
       select: { id: true } as any,
-      orderBy: { updatedAt: "desc" } as any, // omit or keep; casted for safety
+      orderBy: { updatedAt: "desc" } as any, // omit if you don't have updatedAt
     });
 
     return NextResponse.json({
@@ -151,16 +150,20 @@ async function getAuthUserId(session: any): Promise<string | null> {
   return null;
 }
 
-// Soft-gating helper (adjust to your schema as needed)
+// Soft-gating helper (schema-agnostic)
 async function ensurePlanAllowsBioCode(
   userId: string
 ): Promise<{ ok: true } | { ok: false; message?: string }> {
   try {
-    const profile = await prisma.profile.findFirst({
-      where: { userId },
-      select: { plan: true },
-    });
-    const plan = (profile?.plan || "Lite").toLowerCase();
+    const profile = await prisma.profile.findFirst({ where: { userId } });
+    const raw =
+      (profile as any)?.plan ??
+      (profile as any)?.tier ??
+      (profile as any)?.subscriptionPlan ??
+      "Lite";
+    const plan =
+      typeof raw === "string" ? raw.toLowerCase() : String(raw ?? "Lite").toLowerCase();
+
     const allowed = ["lite", "plus", "pro", "business", "enterprise"].includes(plan);
     if (!allowed) {
       return { ok: false, message: "Please upgrade your plan to use Code-in-Bio verification." };
@@ -187,7 +190,7 @@ async function resolveHandleAndUrl(
 
   const existing = await prisma.platformAccount.findFirst({
     where: { userId, platform } as any,
-    select: { handle: true, /* tolerate schema variance */ } as any,
+    select: { handle: true } as any,
   });
   if ((existing as any)?.handle) {
     const h = (existing as any).handle as string;
@@ -238,7 +241,7 @@ function buildDefaultUrl(platform: string, handle: string): string | undefined {
     case "etsy":
       return `https://www.etsy.com/shop/${handle}`;
     case "linkedin":
-      return `https://www.linkedin.com/in/${handle}`; // adjust for company pages if needed
+      return `https://www.linkedin.com/in/${handle}`;
     case "facebook":
       return `https://www.facebook.com/${handle}`;
     default:
