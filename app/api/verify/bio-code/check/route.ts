@@ -78,44 +78,48 @@ export async function POST(req: Request) {
     await prisma.$transaction(async (tx) => {
       await tx.bioCode.delete({ where: { id: latest.id } });
 
-      // Some schemas don't have `platform` typed on PlatformAccount; use `as any`
       const existing = await tx.platformAccount.findFirst({
-        where: { userId, platform } as any,
+        where: { userId, platform } as any, // tolerate schema variance
         select: { id: true },
       });
 
       if (existing?.id) {
+        // Build an update payload that tolerates different URL field names
+        const updateData: Record<string, any> = {
+          method: "BIO_CODE",
+          verifiedAt: now,
+          lastCheckedAt: now,
+        };
+        if (resolved.handle) updateData.handle = resolved.handle;
+        Object.assign(updateData, urlFieldPatch(resolved.url));
+
         await tx.platformAccount.update({
           where: { id: existing.id },
-          data: {
-            handle: resolved.handle ?? undefined,
-            profileUrl: resolved.url ?? undefined,
-            method: "BIO_CODE",
-            verifiedAt: now,
-            lastCheckedAt: now,
-          },
+          data: updateData as any,
         });
       } else {
+        // Build a create payload that tolerates different URL field names
+        const createData: Record<string, any> = {
+          userId,
+          // if your model uses a different field (e.g. provider), map it here:
+          platform: platform as any,
+          method: "BIO_CODE",
+          verifiedAt: now,
+          lastCheckedAt: now,
+        };
+        if (resolved.handle) createData.handle = resolved.handle;
+        Object.assign(createData, urlFieldPatch(resolved.url));
+
         await tx.platformAccount.create({
-          data: {
-            userId,
-            // If your model uses a different field name (e.g., `provider`), map it here:
-            // @ts-ignore – tolerate schema variance at compile time
-            platform: platform as any,
-            handle: resolved.handle ?? null,
-            profileUrl: resolved.url ?? null,
-            method: "BIO_CODE",
-            verifiedAt: now,
-            lastCheckedAt: now,
-          } as any,
+          data: createData as any,
         });
       }
     });
 
     const platformAccount = await prisma.platformAccount.findFirst({
       where: { userId, platform } as any,
-      select: { id: true, /* tolerate schema variance */ } as any,
-      orderBy: { updatedAt: "desc" } as any, // omit if you don't have updatedAt
+      select: { id: true } as any,
+      orderBy: { updatedAt: "desc" } as any, // omit or keep; casted for safety
     });
 
     return NextResponse.json({
@@ -183,16 +187,11 @@ async function resolveHandleAndUrl(
 
   const existing = await prisma.platformAccount.findFirst({
     where: { userId, platform } as any,
-    select: { handle: true, profileUrl: true },
+    select: { handle: true, /* tolerate schema variance */ } as any,
   });
-  if (existing?.profileUrl || existing?.handle) {
-    return {
-      ok: true,
-      handle: (existing as any).handle ?? parseHandleFromUrl(platform, (existing as any).profileUrl!),
-      url:
-        (existing as any).profileUrl ??
-        ((existing as any).handle ? buildDefaultUrl(platform, (existing as any).handle) : undefined),
-    };
+  if ((existing as any)?.handle) {
+    const h = (existing as any).handle as string;
+    return { ok: true, handle: h, url: buildDefaultUrl(platform, h) };
   }
 
   return { ok: false, message: "Provide a handle or profileUrl to check." };
@@ -239,7 +238,7 @@ function buildDefaultUrl(platform: string, handle: string): string | undefined {
     case "etsy":
       return `https://www.etsy.com/shop/${handle}`;
     case "linkedin":
-      return `https://www.linkedin.com/in/${handle}`; // adjust if you store company pages
+      return `https://www.linkedin.com/in/${handle}`; // adjust for company pages if needed
     case "facebook":
       return `https://www.facebook.com/${handle}`;
     default:
@@ -250,7 +249,7 @@ function buildDefaultUrl(platform: string, handle: string): string | undefined {
 async function findActiveBioCode(userId: string, platform: string) {
   const now = new Date();
   return prisma.bioCode.findFirst({
-    where: { userId, platform, expiresAt: { gt: now } },
+    where: { userId, platform, expiresAt: { gt: now } } as any,
     orderBy: { createdAt: "desc" },
     select: { id: true, code: true, expiresAt: true },
   });
@@ -265,25 +264,25 @@ async function touchPlatformAccount(userId: string, platform: string, handle?: s
     });
 
     if (existing?.id) {
+      const updateData: Record<string, any> = { lastCheckedAt: now };
+      if (handle) updateData.handle = handle;
+      Object.assign(updateData, urlFieldPatch(url));
+
       await prisma.platformAccount.update({
         where: { id: existing.id },
-        data: {
-          handle: handle ?? undefined,
-          profileUrl: url ?? undefined,
-          lastCheckedAt: now,
-        },
+        data: updateData as any,
       });
     } else {
+      const createData: Record<string, any> = {
+        userId,
+        platform: platform as any,
+        lastCheckedAt: now,
+      };
+      if (handle) createData.handle = handle;
+      Object.assign(createData, urlFieldPatch(url));
+
       await prisma.platformAccount.create({
-        data: {
-          userId,
-          // If your model uses a different field name (e.g., `provider`), map it here:
-          // @ts-ignore
-          platform: platform as any,
-          handle: handle ?? null,
-          profileUrl: url ?? null,
-          lastCheckedAt: now,
-        } as any,
+        data: createData as any,
       });
     }
   } catch {
@@ -337,4 +336,15 @@ async function safeFetchText(url: string): Promise<string | undefined> {
   } catch {
     return;
   }
+}
+
+/** Build a tiny patch object assigning the profile URL to whichever field your schema uses. */
+function urlFieldPatch(url?: string | null): Record<string, any> {
+  if (!url) return {};
+  return {
+    // one of these will exist on your schema; casts keep TS happy
+    profileUrl: url,
+    url,
+    profile: url,
+  } as any;
 }
