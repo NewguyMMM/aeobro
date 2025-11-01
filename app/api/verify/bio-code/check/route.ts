@@ -49,11 +49,11 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: resolved.message }, { status: 400 });
     }
 
-    // Find active code (by expiry window)
-    const latest = await findActiveBioCode(userId, platform);
+    // Find active code (MUST be scoped to the same profileUrl)
+    const latest = await findActiveBioCode(userId, platform, resolved.url!);
     if (!latest) {
       return NextResponse.json(
-        { error: "No active BioCode found. Generate one first." },
+        { error: "No active BioCode found for this profile URL. Generate one first." },
         { status: 400 }
       );
     }
@@ -249,10 +249,10 @@ function buildDefaultUrl(platform: string, handle: string): string | undefined {
   }
 }
 
-async function findActiveBioCode(userId: string, platform: string) {
+async function findActiveBioCode(userId: string, platform: string, profileUrl: string) {
   const now = new Date();
   return prisma.bioCode.findFirst({
-    where: { userId, platform, expiresAt: { gt: now } } as any,
+    where: { userId, platform, profileUrl, expiresAt: { gt: now } } as any,
     orderBy: { createdAt: "desc" },
     select: { id: true, code: true, expiresAt: true },
   });
