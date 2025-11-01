@@ -59,7 +59,7 @@ export async function POST(req: Request) {
       where: {
         userId,
         platform,
-        // usedAt: null, // not used in your schema; rely on expiry
+        // usedAt: null, // not present in your schema; rely on expiry only
         expiresAt: { gt: now },
       },
       orderBy: { createdAt: "desc" },
