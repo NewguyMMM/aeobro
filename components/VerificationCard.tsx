@@ -1,6 +1,6 @@
 // components/VerificationCard.tsx
 // AEOBRO — Domain + Platform Verification Card (DNS • Code-in-Bio • OAuth Connect)
-// ✅ Updated: 2025-10-31 06:57 ET
+// ✅ Updated: 2025-11-01 07:12 ET — Added Code-in-Bio (Generate & Check) section
 
 "use client";
 
@@ -95,7 +95,7 @@ export default function VerificationCard({
   const [dnsRecordType, setDnsRecordType] = React.useState<"TXT">("TXT");
   const [dnsRecordValue, setDnsRecordValue] = React.useState<string>("");
 
-  // Platform (code-in-bio) state
+  // Legacy/manual platform code marker (kept for backward compatibility)
   const [platformMarker, setPlatformMarker] = React.useState<string>("");
 
   // OAuth-linked accounts state
@@ -156,7 +156,6 @@ export default function VerificationCard({
   }
 
   function callbackUrl() {
-    // You can extend to include current pathname+search if desired.
     return encodeURIComponent(returnTo || "/dashboard?verified=1");
   }
 
@@ -270,7 +269,7 @@ export default function VerificationCard({
     }
   }
 
-  /** ------ Platform Flow: Code-in-Bio (legacy/manual) ------ */
+  /** ------ Legacy manual platform flow (kept, but superseded by Code-in-Bio UI below) ------ */
   async function handlePlatformStart() {
     setMessage("");
     setLoading(true);
@@ -313,9 +312,7 @@ export default function VerificationCard({
 
   /** ------ OAuth Connect buttons ------ */
   function startOAuth(provider: string) {
-    // NextAuth sign-in route: /api/auth/signin/<provider>?callbackUrl=<...>
     const url = `/api/auth/signin/${provider}?callbackUrl=${callbackUrl()}`;
-    // Use hard navigation so the OAuth window can control redirects
     window.location.href = url;
   }
 
@@ -324,7 +321,6 @@ export default function VerificationCard({
     try {
       const r = await fetch("/api/verify/platform/list", { method: "GET" });
       if (!r.ok) {
-        // If the route doesn't exist yet, fail silently
         setAccounts(null);
         return;
       }
@@ -364,7 +360,7 @@ export default function VerificationCard({
         <div>
           <div className="text-base font-semibold">Verify</div>
           <p className="text-sm text-neutral-600">
-            Prefer DNS TXT verification. You can also connect a platform account via OAuth, or use a code-in-bio fallback.
+            Prefer DNS TXT verification. You can also connect a platform via OAuth, or use our Code-in-Bio verifier.
           </p>
         </div>
         <StatusBadge status={status} />
@@ -377,8 +373,22 @@ export default function VerificationCard({
         </div>
       )}
 
-      {/* OAuth Connect — quick path to Platform Verified */}
+      {/* === NEW: Code-in-Bio (Generate & Check) === */}
       <section className="mt-2 rounded-xl border bg-neutral-50 p-4">
+        <div className="mb-2 text-sm font-medium">Verify with Code-in-Bio</div>
+        <p className="mb-3 text-xs text-neutral-600">
+          Paste your profile URL, generate a short code, add it to your bio/about, then click <em>Check Now</em>.
+        </p>
+
+        <div className="grid gap-3">
+          {PLATFORMS.map((p) => (
+            <PlatformBioRow key={p.key} platform={p.key} label={p.label} placeholder={p.placeholder} disabled={loading || profileMissing} onVerified={() => updateStatus("PLATFORM_VERIFIED")} />
+          ))}
+        </div>
+      </section>
+
+      {/* OAuth Connect — quick path to Platform Verified */}
+      <section className="mt-4 rounded-xl border bg-neutral-50 p-4">
         <div className="mb-2 text-sm font-medium">Connect a platform (OAuth)</div>
         <p className="mb-3 text-xs text-neutral-600">
           We’ll fetch your canonical identity (e.g., YouTube Channel ID, Twitter/X User ID) and mark your profile{" "}
@@ -412,17 +422,7 @@ export default function VerificationCard({
           >
             Connect X (Twitter)
           </button>
-          {/* Uncomment when TikTok provider is enabled server-side
-          <button
-            type="button"
-            onClick={() => startOAuth("tiktok")}
-            disabled={loading || profileMissing}
-            className="rounded-xl border px-3 py-2 text-sm disabled:opacity-50"
-            title="TikTok"
-          >
-            Connect TikTok
-          </button>
-          */}
+          {/* <button onClick={() => startOAuth("tiktok")} ...>Connect TikTok</button> */}
         </div>
 
         {/* Linked accounts list (if API route exists) */}
@@ -510,7 +510,7 @@ export default function VerificationCard({
         )}
       </div>
 
-      {/* Mode selector (for DNS / Code-in-Bio) */}
+      {/* Mode selector for legacy DNS/Platform actions */}
       {!mode && (
         <div className="mt-4 flex flex-wrap gap-2">
           <button
@@ -527,7 +527,7 @@ export default function VerificationCard({
             className="rounded-xl border px-4 py-2 disabled:opacity-50"
             type="button"
           >
-            Use code-in-bio
+            Use code-in-bio (legacy)
           </button>
         </div>
       )}
@@ -591,7 +591,7 @@ export default function VerificationCard({
         </div>
       )}
 
-      {/* Code-in-Bio instructions */}
+      {/* Legacy Code-in-Bio instructions (kept for compatibility) */}
       {mode === "platform" && (
         <div className="mt-5 rounded-xl border bg-neutral-50 p-4">
           <p className="mb-2 text-sm font-medium">Add this code to one connected platform bio, then click “Check”:</p>
@@ -617,6 +617,153 @@ export default function VerificationCard({
           <span className="font-medium">DOMAIN_VERIFIED</span>.
         </p>
       </details>
+    </div>
+  );
+}
+
+/* ---------- Small embedded component for Code-in-Bio rows ---------- */
+
+type PlatformKey =
+  | "instagram"
+  | "x"
+  | "tiktok"
+  | "substack"
+  | "youtube"
+  | "facebook"
+  | "linkedin"
+  | "github"
+  | "etsy";
+
+const PLATFORMS: Array<{ key: PlatformKey; label: string; placeholder: string }> = [
+  { key: "instagram", label: "Instagram", placeholder: "https://www.instagram.com/your_handle/" },
+  { key: "x",         label: "X (Twitter)", placeholder: "https://x.com/your_handle" },
+  { key: "tiktok",    label: "TikTok", placeholder: "https://www.tiktok.com/@your_handle" },
+  { key: "substack",  label: "Substack", placeholder: "https://yourname.substack.com/" },
+  { key: "youtube",   label: "YouTube", placeholder: "https://www.youtube.com/@your_handle" },
+  { key: "facebook",  label: "Facebook", placeholder: "https://www.facebook.com/your.profile" },
+  { key: "linkedin",  label: "LinkedIn", placeholder: "https://www.linkedin.com/in/your-handle/" },
+  { key: "github",    label: "GitHub", placeholder: "https://github.com/yourname" },
+  { key: "etsy",      label: "Etsy", placeholder: "https://www.etsy.com/shop/yourshop" },
+];
+
+function PlatformBioRow({
+  platform,
+  label,
+  placeholder,
+  disabled,
+  onVerified,
+}: {
+  platform: PlatformKey;
+  label: string;
+  placeholder: string;
+  disabled?: boolean;
+  onVerified?: () => void;
+}) {
+  const [profileUrl, setProfileUrl] = React.useState<string>("");
+  const [code, setCode] = React.useState<string>("");
+  const [expiresAt, setExpiresAt] = React.useState<string>("");
+  const [busy, setBusy] = React.useState<false | "gen" | "check">(false);
+  const [msg, setMsg] = React.useState<string>("");
+  const [ok, setOk] = React.useState<boolean>(false);
+
+  async function onGenerate() {
+    try {
+      setBusy("gen"); setMsg("");
+      const r = await fetch("/api/verify/bio-code/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ platform, profileUrl }),
+      });
+      const j = await r.json();
+      if (!r.ok || !j?.ok) throw new Error(j?.error || "Failed to generate code");
+      setCode(j.code);
+      setExpiresAt(j.expiresAt);
+      setMsg("Code generated. Paste it into your bio, then click Check Now.");
+    } catch (e: any) {
+      setMsg(e?.message || "Error generating code");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function onCheck() {
+    try {
+      setBusy("check"); setMsg("");
+      const r = await fetch("/api/verify/bio-code/check", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ platform, profileUrl }),
+      });
+      const j = await r.json();
+      if (!r.ok || j?.verified !== true) {
+        setOk(false);
+        setMsg(j?.message || j?.error || "Verification not found yet.");
+        return;
+      }
+      setOk(true);
+      setMsg("Verified! This account is now platform-verified via Code-in-Bio.");
+      onVerified?.();
+    } catch (e: any) {
+      setOk(false);
+      setMsg(e?.message || "Error checking code");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="rounded-xl bg-white p-3 ring-1 ring-neutral-200">
+      <div className="flex items-center justify-between gap-3">
+        <div className="text-sm font-medium">{label}</div>
+        {ok && <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs text-emerald-800">Verified</span>}
+      </div>
+
+      <div className="mt-2 grid gap-2 md:grid-cols-[1fr,auto,auto]">
+        <input
+          className="w-full rounded-lg border px-3 py-2 text-sm"
+          placeholder={placeholder}
+          value={profileUrl}
+          onChange={(e) => setProfileUrl(e.target.value)}
+          disabled={!!busy || disabled}
+        />
+        <button
+          onClick={onGenerate}
+          disabled={!profileUrl || !!busy || disabled}
+          className="rounded-lg bg-blue-600 px-3 py-2 text-sm text-white disabled:opacity-50"
+        >
+          {busy === "gen" ? "Generating…" : "Generate Code"}
+        </button>
+        <button
+          onClick={onCheck}
+          disabled={!profileUrl || !!busy || disabled}
+          className="rounded-lg border px-3 py-2 text-sm disabled:opacity-50"
+        >
+          {busy === "check" ? "Checking…" : "Check Now"}
+        </button>
+      </div>
+
+      {code && (
+        <div className="mt-2 rounded-lg bg-neutral-50 p-2 text-xs">
+          <div className="font-medium">Your code:</div>
+          <code className="block break-all">{code}</code>
+          {expiresAt && (
+            <div className="mt-1 text-[11px] text-neutral-600">
+              Expires: {new Date(expiresAt).toLocaleString()}
+            </div>
+          )}
+          <ul className="mt-1 list-disc pl-5 text-[11px] text-neutral-700 space-y-0.5">
+            <li>Copy the code exactly as shown.</li>
+            <li>Edit your {label} profile and paste it into the bio/about section.</li>
+            <li>Make sure your profile is public, then click <strong>Check Now</strong>.</li>
+          </ul>
+        </div>
+      )}
+
+      {!!msg && (
+        <div className={`mt-2 text-xs ${ok ? "text-emerald-700" : "text-neutral-700"}`}>
+          {msg}
+        </div>
+      )}
     </div>
   );
 }
