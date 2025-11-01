@@ -38,7 +38,7 @@ export async function POST(req: Request) {
       );
     }
 
-    // Optional soft-gating by plan (adjust the internals for your schema)
+    // Soft plan gate (tweak to your schema/policy if needed)
     const allowed = await ensurePlanAllowsBioCode(userId);
     if (!allowed.ok) {
       return NextResponse.json(
@@ -59,7 +59,7 @@ export async function POST(req: Request) {
       where: {
         userId,
         platform,
-        usedAt: null,
+        // usedAt: null, // not used in your schema; rely on expiry
         expiresAt: { gt: now },
       },
       orderBy: { createdAt: "desc" },
@@ -105,8 +105,25 @@ export async function POST(req: Request) {
   }
 }
 
-// --- Soft-gating helper (adjust to your schema as needed) ---
-async function ensurePlanAllowsBioCode(userId: string): Promise<{ ok: true } | { ok: false; message?: string }> {
+/* -------------------- helpers -------------------- */
+
+// Session → userId resolver (runtime safety)
+async function getAuthUserId(session: any): Promise<string | null> {
+  const id = session?.user?.id;
+  if (typeof id === "string" && id) return id;
+
+  const email = session?.user?.email;
+  if (typeof email === "string" && email) {
+    const user = await prisma.user.findUnique({ where: { email }, select: { id: true } });
+    if (user?.id) return user.id;
+  }
+  return null;
+}
+
+// Soft-gating helper (adjust to your schema as needed)
+async function ensurePlanAllowsBioCode(
+  userId: string
+): Promise<{ ok: true } | { ok: false; message?: string }> {
   try {
     const profile = await prisma.profile.findFirst({
       where: { userId },
@@ -121,17 +138,4 @@ async function ensurePlanAllowsBioCode(userId: string): Promise<{ ok: true } | {
   } catch {
     return { ok: true };
   }
-}
-
-// --- Session → userId resolver (runtime safety) ---
-async function getAuthUserId(session: any): Promise<string | null> {
-  const id = session?.user?.id;
-  if (typeof id === "string" && id) return id;
-
-  const email = session?.user?.email;
-  if (typeof email === "string" && email) {
-    const user = await prisma.user.findUnique({ where: { email }, select: { id: true } });
-    if (user?.id) return user.id;
-  }
-  return null;
 }
