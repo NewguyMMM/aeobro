@@ -1,6 +1,7 @@
 // app/api/verify/bio/request/route.ts
-// ✅ Updated: 2025-11-01 07:22 ET
+// ✅ Updated: 2025-11-01 07:14 ET
 // Legacy alias for "bio-code/generate" — keeps old clients working.
+// Fix: include required `profileUrl` (fallback to empty string), include `expiresAt`.
 
 export const runtime = "nodejs";
 
@@ -33,7 +34,10 @@ export async function POST(req: Request) {
     }
 
     // Legacy body: { platform, profileUrl?, ttlHours? }
-    const { platform, profileUrl, ttlHours } = await req.json().catch(() => ({}));
+    const body = await req.json().catch(() => ({}));
+    const platform: string | undefined = body?.platform;
+    const profileUrl: string | undefined = body?.profileUrl;
+    const ttlHours: number | undefined = body?.ttlHours;
 
     if (typeof platform !== "string" || !SUPPORTED_PLATFORMS.has(platform)) {
       return NextResponse.json(
@@ -42,7 +46,6 @@ export async function POST(req: Request) {
       );
     }
 
-    // Soft plan gate (same logic as new endpoints)
     const allowed = await ensurePlanAllowsBioCode(userId);
     if (!allowed.ok) {
       return NextResponse.json(
@@ -52,13 +55,13 @@ export async function POST(req: Request) {
     }
 
     const now = new Date();
-    const ttlHoursNum =
+    const ttl =
       typeof ttlHours === "number" && ttlHours > 0 && ttlHours <= 72
         ? ttlHours
         : BIO_CODE_TTL_HOURS_DEFAULT;
-    const expiresAt = new Date(now.getTime() + ttlHoursNum * 60 * 60 * 1000);
+    const expiresAt = new Date(now.getTime() + ttl * 60 * 60 * 1000);
 
-    // Reuse an existing valid code if present (keeps UX stable)
+    // Reuse an existing valid code if present
     const existing = await prisma.bioCode.findFirst({
       where: { userId, platform, expiresAt: { gt: now } },
       orderBy: { createdAt: "desc" },
@@ -71,26 +74,22 @@ export async function POST(req: Request) {
         platform: existing.platform,
         code: existing.code,
         expiresAt: existing.expiresAt,
-        // keep legacy response lenient
         instructions:
           "Paste this exact string in your bio/about. Then click “Check now” in AEOBRO.",
       });
     }
 
-    // Mint a fresh token (same format as /bio-code/generate)
+    // Mint a fresh token and persist (include required profileUrl)
     const rand = crypto.randomBytes(6).toString("base64url").slice(0, 8).toUpperCase();
     const code = `AEOBRO-${platform.toUpperCase()}-${rand}`;
 
-    // IMPORTANT: only include fields that exist on your Prisma model.
-    // Do NOT pass "status" here; ensure "expiresAt" is provided.
     const created = await prisma.bioCode.create({
       data: {
         userId,
         platform,
         code,
         expiresAt,
-        // If your model has a `profileUrl` column, you can uncomment the next line.
-        // profileUrl,
+        profileUrl: profileUrl ?? "", // ⬅️ required by your Prisma model
       },
       select: { code: true, expiresAt: true, platform: true },
     });
@@ -141,7 +140,6 @@ async function ensurePlanAllowsBioCode(
     }
     return { ok: true };
   } catch {
-    // Soft-allow on lookup failure
     return { ok: true };
   }
 }
