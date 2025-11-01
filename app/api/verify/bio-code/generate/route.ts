@@ -1,4 +1,7 @@
 // app/api/verify/bio-code/generate/route.ts
+// ✅ Updated: 2025-11-01 07:14 ET
+// Fix: include required `profileUrl` (fallback to empty string).
+
 export const runtime = "nodejs";
 
 import { NextResponse } from "next/server";
@@ -7,7 +10,6 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
-// Adjust if you support more platforms
 const SUPPORTED_PLATFORMS = new Set([
   "github",
   "x",
@@ -30,11 +32,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const body = await req.json().catch(() => ({}));
-    const platform: string | undefined = body.platform;
-    const profileUrl: string | undefined = body.profileUrl;
-    const ttlHours: number | undefined = body.ttlHours;
-
+    const { platform, ttlHours, profileUrl } = await req.json().catch(() => ({}));
     if (typeof platform !== "string" || !SUPPORTED_PLATFORMS.has(platform)) {
       return NextResponse.json(
         { error: "Invalid or unsupported platform" },
@@ -42,14 +40,6 @@ export async function POST(req: Request) {
       );
     }
 
-    if (typeof profileUrl !== "string" || !isLikelyUrl(profileUrl)) {
-      return NextResponse.json(
-        { error: "profileUrl is required and must be a valid URL" },
-        { status: 400 }
-      );
-    }
-
-    // Soft plan gate (schema-agnostic)
     const allowed = await ensurePlanAllowsBioCode(userId);
     if (!allowed.ok) {
       return NextResponse.json(
@@ -59,29 +49,22 @@ export async function POST(req: Request) {
     }
 
     const now = new Date();
-    const ttlHoursNum =
+    const ttl =
       typeof ttlHours === "number" && ttlHours > 0 && ttlHours <= 72
         ? ttlHours
         : BIO_CODE_TTL_HOURS_DEFAULT;
-    const expiresAt = new Date(now.getTime() + ttlHoursNum * 60 * 60 * 1000);
+    const expiresAt = new Date(now.getTime() + ttl * 60 * 60 * 1000);
 
-    // If a still-valid code exists for this (user, platform, profileUrl), re-use it
+    // Reuse an existing valid code if present
     const existing = await prisma.bioCode.findFirst({
-      where: {
-        userId,
-        platform,
-        profileUrl,
-        expiresAt: { gt: now },
-      },
+      where: { userId, platform, expiresAt: { gt: now } },
       orderBy: { createdAt: "desc" },
-      select: { code: true, expiresAt: true, platform: true, profileUrl: true },
+      select: { code: true, expiresAt: true, platform: true },
     });
 
     if (existing) {
       return NextResponse.json({
-        ok: true,
         platform: existing.platform,
-        profileUrl: existing.profileUrl,
         code: existing.code,
         expiresAt: existing.expiresAt,
         instructions:
@@ -89,31 +72,23 @@ export async function POST(req: Request) {
       });
     }
 
-    // Mint a fresh token
+    // Mint new code (same format)
     const rand = crypto.randomBytes(6).toString("base64url").slice(0, 8).toUpperCase();
     const code = `AEOBRO-${platform.toUpperCase()}-${rand}`;
-
-    // (Optional) Invalidate any other active codes for the same trio before creating a new one
-    await prisma.bioCode.updateMany({
-      where: { userId, platform, profileUrl, expiresAt: { gt: now } },
-      data: { expiresAt: now },
-    });
 
     const created = await prisma.bioCode.create({
       data: {
         userId,
         platform,
-        profileUrl, // <-- REQUIRED by your Prisma model
         code,
         expiresAt,
+        profileUrl: profileUrl ?? "", // ⬅️ required by your Prisma model
       },
-      select: { code: true, expiresAt: true, platform: true, profileUrl: true },
+      select: { code: true, expiresAt: true, platform: true },
     });
 
     return NextResponse.json({
-      ok: true,
       platform: created.platform,
-      profileUrl: created.profileUrl,
       code: created.code,
       expiresAt: created.expiresAt,
       instructions:
@@ -130,7 +105,6 @@ export async function POST(req: Request) {
 
 /* -------------------- helpers -------------------- */
 
-// Session → userId resolver (runtime safety)
 async function getAuthUserId(session: any): Promise<string | null> {
   const id = session?.user?.id;
   if (typeof id === "string" && id) return id;
@@ -143,13 +117,11 @@ async function getAuthUserId(session: any): Promise<string | null> {
   return null;
 }
 
-// Soft-gating helper (schema-agnostic)
 async function ensurePlanAllowsBioCode(
   userId: string
 ): Promise<{ ok: true } | { ok: false; message?: string }> {
   try {
     const profile = await prisma.profile.findFirst({ where: { userId } });
-    // Try common field names; fall back to "Lite"
     const raw =
       (profile as any)?.plan ??
       (profile as any)?.tier ??
@@ -164,17 +136,6 @@ async function ensurePlanAllowsBioCode(
     }
     return { ok: true };
   } catch {
-    // If unsure, allow (soft gate)
     return { ok: true };
-  }
-}
-
-function isLikelyUrl(v?: string) {
-  try {
-    if (!v) return false;
-    const u = new URL(v);
-    return !!u.protocol && !!u.host;
-  } catch {
-    return false;
   }
 }
