@@ -74,34 +74,45 @@ export async function POST(req: Request) {
 
     const now = new Date();
 
-    // Success: delete the code (one-time use) and upsert PlatformAccount with BIO_CODE
+    // Success: delete the code (one-time use) and update/create PlatformAccount with BIO_CODE
     await prisma.$transaction(async (tx) => {
       await tx.bioCode.delete({ where: { id: latest.id } });
 
-      await tx.platformAccount.upsert({
-        where: { userId_platform: { userId, platform } },
-        create: {
-          userId,
-          platform,
-          handle: resolved.handle ?? null,
-          profileUrl: resolved.url ?? null,
-          method: "BIO_CODE",
-          verifiedAt: now,
-          lastCheckedAt: now,
-        },
-        update: {
-          handle: resolved.handle ?? undefined,
-          profileUrl: resolved.url ?? undefined,
-          method: "BIO_CODE",
-          verifiedAt: now,
-          lastCheckedAt: now,
-        },
+      const existing = await tx.platformAccount.findFirst({
+        where: { userId, platform },
+        select: { id: true },
       });
+
+      if (existing?.id) {
+        await tx.platformAccount.update({
+          where: { id: existing.id },
+          data: {
+            handle: resolved.handle ?? undefined,
+            profileUrl: resolved.url ?? undefined,
+            method: "BIO_CODE",
+            verifiedAt: now,
+            lastCheckedAt: now,
+          },
+        });
+      } else {
+        await tx.platformAccount.create({
+          data: {
+            userId,
+            platform,
+            handle: resolved.handle ?? null,
+            profileUrl: resolved.url ?? null,
+            method: "BIO_CODE",
+            verifiedAt: now,
+            lastCheckedAt: now,
+          },
+        });
+      }
     });
 
-    const platformAccount = await prisma.platformAccount.findUnique({
-      where: { userId_platform: { userId, platform } },
+    const platformAccount = await prisma.platformAccount.findFirst({
+      where: { userId, platform },
       select: { id: true, platform: true, handle: true, profileUrl: true, verifiedAt: true },
+      orderBy: { updatedAt: "desc" }, // if you have updatedAt; otherwise omit
     });
 
     return NextResponse.json({
@@ -167,8 +178,8 @@ async function resolveHandleAndUrl(
     return { ok: true, handle, url: buildDefaultUrl(platform, handle) };
   }
 
-  const existing = await prisma.platformAccount.findUnique({
-    where: { userId_platform: { userId, platform } },
+  const existing = await prisma.platformAccount.findFirst({
+    where: { userId, platform },
     select: { handle: true, profileUrl: true },
   });
   if (existing?.profileUrl || existing?.handle) {
@@ -244,21 +255,31 @@ async function findActiveBioCode(userId: string, platform: string) {
 async function touchPlatformAccount(userId: string, platform: string, handle?: string, url?: string) {
   const now = new Date();
   try {
-    await prisma.platformAccount.upsert({
-      where: { userId_platform: { userId, platform } },
-      create: {
-        userId,
-        platform,
-        handle: handle ?? null,
-        profileUrl: url ?? null,
-        lastCheckedAt: now,
-      },
-      update: {
-        handle: handle ?? undefined,
-        profileUrl: url ?? undefined,
-        lastCheckedAt: now,
-      },
+    const existing = await prisma.platformAccount.findFirst({
+      where: { userId, platform },
+      select: { id: true },
     });
+
+    if (existing?.id) {
+      await prisma.platformAccount.update({
+        where: { id: existing.id },
+        data: {
+          handle: handle ?? undefined,
+          profileUrl: url ?? undefined,
+          lastCheckedAt: now,
+        },
+      });
+    } else {
+      await prisma.platformAccount.create({
+        data: {
+          userId,
+          platform,
+          handle: handle ?? null,
+          profileUrl: url ?? null,
+          lastCheckedAt: now,
+        },
+      });
+    }
   } catch {
     // non-fatal
   }
