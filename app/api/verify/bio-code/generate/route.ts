@@ -1,8 +1,5 @@
 // app/api/verify/bio-code/generate/route.ts
-// ✅ Creates (or reuses) a short-lived BioCode token per (user, platform).
-// Method: POST
-// Body: { platform: "github" | "x" | "instagram" | "tiktok" | "youtube" | "substack" | "etsy" | "linkedin" | "facebook" , ttlHours?: number }
-// Returns: { code, platform, expiresAt, instructions }
+export const runtime = "nodejs";
 
 import { NextResponse } from "next/server";
 import crypto from "crypto";
@@ -28,7 +25,8 @@ const BIO_CODE_TTL_HOURS_DEFAULT = 24;
 export async function POST(req: Request) {
   try {
     const session = await getServerSession(authOptions);
-    if (!session?.user?.id) {
+    const userId = await getAuthUserId(session);
+    if (!userId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
@@ -41,7 +39,7 @@ export async function POST(req: Request) {
     }
 
     // Optional soft-gating by plan (adjust the internals for your schema)
-    const allowed = await ensurePlanAllowsBioCode(session.user.id);
+    const allowed = await ensurePlanAllowsBioCode(userId);
     if (!allowed.ok) {
       return NextResponse.json(
         { error: allowed.message ?? "Not allowed on current plan" },
@@ -59,7 +57,7 @@ export async function POST(req: Request) {
     // If a still-valid code exists for this (user, platform), re-use it
     const existing = await prisma.bioCode.findFirst({
       where: {
-        userId: session.user.id,
+        userId,
         platform,
         usedAt: null,
         expiresAt: { gt: now },
@@ -83,7 +81,7 @@ export async function POST(req: Request) {
 
     const created = await prisma.bioCode.create({
       data: {
-        userId: session.user.id,
+        userId,
         platform,
         code,
         expiresAt,
@@ -110,21 +108,30 @@ export async function POST(req: Request) {
 // --- Soft-gating helper (adjust to your schema as needed) ---
 async function ensurePlanAllowsBioCode(userId: string): Promise<{ ok: true } | { ok: false; message?: string }> {
   try {
-    // Try common places a “plan/tier” might live. Tweak for your schema.
     const profile = await prisma.profile.findFirst({
       where: { userId },
-      select: { plan: true }, // e.g., "Lite" | "Plus" | "Pro" | "Business"
+      select: { plan: true },
     });
-
     const plan = (profile?.plan || "Lite").toLowerCase();
-    // Example policy: Lite can generate tokens but with manual checks; Plus+ has full flow.
     const allowed = ["lite", "plus", "pro", "business", "enterprise"].includes(plan);
     if (!allowed) {
       return { ok: false, message: "Please upgrade your plan to use Code-in-Bio verification." };
     }
     return { ok: true };
   } catch {
-    // If unsure, allow (soft gate) — logging still occurs.
     return { ok: true };
   }
+}
+
+// --- Session → userId resolver (runtime safety) ---
+async function getAuthUserId(session: any): Promise<string | null> {
+  const id = session?.user?.id;
+  if (typeof id === "string" && id) return id;
+
+  const email = session?.user?.email;
+  if (typeof email === "string" && email) {
+    const user = await prisma.user.findUnique({ where: { email }, select: { id: true } });
+    if (user?.id) return user.id;
+  }
+  return null;
 }
