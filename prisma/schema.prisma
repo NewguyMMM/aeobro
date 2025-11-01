@@ -1,5 +1,5 @@
 // prisma/schema.prisma
-// 📅 Updated: 2025-10-31 05:16 ET
+// 📅 Updated: 2025-10-31 14:24 ET
 
 generator client {
   provider = "prisma-client-js"
@@ -234,7 +234,7 @@ model PlatformAccount {
   status          VerifyStatus @default(PENDING)
   verifiedAt      DateTime?
 
-  /** NEW: how this was verified (for OAuth flow it will be "OAUTH") */
+  /** NEW: how this was verified (for OAuth flow it will be "OAUTH"; for code-in-bio use "BIO_CODE") */
   method          String       @default("OAUTH")
   /** NEW: finer-grained context like "google-youtube", "facebook-page", "instagram-graph", "x" */
   platformContext String?
@@ -251,24 +251,47 @@ model PlatformAccount {
   @@unique([provider, externalId])
   @@index([userId])
   @@index([profileId])
+  // Helpful for BIO_CODE upserts where externalId may be unknown early on:
+  @@index([userId, provider, handle])
 }
 
 model BioCode {
-  id         String       @id @default(cuid())
-  userId     String
-  platform   String
-  profileUrl String
-  code       String
-  status     VerifyStatus @default(PENDING)
-  verifiedAt DateTime?
+  id              String       @id @default(cuid())
+  userId          String
+  /** High-level platform key (e.g., "youtube" | "tiktok" | "instagram" | "substack" | "x") */
+  platform        String
+  /** Human handle (normalized; for YouTube keep @handle), improves URL construction & dedup */
+  handle          String?
+  /** The public profile URL that we check (frozen at generation time for audit) */
+  profileUrl      String
+  /** The code the user pastes into their bio (nonce) */
+  code            String
+  /** Current status of the code’s verification lifecycle */
+  status          VerifyStatus @default(PENDING)
 
-  // Optional: createdAt for auditability
-  createdAt  DateTime     @default(now())
+  /** Expiration for this code (short TTL prevents spoofing/copying) */
+  expiresAt       DateTime
+  /** Last time we attempted a check */
+  lastCheckedAt   DateTime?
+  /** Number of times we tried to verify */
+  attempts        Int          @default(0)
+  /** Minimal evidence capture for audit (do NOT store entire page) */
+  evidenceUrl     String?
+  evidenceSnippet String?
 
-  user       User         @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  /** When we successfully verified (mirrors PlatformAccount.verifiedAt) */
+  verifiedAt      DateTime?
+
+  /** Timestamps */
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  user            User         @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade)
 
   @@index([userId])
   @@index([platform])
+  @@index([userId, platform, status])
+  @@index([expiresAt])
 }
 
 /* ===============================
