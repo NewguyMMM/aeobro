@@ -38,7 +38,7 @@ export async function POST(req: Request) {
       );
     }
 
-    // Soft plan gate (tweak to your schema/policy if needed)
+    // Soft plan gate (schema-agnostic)
     const allowed = await ensurePlanAllowsBioCode(userId);
     if (!allowed.ok) {
       return NextResponse.json(
@@ -119,22 +119,28 @@ async function getAuthUserId(session: any): Promise<string | null> {
   return null;
 }
 
-// Soft-gating helper (adjust to your schema as needed)
+// Soft-gating helper (schema-agnostic)
 async function ensurePlanAllowsBioCode(
   userId: string
 ): Promise<{ ok: true } | { ok: false; message?: string }> {
   try {
-    const profile = await prisma.profile.findFirst({
-      where: { userId },
-      select: { plan: true },
-    });
-    const plan = (profile?.plan || "Lite").toLowerCase();
+    const profile = await prisma.profile.findFirst({ where: { userId } });
+    // Try common field names; fall back to "Lite"
+    const raw =
+      (profile as any)?.plan ??
+      (profile as any)?.tier ??
+      (profile as any)?.subscriptionPlan ??
+      "Lite";
+    const plan =
+      typeof raw === "string" ? raw.toLowerCase() : String(raw ?? "Lite").toLowerCase();
+
     const allowed = ["lite", "plus", "pro", "business", "enterprise"].includes(plan);
     if (!allowed) {
       return { ok: false, message: "Please upgrade your plan to use Code-in-Bio verification." };
     }
     return { ok: true };
   } catch {
+    // If unsure, allow (soft gate)
     return { ok: true };
   }
 }
