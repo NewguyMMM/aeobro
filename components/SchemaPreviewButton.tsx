@@ -1,4 +1,7 @@
 // components/SchemaPreviewButton.tsx
+// ✅ Updated: 2025-11-02 08:49 ET
+// Reconciled: cache-busting fetch, precise 403 messaging, same UI/UX you had.
+
 "use client";
 
 import * as React from "react";
@@ -40,8 +43,34 @@ export default function SchemaPreviewButton({
     if (!formattedText) {
       setLoading(true);
       try {
-        const res = await fetch(rawEndpoint, { cache: "no-store" });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        // 👇 cache-buster + no-store ensures live fetch (no stale edge/browser)
+        const url = `${rawEndpoint}${rawEndpoint.includes("?") ? "&" : "?"}t=${Date.now()}`;
+        const res = await fetch(url, { cache: "no-store", method: "GET" });
+
+        if (!res.ok) {
+          // Try to parse server-provided details for helpful messaging
+          let friendly = `HTTP ${res.status}`;
+          try {
+            const data = await res.json();
+            const ver = data?.verificationStatus ?? "UNKNOWN";
+            if (res.status === 403) {
+              if (ver === "UNVERIFIED") {
+                friendly = "Export blocked: verify your domain or connect a platform.";
+              } else if (ver === "PLATFORM_VERIFIED") {
+                friendly = "You’re platform-verified. Export should be allowed—please retry.";
+              } else if (data?.error) {
+                friendly = data.error;
+              } else {
+                friendly = "Export blocked.";
+              }
+            } else if (data?.error) {
+              friendly = data.error;
+            }
+          } catch {
+            // ignore JSON parse failure
+          }
+          throw new Error(friendly);
+        }
 
         // Try to parse as JSON, then pretty-print. Fallback to text if needed.
         let prettyText = "";
@@ -54,7 +83,6 @@ export default function SchemaPreviewButton({
             const parsed = JSON.parse(txt);
             prettyText = JSON.stringify(parsed, null, 2);
           } catch {
-            // If it truly isn't JSON, show the raw text (unlikely)
             prettyText = txt;
           }
         }
