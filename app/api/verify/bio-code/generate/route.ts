@@ -1,6 +1,6 @@
 // app/api/verify/bio-code/generate/route.ts
-// ✅ Updated: 2025-11-01 07:14 ET
-// Fix: include required `profileUrl` (fallback to empty string).
+// ✅ Updated: 2025-11-02 09:06 ET
+// Returns { ok: true, platform, code, expiresAt: ISO, profileUrl }, reuses unexpired codes.
 
 export const runtime = "nodejs";
 
@@ -29,14 +29,14 @@ export async function POST(req: Request) {
     const session = await getServerSession(authOptions);
     const userId = await getAuthUserId(session);
     if (!userId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401, headers: nocache() });
     }
 
     const { platform, ttlHours, profileUrl } = await req.json().catch(() => ({}));
     if (typeof platform !== "string" || !SUPPORTED_PLATFORMS.has(platform)) {
       return NextResponse.json(
         { error: "Invalid or unsupported platform" },
-        { status: 400 }
+        { status: 400, headers: nocache() }
       );
     }
 
@@ -44,7 +44,7 @@ export async function POST(req: Request) {
     if (!allowed.ok) {
       return NextResponse.json(
         { error: allowed.message ?? "Not allowed on current plan" },
-        { status: 403 }
+        { status: 403, headers: nocache() }
       );
     }
 
@@ -59,20 +59,25 @@ export async function POST(req: Request) {
     const existing = await prisma.bioCode.findFirst({
       where: { userId, platform, expiresAt: { gt: now } },
       orderBy: { createdAt: "desc" },
-      select: { code: true, expiresAt: true, platform: true },
+      select: { code: true, expiresAt: true, platform: true, profileUrl: true },
     });
 
     if (existing) {
-      return NextResponse.json({
-        platform: existing.platform,
-        code: existing.code,
-        expiresAt: existing.expiresAt,
-        instructions:
-          "Paste this exact string in your bio/about. Then click “Check now” in AEOBRO.",
-      });
+      return NextResponse.json(
+        {
+          ok: true,
+          platform: existing.platform,
+          code: existing.code,
+          expiresAt: new Date(existing.expiresAt).toISOString(),
+          profileUrl: profileUrl ?? existing.profileUrl ?? "",
+          instructions:
+            "Paste this exact string in your bio/about. Then click “Check now” in AEOBRO.",
+        },
+        { status: 200, headers: nocache() }
+      );
     }
 
-    // Mint new code (same format)
+    // Mint new code
     const rand = crypto.randomBytes(6).toString("base64url").slice(0, 8).toUpperCase();
     const code = `AEOBRO-${platform.toUpperCase()}-${rand}`;
 
@@ -82,28 +87,37 @@ export async function POST(req: Request) {
         platform,
         code,
         expiresAt,
-        profileUrl: profileUrl ?? "", // ⬅️ required by your Prisma model
+        profileUrl: profileUrl ?? "", // Prisma requires this
       },
-      select: { code: true, expiresAt: true, platform: true },
+      select: { code: true, expiresAt: true, platform: true, profileUrl: true },
     });
 
-    return NextResponse.json({
-      platform: created.platform,
-      code: created.code,
-      expiresAt: created.expiresAt,
-      instructions:
-        "Paste this exact string in your bio/about. Then click “Check now” in AEOBRO.",
-    });
+    return NextResponse.json(
+      {
+        ok: true,
+        platform: created.platform,
+        code: created.code,
+        expiresAt: new Date(created.expiresAt).toISOString(),
+        profileUrl: created.profileUrl ?? "",
+        instructions:
+          "Paste this exact string in your bio/about. Then click “Check now” in AEOBRO.",
+      },
+      { status: 200, headers: nocache() }
+    );
   } catch (err: any) {
     console.error("[bio-code/generate] error:", err);
     return NextResponse.json(
       { error: "Unable to generate BioCode" },
-      { status: 500 }
+      { status: 500, headers: nocache() }
     );
   }
 }
 
 /* -------------------- helpers -------------------- */
+
+function nocache() {
+  return { "Cache-Control": "no-store" };
+}
 
 async function getAuthUserId(session: any): Promise<string | null> {
   const id = session?.user?.id;
