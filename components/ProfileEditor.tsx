@@ -1,4 +1,5 @@
 // components/ProfileEditor.tsx
+// 📅 Updated: 2025-11-02 05:13 ET
 "use client";
 
 import * as React from "react";
@@ -988,6 +989,14 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
               Copy URL
             </button>
           ) : null}
+
+          {/* ✅ Added: quick jump to Verify section at the very bottom */}
+          <a
+            href="#verify"
+            className="ml-auto text-sm text-blue-600 underline hover:text-blue-700"
+          >
+            Go to Verify ↓
+          </a>
         </div>
         <p className="text-xs text-gray-500">
           Your changes go live immediately when you <span className="font-medium">Save &amp; Publish</span>.
