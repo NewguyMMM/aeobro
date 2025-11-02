@@ -1,7 +1,8 @@
 // app/api/verify/bio-code/check/route.ts
-// ✅ Updated: 2025-11-02 09:06 ET
+// ✅ Updated: 2025-11-02 09:18 ET
 // Fetches the public profileUrl, looks for the active code, and on success:
-// - upserts PlatformAccount with method "BIO_CODE", sets verifiedAt, url
+// - updates or creates a PlatformAccount (provider = <platform>, platformContext = "BIO_CODE")
+// - sets verifiedAt, url, status = "VERIFIED"
 // - promotes profile.verificationStatus to PLATFORM_VERIFIED (if not DOMAIN_VERIFIED)
 
 export const runtime = "nodejs";
@@ -99,24 +100,38 @@ export async function POST(req: Request) {
       );
     }
 
-    // Upsert a PlatformAccount and set verifiedAt
-    await prisma.platformAccount.upsert({
-      where: { userId_platform: { userId, platform } },
-      update: {
-        method: "BIO_CODE",
-        verifiedAt: new Date(),
-        url: profileUrl,
-        status: "VERIFIED",
-      } as any,
-      create: {
-        userId,
-        platform,
-        method: "BIO_CODE",
-        verifiedAt: new Date(),
-        url: profileUrl,
-        status: "VERIFIED",
-      } as any,
+    // 👉 Update or create a PlatformAccount using provider (not 'platform')
+    // We avoid relying on a composite unique by using findFirst + conditional update/create.
+    const existing = await prisma.platformAccount.findFirst({
+      where: { userId, provider: platform },
+      select: { id: true },
     });
+
+    if (existing?.id) {
+      await prisma.platformAccount.update({
+        where: { id: existing.id },
+        data: {
+          provider: platform,
+          // optional fields if your model has them:
+          platformContext: "BIO_CODE" as any,
+          url: profileUrl,
+          status: "VERIFIED" as any,
+          verifiedAt: new Date(),
+        },
+      });
+    } else {
+      await prisma.platformAccount.create({
+        data: {
+          userId,
+          provider: platform,
+          platformContext: "BIO_CODE" as any,
+          url: profileUrl,
+          status: "VERIFIED" as any,
+          verifiedAt: new Date(),
+          // externalId/handle can be filled later by an OAuth flow; not needed for code-in-bio
+        },
+      });
+    }
 
     // Promote profile.verificationStatus if not already DOMAIN_VERIFIED
     const current = await prisma.profile.findFirst({
