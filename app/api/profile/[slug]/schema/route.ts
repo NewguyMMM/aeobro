@@ -1,7 +1,8 @@
 // app/api/profile/[slug]/schema/route.ts
-// ✅ Updated: 2025-10-31 08:12 ET – explicit syndication gate + keep strong caching, X-Robots-Tag, Link back to human page
+// ✅ Updated: 2025-11-02 08:49 ET
+// Reconciled: allow Lite + PLATFORM_VERIFIED for /schema; never cache errors; short, safe cache on 200s; keep Link + X-Robots-Tag.
 
-import { NextResponse } from "next/server";
+import { NextResponse, NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import {
   buildProfileSchema,
@@ -9,22 +10,18 @@ import {
   buildServiceJsonLd,
 } from "@/lib/schema";
 import { getBaseUrl } from "@/lib/getBaseUrl";
-import { isSyndicationAllowed } from "@/lib/verificationPolicy";
+import { isSyndicationAllowed } from "@/lib/isSyndicationAllowed"; // ← single source of truth
+
+export const dynamic = "force-dynamic"; // prevent ISR/ISR-like stickiness
 
 type Params = { params: { slug: string } };
-
-/**
- * ISR for JSON-LD: cache for 1 hour at the edge, background refresh when stale.
- * Pair this with revalidatePath(`/api/profile/${slug}/schema`) after saves.
- */
-export const revalidate = 3600;
 
 /** Escape `<` so `</script>` can’t prematurely close tags if embedded somewhere */
 function escapeForJsonLd(obj: unknown) {
   return JSON.stringify(obj).replace(/</g, "\\u003c");
 }
 
-export async function GET(req: Request, { params }: Params) {
+export async function GET(req: NextRequest, { params }: Params) {
   const { slug } = params;
 
   // Query controls
@@ -37,19 +34,19 @@ export async function GET(req: Request, { params }: Params) {
   const profile = await prisma.profile.findFirst({
     where: { OR: [{ slug }, { id: slug }] },
     include: {
-      // Plan-based gating (optional but recommended)
+      // Keep minimal for gating + whatever your schema builders need elsewhere
       user: { select: { plan: true, planStatus: true } },
     },
   });
 
   if (!profile) {
-    // Short-cached 404 to avoid hammering DB when crawlers probe bad slugs
+    // ❌ Never cache errors to avoid "stuck" behavior
     return NextResponse.json(
       { error: "Profile not found" },
       {
         status: 404,
         headers: {
-          "Cache-Control": "public, s-maxage=60, max-age=30",
+          "Cache-Control": "no-store",
           "Content-Type": "application/json; charset=utf-8",
           "X-Robots-Tag": "noindex",
         },
@@ -60,25 +57,47 @@ export async function GET(req: Request, { params }: Params) {
   const baseUrl = getBaseUrl();
   const humanUrl = `${baseUrl}/p/${encodeURIComponent(profile.slug ?? slug)}`;
 
-  // 🔒 Explicit external-syndication gate:
-  // Only emit public JSON-LD if DOMAIN_VERIFIED or PLATFORM_VERIFIED
-  // AND (optionally) plan is active and eligible.
-  const allowed = isSyndicationAllowed(profile, { enforcePlan: true });
-  if (!allowed) {
+  // Normalize plan for gating (adjust if your plan actually lives on Profile)
+  const plan =
+    (profile as any).plan ??
+    (profile.user?.plan ?? null);
+
+  const verificationStatus =
+    (profile.verificationStatus as
+      | "UNVERIFIED"
+      | "PLATFORM_VERIFIED"
+      | "DOMAIN_VERIFIED"
+      | null) ?? "UNVERIFIED";
+
+  // ✅ Gate for schema export:
+  // Allow DOMAIN_VERIFIED always; allow PLATFORM_VERIFIED even on Lite for /schema;
+  // paid plans (Plus/Pro/Business/Enterprise) allowed too.
+  const gate = isSyndicationAllowed(
+    { verificationStatus, plan },
+    {
+      enforcePlan: true,
+      allowPlatformVerified: true, // ← key change for /schema
+      feedKind: "schema",
+    }
+  );
+
+  if (!gate.allowed) {
+    // ❌ Never cache errors; include helpful hints without leaking private data
     return NextResponse.json(
       {
         error:
+          gate.reason ||
           "Syndication disabled. Verify your domain or connect a platform (or activate an eligible plan).",
-        // (Optional: include minimal hints that won’t leak private data)
-        verificationStatus: profile.verificationStatus,
+        verificationStatus,
+        plan,
+        require: gate.require,
+        gateReason: gate.reason,
       },
       {
         status: 403,
         headers: {
-          // Keep crawlers from indexing error payloads
+          "Cache-Control": "no-store", // ← critical anti-stick
           "X-Robots-Tag": "noindex, nofollow",
-          "Cache-Control": "public, s-maxage=300, max-age=120",
-          // Still point machines to the human-readable page
           "Link": `<${humanUrl}>; rel="alternate"; type="text/html"`,
         },
       }
@@ -89,7 +108,6 @@ export async function GET(req: Request, { params }: Params) {
     // ✅ Build the main Profile JSON-LD
     const profileSchema = buildProfileSchema(profile, baseUrl);
 
-    // If only profile requested
     if (!wantAll) {
       const payload = profileSchema;
       const body = pretty ? JSON.stringify(payload, null, 2) : escapeForJsonLd(payload);
@@ -101,12 +119,9 @@ export async function GET(req: Request, { params }: Params) {
           ...(download
             ? { "Content-Disposition": `attachment; filename="${slug}-schema.json"` }
             : {}),
-          // Edge/CDN caching with generous SWR; HTML page revalidates separately
-          "Cache-Control": "public, s-maxage=3600, stale-while-revalidate=604800",
-          // ✅ Signal that this is indexable and points to the human-readable page
+          // ✅ Short, safe edge TTL (avoid hour-long stickiness)
+          "Cache-Control": "public, s-maxage=60, stale-while-revalidate=300",
           "X-Robots-Tag": "all",
-          // ✅ Machine-readable association back to the human page
-          // rel="describes" is well-understood; include "alternate" + type hint
           "Link": `<${humanUrl}>; rel="describes alternate"; type="text/html"`,
         },
       });
@@ -152,8 +167,6 @@ export async function GET(req: Request, { params }: Params) {
       faqs.map((f) => ({ question: f.question, answer: f.answer }))
     );
 
-    // Return an array so validators/tools can handle each block:
-    // [ ProfileObject, ServiceObject..., FAQObject ]
     const payload: any[] = [profileSchema, ...serviceJsonLd, faqJsonLd];
     const body = pretty ? JSON.stringify(payload, null, 2) : escapeForJsonLd(payload);
 
@@ -166,7 +179,8 @@ export async function GET(req: Request, { params }: Params) {
               "Content-Disposition": `attachment; filename="${slug}-schema-all.json"`,
             }
           : {}),
-        "Cache-Control": "public, s-maxage=3600, stale-while-revalidate=604800",
+        // ✅ Short, safe edge TTL
+        "Cache-Control": "public, s-maxage=60, stale-while-revalidate=300",
         "X-Robots-Tag": "all",
         "Link": `<${humanUrl}>; rel="describes alternate"; type="text/html"`,
       },
@@ -177,9 +191,10 @@ export async function GET(req: Request, { params }: Params) {
       name: err?.name,
       message: err?.message,
     });
+    // ❌ Never cache errors
     return NextResponse.json(
       { error: "Failed to build JSON-LD" },
-      { status: 500 }
+      { status: 500, headers: { "Cache-Control": "no-store" } }
     );
   }
 }
