@@ -1,9 +1,11 @@
 // app/api/verify/bio-code/check/route.ts
-// ✅ Updated: 2025-11-02 09:18 ET
-// Fetches the public profileUrl, looks for the active code, and on success:
-// - updates or creates a PlatformAccount (provider = <platform>, platformContext = "BIO_CODE")
-// - sets verifiedAt, url, status = "VERIFIED"
-// - promotes profile.verificationStatus to PLATFORM_VERIFIED (if not DOMAIN_VERIFIED)
+// ✅ Updated: 2025-11-02 09:28 ET
+// Adds required `externalId` when creating PlatformAccount (derived from profileUrl).
+// Behavior:
+// - fetches profileUrl, finds active code, verifies
+// - update/create PlatformAccount (provider=<platform>, platformContext="BIO_CODE", externalId from URL)
+// - sets verifiedAt, url, status="VERIFIED"
+// - promotes profile.verificationStatus to PLATFORM_VERIFIED (unless already DOMAIN_VERIFIED)
 
 export const runtime = "nodejs";
 
@@ -80,7 +82,7 @@ export async function POST(req: Request) {
         );
       }
       body = await res.text();
-    } catch (e: any) {
+    } catch {
       return NextResponse.json(
         { verified: false, message: "Unable to fetch profileUrl." },
         { status: 200, headers: nocache() }
@@ -100,8 +102,10 @@ export async function POST(req: Request) {
       );
     }
 
-    // 👉 Update or create a PlatformAccount using provider (not 'platform')
-    // We avoid relying on a composite unique by using findFirst + conditional update/create.
+    // Build a stable externalId from the profileUrl (host + path, lowercase)
+    const externalId = deriveExternalId(profileUrl);
+
+    // Update or create a PlatformAccount using provider (not 'platform')
     const existing = await prisma.platformAccount.findFirst({
       where: { userId, provider: platform },
       select: { id: true },
@@ -112,11 +116,12 @@ export async function POST(req: Request) {
         where: { id: existing.id },
         data: {
           provider: platform,
-          // optional fields if your model has them:
           platformContext: "BIO_CODE" as any,
           url: profileUrl,
           status: "VERIFIED" as any,
           verifiedAt: new Date(),
+          // Optionally refresh externalId if it changed
+          externalId,
         },
       });
     } else {
@@ -128,7 +133,7 @@ export async function POST(req: Request) {
           url: profileUrl,
           status: "VERIFIED" as any,
           verifiedAt: new Date(),
-          // externalId/handle can be filled later by an OAuth flow; not needed for code-in-bio
+          externalId, // ✅ required by your Prisma model
         },
       });
     }
@@ -169,6 +174,16 @@ export async function POST(req: Request) {
 
 function nocache() {
   return { "Cache-Control": "no-store" };
+}
+
+function deriveExternalId(profileUrl: string): string {
+  try {
+    const u = new URL(profileUrl);
+    const id = `${u.hostname}${u.pathname}`.replace(/\/+$/, "").toLowerCase();
+    return id || profileUrl.toLowerCase();
+  } catch {
+    return profileUrl.toLowerCase();
+  }
 }
 
 async function getAuthUserId(session: any): Promise<string | null> {
