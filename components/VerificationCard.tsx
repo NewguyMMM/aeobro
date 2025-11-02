@@ -1,6 +1,6 @@
 // components/VerificationCard.tsx
 // AEOBRO — Domain + Platform Verification Card (DNS • Code-in-Bio • OAuth Connect)
-// ✅ Updated: 2025-11-01 07:12 ET — Added Code-in-Bio (Generate & Check) section
+// ✅ Updated: 2025-11-02 09:06 ET — Removed legacy "Use code-in-bio (legacy)" flow; kept DNS, OAuth, and new Code-in-Bio rows.
 
 "use client";
 
@@ -26,17 +26,6 @@ type CheckDnsResponse = {
   verified?: boolean;
   status?: VerificationStatus;
   token?: string;
-  profile?: { verificationStatus?: VerificationStatus };
-  message?: string;
-  error?: string;
-};
-
-type StartPlatformResponse = {
-  marker?: string;
-  error?: string;
-};
-
-type CheckPlatformResponse = {
   profile?: { verificationStatus?: VerificationStatus };
   message?: string;
   error?: string;
@@ -78,7 +67,7 @@ export default function VerificationCard({
   className,
   returnTo = "/dashboard?verified=1",
 }: Props) {
-  const [mode, setMode] = React.useState<"dns" | "platform" | null>(null);
+  const [mode, setMode] = React.useState<"dns" | null>(null);
   const [loading, setLoading] = React.useState(false);
   const [message, setMessage] = React.useState<string>("");
 
@@ -95,9 +84,6 @@ export default function VerificationCard({
   const [dnsRecordType, setDnsRecordType] = React.useState<"TXT">("TXT");
   const [dnsRecordValue, setDnsRecordValue] = React.useState<string>("");
 
-  // Legacy/manual platform code marker (kept for backward compatibility)
-  const [platformMarker, setPlatformMarker] = React.useState<string>("");
-
   // OAuth-linked accounts state
   const [accounts, setAccounts] = React.useState<PlatformAccount[] | null>(null);
   const [accountsMsg, setAccountsMsg] = React.useState<string>("");
@@ -111,7 +97,6 @@ export default function VerificationCard({
   }, [domainInput]);
 
   React.useEffect(() => {
-    // Load linked accounts (if API exists)
     refreshAccounts().catch(() => {
       /* ignore */
     });
@@ -269,47 +254,6 @@ export default function VerificationCard({
     }
   }
 
-  /** ------ Legacy manual platform flow (kept, but superseded by Code-in-Bio UI below) ------ */
-  async function handlePlatformStart() {
-    setMessage("");
-    setLoading(true);
-    try {
-      const r = await fetch("/api/verify/platform/start", { method: "POST" });
-      const j: StartPlatformResponse = await r.json();
-      if (!r.ok) throw new Error(j?.error || "Failed to start platform verification");
-      setPlatformMarker(j?.marker || "");
-      setMode("platform");
-      setMessage("Add the code to a connected platform bio, then click “Check”.");
-      updateStatus("PENDING");
-    } catch (e: any) {
-      setMessage(e?.message || "Error starting platform verification");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function handlePlatformCheck() {
-    setMessage("");
-    setLoading(true);
-    try {
-      const r = await fetch("/api/verify/platform/check", { method: "POST" });
-      const j: CheckPlatformResponse = await r.json();
-      if (!r.ok) throw new Error(j?.error || "Platform check failed");
-      const newStatus =
-        (j?.profile?.verificationStatus as VerificationStatus) || undefined;
-      if (newStatus) {
-        updateStatus(newStatus);
-        setMessage(newStatus === "PLATFORM_VERIFIED" ? "Platform verified!" : `Status: ${newStatus}`);
-      } else {
-        setMessage(j?.message || "Checked.");
-      }
-    } catch (e: any) {
-      setMessage(e?.message || "Error during platform check");
-    } finally {
-      setLoading(false);
-    }
-  }
-
   /** ------ OAuth Connect buttons ------ */
   function startOAuth(provider: string) {
     const url = `/api/auth/signin/${provider}?callbackUrl=${callbackUrl()}`;
@@ -373,7 +317,7 @@ export default function VerificationCard({
         </div>
       )}
 
-      {/* === NEW: Code-in-Bio (Generate & Check) === */}
+      {/* === Code-in-Bio (Generate & Check) === */}
       <section className="mt-2 rounded-xl border bg-neutral-50 p-4">
         <div className="mb-2 text-sm font-medium">Verify with Code-in-Bio</div>
         <p className="mb-3 text-xs text-neutral-600">
@@ -382,7 +326,14 @@ export default function VerificationCard({
 
         <div className="grid gap-3">
           {PLATFORMS.map((p) => (
-            <PlatformBioRow key={p.key} platform={p.key} label={p.label} placeholder={p.placeholder} disabled={loading || profileMissing} onVerified={() => updateStatus("PLATFORM_VERIFIED")} />
+            <PlatformBioRow
+              key={p.key}
+              platform={p.key}
+              label={p.label}
+              placeholder={p.placeholder}
+              disabled={loading || profileMissing}
+              onVerified={() => updateStatus("PLATFORM_VERIFIED")}
+            />
           ))}
         </div>
       </section>
@@ -422,7 +373,6 @@ export default function VerificationCard({
           >
             Connect X (Twitter)
           </button>
-          {/* <button onClick={() => startOAuth("tiktok")} ...>Connect TikTok</button> */}
         </div>
 
         {/* Linked accounts list (if API route exists) */}
@@ -510,7 +460,7 @@ export default function VerificationCard({
         )}
       </div>
 
-      {/* Mode selector for legacy DNS/Platform actions */}
+      {/* Mode selector for DNS actions */}
       {!mode && (
         <div className="mt-4 flex flex-wrap gap-2">
           <button
@@ -520,14 +470,6 @@ export default function VerificationCard({
             type="button"
           >
             {loading ? "Working…" : "Generate DNS record"}
-          </button>
-          <button
-            onClick={handlePlatformStart}
-            disabled={loading || profileMissing}
-            className="rounded-xl border px-4 py-2 disabled:opacity-50"
-            type="button"
-          >
-            Use code-in-bio (legacy)
           </button>
         </div>
       )}
@@ -587,22 +529,6 @@ export default function VerificationCard({
             type="button"
           >
             {loading ? "Checking…" : "Check record now"}
-          </button>
-        </div>
-      )}
-
-      {/* Legacy Code-in-Bio instructions (kept for compatibility) */}
-      {mode === "platform" && (
-        <div className="mt-5 rounded-xl border bg-neutral-50 p-4">
-          <p className="mb-2 text-sm font-medium">Add this code to one connected platform bio, then click “Check”:</p>
-          <pre className="whitespace-pre-wrap rounded bg-white p-2 text-xs">{platformMarker || "<marker>"}</pre>
-          <button
-            onClick={handlePlatformCheck}
-            disabled={loading || profileMissing}
-            className="mt-3 rounded-xl border px-4 py-2 disabled:opacity-50"
-            type="button"
-          >
-            {loading ? "Checking…" : "Check"}
           </button>
         </div>
       )}
@@ -675,7 +601,7 @@ function PlatformBioRow({
         body: JSON.stringify({ platform, profileUrl }),
       });
       const j = await r.json();
-      if (!r.ok || !j?.ok) throw new Error(j?.error || "Failed to generate code");
+      if (!r.ok || j?.ok !== true) throw new Error(j?.error || "Failed to generate code");
       setCode(j.code);
       setExpiresAt(j.expiresAt);
       setMsg("Code generated. Paste it into your bio, then click Check Now.");
