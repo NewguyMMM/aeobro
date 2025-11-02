@@ -1,5 +1,5 @@
 // app/(app)/dashboard/page.tsx
-// 📅 Updated: 2025-10-29 12:16 ET
+// 📅 Updated: 2025-11-02 05:13 ET
 
 export const runtime = "nodejs";          // ensure Prisma-compatible runtime (Prisma needs Node)
 export const dynamic = "force-dynamic";   // always render on server (no static cache)
@@ -111,16 +111,21 @@ export default async function DashboardPage() {
 
   return (
     <div className="mx-auto max-w-4xl space-y-6 p-4 sm:p-6">
+      {/* Keep the banner at the top as a gentle nudge */}
       <UnverifiedBanner status={(db?.verificationStatus ?? "UNVERIFIED") as any} />
 
-      {/* ✅ DNS TXT + Code-in-bio verification (client-only) */}
+      {/* ✅ Editor comes first */}
+      <ProfileEditor initial={uiProfile as any} />
+
+      {/* Anchor for the “Go to Verify ↓” link */}
+      <div id="verify" />
+
+      {/* ✅ Verify section moved to the very bottom */}
       <VerificationCard
         profileId={db?.id ?? undefined}
         initialDomain={db?.website ?? ""}
         initialStatus={(db?.verificationStatus ?? "UNVERIFIED") as any}
       />
-
-      <ProfileEditor initial={uiProfile as any} />
     </div>
   );
 }
