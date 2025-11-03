@@ -14,9 +14,17 @@
   "dependencies": {
     "@auth/prisma-adapter": "^2.10.0",
     "@prisma/client": "^6.15.0",
+<<<<<<< HEAD
     "@upstash/ratelimit": "^1.0.0",
     "@upstash/redis": "^1.31.0",
     "@vercel/blob": "^0.20.0",
+=======
+    "@supabase/auth-helpers-nextjs": "^0.10.0",
+    "@supabase/auth-ui-react": "^0.4.7",
+    "@supabase/auth-ui-shared": "^0.1.8",
+    "@supabase/supabase-js": "^2.45.0",
+    "@vercel/blob": "^2.0.0",
+>>>>>>> a92b875 (deps: add @vercel/blob for upload route)
     "autoprefixer": "^10.4.20",
     "bcryptjs": "^2.4.3",
     "clsx": "^2.1.1",
