@@ -1,5 +1,5 @@
 // app/api/uploads/logo/route.ts
-// ✅ Updated: 2025-11-03 — robust errors, session-aware key, matches client MIME/types
+// ✅ Production: Node runtime, auth required, strict types, quiet errors.
 export const runtime = "nodejs";
 
 import { NextResponse } from "next/server";
@@ -15,73 +15,55 @@ const ALLOWED = new Set<`${string}/${string}`>([
   "image/svg+xml",
 ]);
 
-function jsonError(message: string, status = 400) {
-  return NextResponse.json({ error: message }, { status });
-}
-
 export async function POST(req: Request) {
   try {
-    // Try to get a session; if it fails or is absent, we’ll still allow upload
-    // so we can debug 500s. Once confirmed working, flip `allowAnon` to false.
-    const session = await getServerSession(authOptions).catch(() => null);
-    const userId = session?.user?.id || "anon"; // <-- set to "anon" for now
+    // Require a signed-in user
+    const session = await getServerSession(authOptions);
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    const userId = session.user.id;
 
     // Parse multipart/form-data
-    let form: FormData;
-    try {
-      form = await req.formData();
-    } catch {
-      return jsonError("Unable to parse form data", 400);
-    }
-
+    const form = await req.formData();
     const file = form.get("file");
     if (!(file instanceof File)) {
-      return jsonError("Missing file", 400);
+      return NextResponse.json({ error: "Missing file" }, { status: 400 });
     }
 
+    // Validate
     const type = file.type || "";
     if (!ALLOWED.has(type)) {
-      return jsonError(
-        `Unsupported file type (${type || "unknown"}). Use PNG, JPEG, WebP, or SVG.`,
-        415
-      );
+      return NextResponse.json({ error: "Unsupported file type" }, { status: 415 });
     }
-
     if (file.size > MAX_BYTES) {
-      return jsonError(`File too large (> ${MAX_BYTES / (1024 * 1024)} MB)`, 413);
+      return NextResponse.json({ error: "File too large" }, { status: 413 });
     }
 
-    // Extension by content-type
+    // Pick extension from MIME
     const ext =
-      type === "image/png"
-        ? ".png"
-        : type === "image/jpeg"
-        ? ".jpg"
-        : type === "image/webp"
-        ? ".webp"
-        : ".svg";
+      type === "image/png" ? ".png" :
+      type === "image/jpeg" ? ".jpg" :
+      type === "image/webp" ? ".webp" : ".svg";
 
-    // Stable per-user (or anon) path
+    // Stable per-user path; add timestamp to avoid collisions
     const key = `logos/${userId}/${Date.now()}${ext}`;
 
-    // Upload to Vercel Blob (public URL)
+    // Upload to Vercel Blob (no extra config needed on Vercel)
     const { url } = await put(key, file, {
       access: "public",
       addRandomSuffix: false,
     });
 
     return NextResponse.json({ url }, { status: 200 });
-  } catch (err: any) {
-    // Surface the actual error message to help diagnose 500s
-    console.error("[logo-upload] server error:", err);
-    return NextResponse.json(
-      { error: err?.message || "Upload failed on server" },
-      { status: 500 }
-    );
+  } catch (err) {
+    // Keep user-facing response minimal; log details server-side.
+    console.error("[logo-upload] fatal:", err);
+    return NextResponse.json({ error: "Upload failed. Please try again." }, { status: 500 });
   }
 }
 
-// Optional: make non-POSTs explicit
+// Disallow other methods
 export async function GET() {
-  return jsonError("Method not allowed", 405);
+  return NextResponse.json({ error: "Method not allowed" }, { status: 405 });
 }
