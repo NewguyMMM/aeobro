@@ -1,5 +1,7 @@
 // components/LogoUploader.tsx
-// Updated: 2025-11-03 06:18 ET
+// ✅ Updated: 2025-11-03 06:25 ET
+// Uses POST multipart/form-data to /api/uploads/logo (matches server route)
+
 "use client";
 
 import { useRef, useState } from "react";
@@ -11,7 +13,7 @@ type Props = {
   maxSizeMB?: number;
 };
 
-const ACCEPT_TYPES = /^image\/(png|jpeg|jpg|webp|svg\+xml)$/i;
+const ACCEPT_TYPES = /^(image\/png|image\/jpeg|image\/webp|image\/svg\+xml)$/i;
 
 export default function LogoUploader({ value, onChange, maxSizeMB = 4 }: Props) {
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -62,7 +64,8 @@ export default function LogoUploader({ value, onChange, maxSizeMB = 4 }: Props) 
       const fd = new FormData();
       fd.append("file", file);
 
-      const res = await fetch("/api/upload/logo", { method: "POST", body: fd });
+      // 🔁 IMPORTANT: matches server route path exactly
+      const res = await fetch("/api/uploads/logo", { method: "POST", body: fd });
       const data = await safeParseResponse(res);
 
       if (!res.ok) throw new Error(data.error || `Upload failed (${res.status})`);
@@ -101,14 +104,11 @@ export default function LogoUploader({ value, onChange, maxSizeMB = 4 }: Props) 
     e.preventDefault();
     setDragging(false);
 
-    // Avoid mixing ?? and || — be explicit to satisfy the parser.
     let file: File | null = null;
 
     // 1) Direct files list
     const files = e.dataTransfer.files;
-    if (files && files.length > 0) {
-      file = files[0];
-    }
+    if (files && files.length > 0) file = files[0];
 
     // 2) Fallback: DataTransferItemList
     if (!file) {
@@ -200,7 +200,7 @@ export default function LogoUploader({ value, onChange, maxSizeMB = 4 }: Props) 
       <input
         ref={inputRef}
         type="file"
-        accept="image/*"
+        accept="image/png,image/jpeg,image/webp,image/svg+xml"
         className="hidden"
         onChange={onPick}
       />
