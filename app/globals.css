@@ -1,1 +1,77 @@
-@tailwind base;@tailwind components;@tailwind utilities; body{font-family:ui-sans-serif} .container{max-width:72rem;margin:0 auto;padding:0 1rem} .card{border:1px solid #e5e7eb;border-radius:1rem;padding:1rem;box-shadow:0 1px 2px rgba(0,0,0,.04)} .btn{border:1px solid #e5e7eb;border-radius:.75rem;padding:.5rem 1rem} .btn-primary{background:#0B1220;color:#fff;border-color:#0B1220}
+/* app/globals.css */
+/* Updated: 2025-11-03 06:27 ET */
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ---- Cross-browser typography normalization ---- */
+:root {
+  /* Prevent Chrome from faking bold/italic if a real cut isn’t available */
+  font-synthesis-weight: none;
+  font-synthesis-style: none;
+}
+
+html {
+  /* Better shaping & spacing across browsers */
+  text-rendering: optimizeLegibility;   /* kerning + ligatures */
+  font-kerning: normal;
+  font-feature-settings: "liga" 1, "kern" 1;
+  font-optical-sizing: auto;            /* variable fonts respect optical sizing */
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  /* Keep your current family, but add a robust system stack fallback */
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, "Noto Sans", "Liberation Sans", sans-serif;
+  line-height: 1.5;
+  letter-spacing: 0;
+
+  /* macOS/Chrome/Safari smoothing nudges */
+  -webkit-font-smoothing: antialiased;  /* grayscale AA on WebKit/Blink */
+  -moz-osx-font-smoothing: grayscale;   /* grayscale AA on Firefox/macOS */
+
+  background: #fff;
+  color: #0B1220;
+}
+
+/* Optional heading nudges:
+   Use medium (500) instead of synthesized semibold if your font lacks 600. */
+@layer base {
+  h1, h2, h3 {
+    letter-spacing: -0.01em;
+  }
+  h1 { font-weight: 600; } /* change to 500 if you see faux bolding */
+  h2 { font-weight: 600; }
+  h3 { font-weight: 600; }
+}
+
+/* ---- Your existing utility classes preserved ---- */
+.container {
+  max-width: 72rem;
+  margin: 0 auto;
+  padding: 0 1rem;
+}
+
+.card {
+  border: 1px solid #e5e7eb;
+  border-radius: 1rem;
+  padding: 1rem;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, .04);
+}
+
+.btn {
+  border: 1px solid #e5e7eb;
+  border-radius: .75rem;
+  padding: .5rem 1rem;
+}
+
+.btn-primary {
+  background: #0B1220;
+  color: #fff;
+  border-color: #0B1220;
+}
+
+/* If you later add a real brand font, also add @font-face blocks here with
+   the exact weights you’ll use (e.g., 400/500/600) to avoid Chrome’s faux styles. */
