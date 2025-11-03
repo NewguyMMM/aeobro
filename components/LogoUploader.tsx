@@ -1,5 +1,5 @@
 // components/LogoUploader.tsx
-// Updated: 2025-11-03 06:10 ET
+// Updated: 2025-11-03 06:18 ET
 "use client";
 
 import { useRef, useState } from "react";
@@ -47,7 +47,6 @@ export default function LogoUploader({ value, onChange, maxSizeMB = 4 }: Props) 
         return { error: "Server returned invalid JSON." };
       }
     }
-    // Fall back to text (some backends return a plain URL)
     const text = await res.text();
     if (/^https?:\/\//i.test(text)) return { url: text.trim() };
     return { error: text || `Unexpected server response (${res.status}).` };
@@ -67,7 +66,7 @@ export default function LogoUploader({ value, onChange, maxSizeMB = 4 }: Props) 
       const data = await safeParseResponse(res);
 
       if (!res.ok) throw new Error(data.error || `Upload failed (${res.status})`);
-      if (!data.url)  throw new Error("Upload succeeded but no URL was returned.");
+      if (!data.url) throw new Error("Upload succeeded but no URL was returned.");
       onChange(data.url);
     } catch (e: any) {
       setErr(e?.message || "Upload error");
@@ -101,13 +100,31 @@ export default function LogoUploader({ value, onChange, maxSizeMB = 4 }: Props) 
   function onDrop(e: React.DragEvent<HTMLDivElement>) {
     e.preventDefault();
     setDragging(false);
-    const file =
-      e.dataTransfer.files?.[0] ??
-      // Fallback for some drag sources:
-      Array.from(e.dataTransfer.items || [])
-        .filter(i => i.kind === "file")
-        .map(i => i.getAsFile())
-        .filter(Boolean)[0] || null;
+
+    // Avoid mixing ?? and || — be explicit to satisfy the parser.
+    let file: File | null = null;
+
+    // 1) Direct files list
+    const files = e.dataTransfer.files;
+    if (files && files.length > 0) {
+      file = files[0];
+    }
+
+    // 2) Fallback: DataTransferItemList
+    if (!file) {
+      const items = e.dataTransfer.items;
+      if (items && items.length > 0) {
+        for (const item of Array.from(items)) {
+          if (item.kind === "file") {
+            const got = item.getAsFile();
+            if (got) {
+              file = got;
+              break;
+            }
+          }
+        }
+      }
+    }
 
     if (file) upload(file);
   }
@@ -146,30 +163,37 @@ export default function LogoUploader({ value, onChange, maxSizeMB = 4 }: Props) 
               src={value}
               alt="Logo preview"
               className="h-12 w-12 shrink-0 rounded object-cover"
-              onError={(e) => ((e.currentTarget.style.opacity = "0.4"))}
+              onError={(ev) => {
+                // If thumbnail fails, just fade it so the URL is still visible.
+                (ev.currentTarget.style as any).opacity = "0.4";
+              }}
             />
             <span className="truncate text-gray-700">{value}</span>
             <div className="ml-auto flex gap-2">
               <button
                 type="button"
                 className="rounded-lg border px-2.5 py-1 text-xs hover:bg-gray-100"
-                onClick={(e) => { e.stopPropagation(); inputRef.current?.click(); }}
+                onClick={(ev) => {
+                  ev.stopPropagation();
+                  inputRef.current?.click();
+                }}
               >
                 Replace
               </button>
               <button
                 type="button"
                 className="rounded-lg border px-2.5 py-1 text-xs hover:bg-gray-100"
-                onClick={(e) => { e.stopPropagation(); clearImage(); }}
+                onClick={(ev) => {
+                  ev.stopPropagation();
+                  clearImage();
+                }}
               >
                 Remove
               </button>
             </div>
           </div>
         ) : (
-          <span className="text-gray-600">
-            Click or drag a logo image here
-          </span>
+          <span className="text-gray-600">Click or drag a logo image here</span>
         )}
       </div>
 
