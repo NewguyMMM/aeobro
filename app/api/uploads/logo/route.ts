@@ -1,13 +1,13 @@
 // app/api/uploads/logo/route.ts
-// ✅ Shipping fix: no-auth, strict size/MIME, Node runtime.
-// Re-enable auth later once this is confirmed stable.
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
 import { put } from "@vercel/blob";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
 
-const MAX_BYTES = 4 * 1024 * 1024; // 4 MB
+const MAX_BYTES = 4 * 1024 * 1024;
 const ALLOWED: Set<string> = new Set([
   "image/png",
   "image/jpeg",
@@ -17,33 +17,27 @@ const ALLOWED: Set<string> = new Set([
 
 export async function POST(req: Request) {
   try {
-    const form = await req.formData();
-    const file = form.get("file");
-    if (!(file instanceof File)) {
-      return NextResponse.json({ error: "Missing file" }, { status: 400 });
+    const session = await getServerSession(authOptions);
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+    const form = await req.formData();
+    const file = form.get("file");
+    if (!(file instanceof File)) return NextResponse.json({ error: "Missing file" }, { status: 400 });
+
     const type = file.type || "";
-    if (!ALLOWED.has(type)) {
-      return NextResponse.json({ error: "Unsupported file type" }, { status: 415 });
-    }
-    if (file.size > MAX_BYTES) {
-      return NextResponse.json({ error: "File too large" }, { status: 413 });
-    }
+    if (!ALLOWED.has(type)) return NextResponse.json({ error: "Unsupported file type" }, { status: 415 });
+    if (file.size > MAX_BYTES) return NextResponse.json({ error: "File too large" }, { status: 413 });
 
     const ext =
       type === "image/png" ? ".png" :
       type === "image/jpeg" ? ".jpg" :
       type === "image/webp" ? ".webp" : ".svg";
 
-    // Use a stable "public" bucket path. You can change "anon" to userId later.
-    const key = `logos/anon/${Date.now()}${ext}`;
+    const key = `logos/${session.user.id}/${Date.now()}${ext}`;
 
-    const { url } = await put(key, file, {
-      access: "public",
-      addRandomSuffix: false,
-    });
-
+    const { url } = await put(key, file, { access: "public", addRandomSuffix: false });
     return NextResponse.json({ url }, { status: 200 });
   } catch (err) {
     console.error("[logo-upload] fatal:", err);
