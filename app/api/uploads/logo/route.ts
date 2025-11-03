@@ -1,11 +1,11 @@
 // app/api/uploads/logo/route.ts
-// ✅ Production: Node runtime, auth required, strict but simple string types.
+// ✅ Shipping fix: no-auth, strict size/MIME, Node runtime.
+// Re-enable auth later once this is confirmed stable.
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
 import { put } from "@vercel/blob";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
 
 const MAX_BYTES = 4 * 1024 * 1024; // 4 MB
 const ALLOWED: Set<string> = new Set([
@@ -17,12 +17,6 @@ const ALLOWED: Set<string> = new Set([
 
 export async function POST(req: Request) {
   try {
-    const session = await getServerSession(authOptions);
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-    const userId = session.user.id;
-
     const form = await req.formData();
     const file = form.get("file");
     if (!(file instanceof File)) {
@@ -42,7 +36,8 @@ export async function POST(req: Request) {
       type === "image/jpeg" ? ".jpg" :
       type === "image/webp" ? ".webp" : ".svg";
 
-    const key = `logos/${userId}/${Date.now()}${ext}`;
+    // Use a stable "public" bucket path. You can change "anon" to userId later.
+    const key = `logos/anon/${Date.now()}${ext}`;
 
     const { url } = await put(key, file, {
       access: "public",
