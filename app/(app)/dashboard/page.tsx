@@ -1,5 +1,5 @@
 // app/(app)/dashboard/page.tsx
-// 📅 Updated: 2025-11-02 05:13 ET
+// 📅 Updated: 2025-11-05 05:33 ET
 
 export const runtime = "nodejs";          // ensure Prisma-compatible runtime (Prisma needs Node)
 export const dynamic = "force-dynamic";   // always render on server (no static cache)
@@ -11,19 +11,6 @@ import { redirect } from "next/navigation";
 
 import UnverifiedBanner from "@/components/UnverifiedBanner";
 import ProfileEditor from "@/components/ProfileEditor";
-
-// IMPORTANT: Alias this import so it doesn’t collide with the `export const dynamic` above
-import dynamicImport from "next/dynamic";
-
-// ✅ Load the verification UI purely on the client to avoid SSR crashes
-const VerificationCard = dynamicImport(() => import("@/components/VerificationCard"), {
-  ssr: false,
-  loading: () => (
-    <div className="rounded-2xl border bg-white p-5 shadow-sm text-sm text-neutral-600">
-      Loading verification…
-    </div>
-  ),
-});
 
 /** Helpers to coerce JSON to the UI shapes ProfileEditor expects (must be serializable) */
 function asArray<T = any>(v: unknown, fallback: T[] = []): T[] {
@@ -111,21 +98,11 @@ export default async function DashboardPage() {
 
   return (
     <div className="mx-auto max-w-4xl space-y-6 p-4 sm:p-6">
-      {/* Keep the banner at the top as a gentle nudge */}
-      <UnverifiedBanner status={(db?.verificationStatus ?? "UNVERIFIED") as any} />
+      {/* Gentle nudge only (no embedded card) */}
+      <UnverifiedBanner status={(uiProfile?.verificationStatus ?? "UNVERIFIED") as any} />
 
-      {/* ✅ Editor comes first */}
+      {/* Editor renders everything, including the single Verify section at the bottom */}
       <ProfileEditor initial={uiProfile as any} />
-
-      {/* Anchor for the “Go to Verify ↓” link */}
-      <div id="verify" />
-
-      {/* ✅ Verify section moved to the very bottom */}
-      <VerificationCard
-        profileId={db?.id ?? undefined}
-        initialDomain={db?.website ?? ""}
-        initialStatus={(db?.verificationStatus ?? "UNVERIFIED") as any}
-      />
     </div>
   );
 }
