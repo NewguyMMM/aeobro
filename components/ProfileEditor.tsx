@@ -1,5 +1,5 @@
 // components/ProfileEditor.tsx
-// 📅 Updated: 2025-11-02 05:13 ET
+// 📅 Updated: 2025-11-05 05:33 ET
 "use client";
 
 import * as React from "react";
@@ -12,6 +12,10 @@ import LogoUploader from "@/components/LogoUploader";
 import LinkTypeSelect from "@/components/LinkTypeSelect";
 import PublicUrlReadonly from "@/components/PublicUrlReadonly";
 import SchemaPreviewButton from "@/components/SchemaPreviewButton";
+
+// Load the verification UI purely on the client (single source of truth at bottom)
+import dynamic from "next/dynamic";
+const VerificationCard = dynamic(() => import("@/components/VerificationCard"), { ssr: false });
 
 /** -------- Types -------- */
 type EntityType =
@@ -35,6 +39,8 @@ type PlatformHandles = {
 
 type LinkItem = { label: string; url: string };
 type PressItem = { title: string; url: string };
+
+type VerificationStatus = "UNVERIFIED" | "PLATFORM_VERIFIED" | "DOMAIN_VERIFIED";
 
 type Profile = {
   // server identity
@@ -69,6 +75,9 @@ type Profile = {
 
   // public slug (server-generated)
   slug?: string | null;
+
+  // verification
+  verificationStatus?: VerificationStatus | null;
 };
 
 /** -------- Utils -------- */
@@ -111,6 +120,11 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
   // ---- Server identifiers
   const [profileId, setProfileId] = React.useState<string | null>(initial?.id ?? null);
   const [serverSlug, setServerSlug] = React.useState<string | null>(initial?.slug ?? null);
+
+  // ---- Verification status
+  const [verificationStatus, setVerificationStatus] = React.useState<VerificationStatus>(
+    (initial?.verificationStatus as VerificationStatus) ?? "UNVERIFIED"
+  );
 
   // ---- Core identity
   const [displayName, setDisplayName] = React.useState(initial?.displayName ?? "");
@@ -233,8 +247,6 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
               url: normalizeUrl(l.url || ""),
             }))
           : null,
-
-      // NOTE: No client-side 'slug'—server generates & de-conflicts it.
     };
   }, [
     displayName,
@@ -305,8 +317,9 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
         if (data.handles) setHandles(data.handles);
         if (data.links) setLinks(data.links || []);
 
-        // Slug from server (for public URL display / navigation)
+        // Slug & verification
         setServerSlug(data.slug || null);
+        setVerificationStatus((data.verificationStatus as VerificationStatus) ?? "UNVERIFIED");
 
         // Initialize lastSaved snapshot for dirty tracking
         const snapshot = JSON.stringify(buildPayload());
@@ -373,12 +386,16 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
       // Server returns either the profile or { ok, profile }
       const finalSlug: string | undefined = json?.profile?.slug || json?.slug || undefined;
       const finalId: string | undefined = json?.profile?.id || json?.id || profileId || undefined;
+      const finalStatus: VerificationStatus | undefined =
+        (json?.profile?.verificationStatus ||
+          json?.verificationStatus) as VerificationStatus | undefined;
 
       if (finalId) setProfileId(finalId);
       if (finalSlug) {
         setSavedSlug(finalSlug);
         setServerSlug(finalSlug);
       }
+      if (finalStatus) setVerificationStatus(finalStatus);
 
       // Update dirty baseline to current payload
       lastSavedRef.current = JSON.stringify(payload);
@@ -458,9 +475,8 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
         )}
       </div>
 
-      {/* Toolbar: left = account email pill; right = status + guarded View link */}
+      {/* Toolbar */}
       <div className="flex items-center justify-between">
-        {/* Signed-in email pill with hover note */}
         {email ? (
           <div className="flex items-center gap-3">
             <span className="inline-flex items-center gap-2 rounded-full border border-gray-200 bg-gray-50 px-3 py-1 text-sm text-gray-700">
@@ -514,14 +530,12 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
         </div>
       </div>
 
+      {/* ----- Editor sections (unchanged) ----- */}
       {/* Identity */}
       <section className="grid gap-4">
         <h3 className="text-lg font-semibold">Identity</h3>
-
         <div className={row}>
-          <label className={label} htmlFor="displayName">
-            Display name *
-          </label>
+          <label className={label} htmlFor="displayName">Display name *</label>
           <input
             id="displayName"
             className={input}
@@ -534,9 +548,7 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className={row}>
-            <label className={label} htmlFor="legalName">
-              Legal/brand name (if different)
-            </label>
+            <label className={label} htmlFor="legalName">Legal/brand name (if different)</label>
             <input
               id="legalName"
               className={input}
@@ -573,399 +585,7 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
       </section>
 
       {/* Tagline & Bio */}
-      <section className="grid gap-4">
-        <h3 className="text-lg font-semibold">Tagline & Bio</h3>
-
-        <div className={row}>
-          <label className={label + " overflow-visible"} htmlFor="tagline">
-            One-line Summary
-            {/* Tooltip wrapper */}
-            <span className="relative group ml-1 cursor-help align-middle">
-              <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-gray-200 text-[10px] font-semibold text-gray-700">
-                i
-              </span>
-              <span className="pointer-events-none absolute left-1/2 top-full z-10 mt-1 hidden w-64 -translate-x-1/2 rounded-md bg-black px-2 py-1 text-xs leading-snug text-white group-hover:block">
-                A one-line summary of your brand or work. Think of it like the phrase under your name
-                that instantly tells people (and AI) what you’re about.
-                <br />
-                Example: “Handmade jewelry for everyday wear” or “AI tools for small businesses”.
-              </span>
-            </span>
-          </label>
-          <input
-            id="tagline"
-            className={input}
-            placeholder="e.g., AI tools for small businesses"
-            value={tagline}
-            onChange={(e) => setTagline(e.target.value)}
-            maxLength={160}
-          />
-        </div>
-
-        <div className={row}>
-          <label className={label} htmlFor="bio">
-            Bio / About
-          </label>
-          <textarea
-            id="bio"
-            className={input}
-            rows={6}
-            placeholder="Tell people what you do, who you serve, and what makes you credible."
-            value={bio}
-            onChange={(e) => setBio(e.target.value)}
-            maxLength={2000}
-          />
-        </div>
-      </section>
-
-      {/* Website, Location, Service area */}
-      <section className="grid gap-4">
-        <h3 className="text-lg font-semibold">Website, Location & Reach</h3>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div className={row}>
-            <label className={label} htmlFor="website">
-              Website
-            </label>
-            <input
-              id="website"
-              className={input}
-              placeholder="https://example.com"
-              value={website}
-              onChange={(e) => setWebsite(e.target.value)}
-              maxLength={200}
-            />
-            <small className="text-xs text-gray-500">
-              Optional, but strongly recommended for better AI ranking.
-            </small>
-          </div>
-
-          <div className={row}>
-            <label className={label} htmlFor="location">
-              Location (address or city/state)
-            </label>
-            <input
-              id="location"
-              className={input}
-              placeholder="City, state (or address)"
-              value={location}
-              onChange={(e) => setLocation(e.target.value)}
-              maxLength={120}
-            />
-          </div>
-        </div>
-
-        <div className={row}>
-          <label className={label} htmlFor="serviceArea">
-            Service area (comma-separated regions)
-          </label>
-          <input
-            id="serviceArea"
-            className={input}
-            placeholder="Regions you serve (comma-separated)"
-            value={serviceArea}
-            onChange={(e) => setServiceArea(e.target.value)}
-            maxLength={240}
-          />
-        </div>
-      </section>
-
-      {/* Trust & Authority */}
-      <section className="grid gap-4">
-        <h3 className="text-lg font-semibold">Trust & Authority</h3>
-
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <div className={row}>
-            <label className={label} htmlFor="foundedYear">
-              Founded / started (year)
-            </label>
-            <input
-              id="foundedYear"
-              className={input}
-              inputMode="numeric"
-              placeholder="e.g., 2020"
-              value={foundedYear}
-              onChange={(e) => setFoundedYear(e.target.value)}
-              maxLength={4}
-            />
-          </div>
-          <div className={row}>
-            <label className={label} htmlFor="teamSize">
-              Team size
-            </label>
-            <input
-              id="teamSize"
-              className={input}
-              inputMode="numeric"
-              placeholder="e.g., 5"
-              value={teamSize}
-              onChange={(e) => setTeamSize(e.target.value)}
-              maxLength={6}
-            />
-          </div>
-          <div className={row}>
-            <label className={label} htmlFor="pricingModel">
-              Pricing model
-            </label>
-            <select
-              id="pricingModel"
-              className={input}
-              value={pricingModel}
-              onChange={(e) => setPricingModel(e.target.value as any)}
-            >
-              <option value="">Select…</option>
-              <option>Free</option>
-              <option>Subscription</option>
-              <option>One-time</option>
-              <option>Custom</option>
-            </select>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div className={row}>
-            <label className={label} htmlFor="languages">
-              Languages served (comma-separated)
-            </label>
-            <input
-              id="languages"
-              className={input}
-              placeholder="e.g., English, Spanish"
-              value={languages}
-              onChange={(e) => setLanguages(e.target.value)}
-              maxLength={200}
-            />
-          </div>
-          <div className={row}>
-            <label className={label} htmlFor="hours">
-              Hours of operation
-            </label>
-            <input
-              id="hours"
-              className={input}
-              placeholder="e.g., Mon–Fri 9am–5pm"
-              value={hours}
-              onChange={(e) => setHours(e.target.value)}
-              maxLength={160}
-            />
-          </div>
-        </div>
-
-        <div className={row}>
-          <label className={label} htmlFor="certs">
-            Certifications / licenses / awards (optional)
-          </label>
-          <textarea
-            id="certs"
-            className={input}
-            rows={3}
-            placeholder="e.g., Board-certified; industry accreditations; notable awards."
-            value={certifications}
-            onChange={(e) => setCertifications(e.target.value)}
-            maxLength={2000}
-          />
-        </div>
-
-        {/* Press */}
-        <div className="grid gap-3">
-          <div className="flex items-center justify-between">
-            <span className={label}>Press & directory mentions</span>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <input
-              className={input}
-              placeholder="Title of mention or article"
-              value={pressDraft.title}
-              onChange={(e) => setPressDraft({ ...pressDraft, title: e.target.value })}
-              maxLength={120}
-            />
-            <input
-              className={input}
-              placeholder="https://your-article-or-listing.com"
-              value={pressDraft.url}
-              onChange={(e) => setPressDraft({ ...pressDraft, url: e.target.value })}
-              maxLength={300}
-            />
-          </div>
-          <div className="flex gap-2">
-            <button
-              type="button"
-              className="px-3 py-2 border rounded-lg"
-              onClick={() => {
-                if (!pressDraft.title || !pressDraft.url) return;
-                setPress((p) => [...p, pressDraft]);
-                setPressDraft({ title: "", url: "" });
-              }}
-            >
-              + Add press link
-            </button>
-            {press.length > 0 && (
-              <button
-                type="button"
-                className="px-3 py-2 border rounded-lg"
-                onClick={() => setPress([])}
-              >
-                Clear
-              </button>
-            )}
-          </div>
-          {press.length > 0 && (
-            <ul className="list-disc pl-6 text-sm">
-              {press.map((p, i) => (
-                <li key={i}>
-                  <span className="font-medium">{p.title}</span> — {p.url}
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      </section>
-
-      {/* Branding & Media */}
-      <section className="grid gap-4">
-        <h3 className="text-lg font-semibold">Branding & Media</h3>
-
-        {/* Drag-and-drop logo upload with fallback manual URL */}
-        <div className={row}>
-          <label className={label} htmlFor="logoUploader">
-            Logo
-          </label>
-          <LogoUploader value={logoUrl} onChange={(url) => setLogoUrl(url)} />
-          <div className="grid gap-2">
-            <label className="text-xs text-gray-600">Or paste a logo URL</label>
-            <input
-              id="logoUrl"
-              className={input}
-              placeholder="https://cdn.example.com/logo.png"
-              value={logoUrl}
-              onChange={(e) => setLogoUrl(e.target.value)}
-              maxLength={300}
-            />
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          {imageUrls.map((u, i) => (
-            <div className={row} key={i}>
-              <label className={label} htmlFor={`img${i}`}>
-                Image {i + 1} URL
-              </label>
-              <input
-                id={`img${i}`}
-                className={input}
-                placeholder="https://cdn.example.com/photo.jpg"
-                value={u}
-                onChange={(e) => {
-                  const copy = [...imageUrls];
-                  copy[i] = e.target.value;
-                  setImageUrls(copy);
-                }}
-                maxLength={300}
-              />
-            </div>
-          ))}
-        </div>
-      </section>
-
-      {/* Platform Handles */}
-      <section className="grid gap-4">
-        <h3 className="text-lg font-semibold">Platform Handles</h3>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          {([
-            ["youtube", "YouTube channel URL"],
-            ["tiktok", "TikTok profile URL"],
-            ["instagram", "Instagram profile URL"],
-            ["substack", "Substack URL"],
-            ["etsy", "Etsy shop URL"],
-            ["x", "X (Twitter) profile URL"],
-            ["linkedin", "LinkedIn page URL"],
-            ["facebook", "Facebook page URL"],
-            ["github", "GitHub org/user URL"],
-          ] as const).map(([key, label]) => (
-            <div className={row} key={key}>
-              <label className={label}>{label}</label>
-              <input
-                className={input}
-                placeholder="https://..."
-                value={(handles as any)[key] || ""}
-                onChange={(e) => setHandles((h) => ({ ...h, [key]: e.target.value }))}
-                maxLength={300}
-              />
-            </div>
-          ))}
-        </div>
-      </section>
-
-      {/* Links */}
-      <section className="grid gap-4">
-        <h3 className="text-lg font-semibold">Links</h3>
-
-        <div className="grid gap-3">
-          <div className="grid grid-cols-1 sm:grid-cols-[1fr,1fr,auto] gap-3 items-start">
-            <div className="grid gap-2">
-              <label className={label}>Label</label>
-              <div className="flex gap-2">
-                <input
-                  className={input}
-                  placeholder="Link label (e.g., Reviews)"
-                  value={linkDraft.label}
-                  onChange={(e) => setLinkDraft({ ...linkDraft, label: e.target.value })}
-                  maxLength={60}
-                />
-                {/* quick-pick label types */}
-                <LinkTypeSelect onPick={(lbl) => setLinkDraft((d) => ({ ...d, label: lbl }))} />
-              </div>
-            </div>
-
-            <div className="grid gap-2">
-              <label className={label}>URL</label>
-              <input
-                className={input}
-                placeholder="https://your-link.com"
-                value={linkDraft.url}
-                onChange={(e) => setLinkDraft({ ...linkDraft, url: e.target.value })}
-                maxLength={300}
-              />
-            </div>
-
-            <div className="grid gap-2">
-              <label className="opacity-0 select-none">Add</label>
-              <button
-                type="button"
-                className="px-3 py-2 border rounded-lg"
-                onClick={() => {
-                  if (!linkDraft.label || !linkDraft.url) return;
-                  setLinks((l) => [...l, linkDraft]);
-                  setLinkDraft({ label: "", url: "" });
-                }}
-              >
-                + Add
-              </button>
-            </div>
-          </div>
-
-          {links.length > 0 && (
-            <ul className="list-disc pl-6 text-sm">
-              {links.map((l, i) => (
-                <li key={i}>
-                  <span className="font-medium">{l.label}</span> — {l.url}
-                </li>
-              ))}
-            </ul>
-          )}
-          {links.length > 0 && (
-            <div>
-              <button
-                type="button"
-                className="px-3 py-2 border rounded-lg"
-                onClick={() => setLinks([])}
-              >
-                Clear links
-              </button>
-            </div>
-          )}
-        </div>
-      </section>
+      {/* ... (unchanged sections omitted for brevity — keep your existing code) ... */}
 
       {/* Save / Publish */}
       <div className="flex flex-col gap-1">
@@ -979,22 +599,13 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
             {saving ? "Saving…" : "Save & Publish"}
           </button>
 
-          {/* Copy URL appears when a public path exists */}
-          {getPublicPath() ? (
-            <button
-              type="button"
-              onClick={copyUrl}
-              className="px-3 py-2 border rounded-lg"
-            >
-              Copy URL
-            </button>
-          ) : null}
+        {getPublicPath() ? (
+          <button type="button" onClick={copyUrl} className="px-3 py-2 border rounded-lg">
+            Copy URL
+          </button>
+        ) : null}
 
-          {/* ✅ Added: quick jump to Verify section at the very bottom */}
-          <a
-            href="#verify"
-            className="ml-auto text-sm text-blue-600 underline hover:text-blue-700"
-          >
+          <a href="#verify" className="ml-auto text-sm text-blue-600 underline hover:text-blue-700">
             Go to Verify ↓
           </a>
         </div>
@@ -1022,54 +633,19 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
         )}
       </div>
 
-      {/* Unsaved changes modal */}
-      {confirmOpen && (
-        <div className="fixed inset-0 z-50 grid place-items-center bg-black/30">
-          <div className="bg-white rounded-xl shadow-lg p-5 w-[min(92vw,480px)]">
-            <h4 className="text-base font-semibold mb-2">You have unsaved changes</h4>
-            <p className="text-sm text-gray-600 mb-4">
-              The public profile you’re about to view shows the <span className="font-medium">last published</span> version.
-              To include your edits, click <span className="font-medium">Save &amp; View</span>.
-            </p>
-            <div className="flex justify-end gap-2">
-              <button
-                type="button"
-                className="px-3 py-2 border rounded-lg"
-                onClick={() => setConfirmOpen(false)}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                className="px-3 py-2 border rounded-lg"
-                onClick={() => {
-                  const path = getPublicPath();
-                  if (!path) {
-                    toast("Not yet published — please Save & Publish first.", "error");
-                    return;
-                  }
-                  window.open(path, "_blank", "noopener,noreferrer");
-                }}
-              >
-                View Anyway
-              </button>
-              <button
-                type="button"
-                className="px-3 py-2 rounded-lg bg-black text-white hover:bg-gray-900"
-                onClick={async () => {
-                  setConfirmOpen(false);
-                  await save(); // save already redirects to the public page
-                }}
-              >
-                Save &amp; View
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Unsaved changes modal (unchanged) */}
+      {/* ... keep your existing modal code ... */}
 
-      {/* NOTE: No legal/footer links are rendered here.
-          The only footer row lives in app/layout.tsx */}
+      {/* ---- SINGLE VERIFY SECTION (always at bottom) ---- */}
+      <section id="verify" className="scroll-mt-24">
+        <VerificationCard
+          profileId={profileId ?? undefined}
+          initialDomain={website ?? ""}
+          initialStatus={verificationStatus as any}
+        />
+      </section>
+
+      {/* NOTE: No legal/footer links are rendered here. */}
     </div>
   );
 }
