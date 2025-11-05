@@ -1,5 +1,5 @@
 // components/ProfileEditor.tsx
-// 📅 Updated: 2025-11-05 05:33 ET
+// 📅 Updated: 2025-11-05 06:00 ET
 "use client";
 
 import * as React from "react";
@@ -43,40 +43,27 @@ type PressItem = { title: string; url: string };
 type VerificationStatus = "UNVERIFIED" | "PLATFORM_VERIFIED" | "DOMAIN_VERIFIED";
 
 type Profile = {
-  // server identity
   id?: string | null;
-
-  // original fields
   displayName?: string | null;
   tagline?: string | null;
   location?: string | null;
   website?: string | null;
   bio?: string | null;
   links?: LinkItem[] | null;
-
-  // new fields
   legalName?: string | null;
   entityType?: EntityType | null;
-
   serviceArea?: string[] | null;
   foundedYear?: number | null;
   teamSize?: number | null;
   languages?: string[] | null;
   pricingModel?: "Free" | "Subscription" | "One-time" | "Custom" | null;
   hours?: string | null;
-
   certifications?: string | null;
   press?: PressItem[] | null;
-
   logoUrl?: string | null;
   imageUrls?: string[] | null;
-
   handles?: PlatformHandles | null;
-
-  // public slug (server-generated)
   slug?: string | null;
-
-  // verification
   verificationStatus?: VerificationStatus | null;
 };
 
@@ -87,7 +74,7 @@ function normalizeUrl(value: string): string {
   return /^https?:\/\//i.test(v) ? v : `https://${v}`;
 }
 function isValidUrl(u: string): boolean {
-  if (!u) return true; // allow empty
+  if (!u) return true;
   try {
     const url = new URL(u);
     return !!url.protocol && !!url.host;
@@ -172,17 +159,17 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
 
   // ---- UI
   const [saving, setSaving] = React.useState(false);
-  const [savedSlug, setSavedSlug] = React.useState<string | null>(null); // for Copy URL + redirect
-  const prefilledRef = React.useRef(false); // ensure we prefill only once
+  const [savedSlug, setSavedSlug] = React.useState<string | null>(null);
+  const prefilledRef = React.useRef(false);
 
   // ---- Dirty tracking
-  const lastSavedRef = React.useRef<string>(""); // JSON string of last-saved payload
+  const lastSavedRef = React.useRef<string>("");
   const [dirty, setDirty] = React.useState<boolean>(false);
 
   // ---- Modal for viewing with unsaved changes
   const [confirmOpen, setConfirmOpen] = React.useState(false);
 
-  // ---- Plan pill (Lite/Pro/Business) — fetch from /api/account only; auto-hide if missing
+  // ---- Plan pill (Lite/Pro/Business)
   type PlanTitle = "Lite" | "Pro" | "Business";
   const [plan, setPlan] = React.useState<PlanTitle | null>(null);
   React.useEffect(() => {
@@ -197,7 +184,7 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
           setPlan(p);
         }
       } catch {
-        /* silently ignore; pill stays hidden */
+        /* ignore */
       }
     })();
     return () => {
@@ -205,72 +192,41 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
     };
   }, []);
 
-  /** ---- Build a normalized payload (used for save + dirty detection) ---- */
+  /** ---- Build a normalized payload ---- */
   const buildPayload = React.useCallback((): Profile => {
     return {
-      // identity
       displayName: (displayName || "").trim(),
       legalName: (legalName || "").trim() || null,
       entityType: (entityType as EntityType) || null,
-
-      // story
       tagline: (tagline || "").trim() || null,
       bio: (bio || "").trim() || null,
-
-      // anchors
       website: website ? normalizeUrl(website) : null,
       location: (location || "").trim() || null,
       serviceArea: fromCsv(serviceArea),
-
-      // trust
       foundedYear: toNum(foundedYear) ?? null,
       teamSize: toNum(teamSize) ?? null,
       languages: fromCsv(languages),
       pricingModel: (pricingModel as any) || null,
       hours: (hours || "").trim() || null,
-
       certifications: (certifications || "").trim() || null,
       press: press.length
         ? press.map((p) => ({ title: (p.title || "").trim(), url: normalizeUrl(p.url || "") }))
         : null,
-
-      // branding
       logoUrl: logoUrl ? normalizeUrl(logoUrl) : null,
       imageUrls: imageUrls.filter(Boolean).map(normalizeUrl),
-
-      // platforms & links
       handles,
       links:
         links.length
-          ? links.map((l) => ({
-              label: (l.label || "").trim(),
-              url: normalizeUrl(l.url || ""),
-            }))
+          ? links.map((l) => ({ label: (l.label || "").trim(), url: normalizeUrl(l.url || "") }))
           : null,
     };
   }, [
-    displayName,
-    legalName,
-    entityType,
-    tagline,
-    bio,
-    website,
-    location,
-    serviceArea,
-    foundedYear,
-    teamSize,
-    languages,
-    pricingModel,
-    hours,
-    certifications,
-    press,
-    logoUrl,
-    imageUrls,
-    handles,
-    links,
+    displayName, legalName, entityType, tagline, bio, website, location, serviceArea,
+    foundedYear, teamSize, languages, pricingModel, hours, certifications, press,
+    logoUrl, imageUrls, handles, links,
   ]);
 
-  /** ---- Prefill from API on mount (does not overwrite user typing) ---- */
+  /** ---- Prefill from API on mount ---- */
   React.useEffect(() => {
     if (prefilledRef.current) return;
     prefilledRef.current = true;
@@ -282,24 +238,19 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
         const data: Profile | null = await res.json();
         if (!data) return;
 
-        // IDs
         if (data.id) setProfileId(data.id);
 
-        // Identity
         if (data.displayName != null) setDisplayName(data.displayName || "");
         if (data.legalName != null) setLegalName(data.legalName || "");
         if (data.entityType) setEntityType(data.entityType);
 
-        // Story
         if (data.tagline != null) setTagline(data.tagline || "");
         if (data.bio != null) setBio(data.bio || "");
 
-        // Anchors
         if (data.website != null) setWebsite(data.website || "");
         if (data.location != null) setLocation(data.location || "");
         if (data.serviceArea) setServiceArea(toCsv(data.serviceArea));
 
-        // Trust & authority
         if (data.foundedYear != null) setFoundedYear(String(data.foundedYear || ""));
         if (data.teamSize != null) setTeamSize(String(data.teamSize || ""));
         if (data.languages) setLanguages(toCsv(data.languages));
@@ -309,30 +260,26 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
         if (data.certifications != null) setCertifications(data.certifications || "");
         if (data.press) setPress(data.press);
 
-        // Branding
         if (data.logoUrl != null) setLogoUrl(data.logoUrl || "");
         if (data.imageUrls && data.imageUrls.length) setImageUrls(data.imageUrls);
 
-        // Platforms & links
         if (data.handles) setHandles(data.handles);
         if (data.links) setLinks(data.links || []);
 
-        // Slug & verification
         setServerSlug(data.slug || null);
         setVerificationStatus((data.verificationStatus as VerificationStatus) ?? "UNVERIFIED");
 
-        // Initialize lastSaved snapshot for dirty tracking
         const snapshot = JSON.stringify(buildPayload());
         lastSavedRef.current = snapshot;
         setDirty(false);
       } catch {
-        // silent fail is fine for prefill
+        /* silent */
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  /** ---- Dirty detection on any change ---- */
+  /** ---- Dirty detection ---- */
   React.useEffect(() => {
     const current = JSON.stringify(buildPayload());
     setDirty(current !== lastSavedRef.current);
@@ -345,7 +292,6 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
     try {
       if (!displayName.trim()) throw new Error("Display name is required.");
 
-      // Website optional, but validate if present
       if (website && !isValidUrl(normalizeUrl(website))) {
         throw new Error("Website must be a valid URL (https://example.com).");
       }
@@ -353,19 +299,13 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
         throw new Error("Logo URL must be a valid URL.");
       }
       for (const u of imageUrls) {
-        if (u && !isValidUrl(normalizeUrl(u))) {
-          throw new Error("Every image URL must be valid.");
-        }
+        if (u && !isValidUrl(normalizeUrl(u))) throw new Error("Every image URL must be valid.");
       }
       for (const p of press) {
-        if (p.url && !isValidUrl(normalizeUrl(p.url))) {
-          throw new Error("Press links must be valid URLs.");
-        }
+        if (p.url && !isValidUrl(normalizeUrl(p.url))) throw new Error("Press links must be valid URLs.");
       }
       for (const l of links) {
-        if (l.url && !isValidUrl(normalizeUrl(l.url))) {
-          throw new Error("Extra links must be valid URLs.");
-        }
+        if (l.url && !isValidUrl(normalizeUrl(l.url))) throw new Error("Extra links must be valid URLs.");
       }
 
       const payload = buildPayload();
@@ -383,12 +323,10 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
         throw new Error(text);
       }
 
-      // Server returns either the profile or { ok, profile }
       const finalSlug: string | undefined = json?.profile?.slug || json?.slug || undefined;
       const finalId: string | undefined = json?.profile?.id || json?.id || profileId || undefined;
       const finalStatus: VerificationStatus | undefined =
-        (json?.profile?.verificationStatus ||
-          json?.verificationStatus) as VerificationStatus | undefined;
+        (json?.profile?.verificationStatus || json?.verificationStatus) as VerificationStatus | undefined;
 
       if (finalId) setProfileId(finalId);
       if (finalSlug) {
@@ -397,11 +335,9 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
       }
       if (finalStatus) setVerificationStatus(finalStatus);
 
-      // Update dirty baseline to current payload
       lastSavedRef.current = JSON.stringify(payload);
       setDirty(false);
 
-      // Copy to clipboard, toast, then auto-redirect to public page (current behavior)
       const publicUrl = `${window.location.origin}/p/${finalSlug || finalId}`;
       try {
         await navigator.clipboard.writeText(publicUrl);
@@ -420,7 +356,7 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
     }
   }
 
-  /** ---- Copy URL (after save) ---- */
+  /** ---- Copy URL ---- */
   async function copyUrl() {
     const target = getPublicPath();
     if (!target) return;
@@ -459,7 +395,7 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
 
   return (
     <div className="max-w-2xl grid gap-8">
-      {/* Reassurance note + plan pill (page provides the single h1 title) */}
+      {/* Top note + plan pill */}
       <div className="flex items-start justify-between">
         <p className="text-sm text-gray-600">
           Only <span className="font-medium">Display name</span> is required to publish.
@@ -480,23 +416,14 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
         {email ? (
           <div className="flex items-center gap-3">
             <span className="inline-flex items-center gap-2 rounded-full border border-gray-200 bg-gray-50 px-3 py-1 text-sm text-gray-700">
-              <svg
-                aria-hidden="true"
-                viewBox="0 0 24 24"
-                className="h-4 w-4"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
+              <svg aria-hidden="true" viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <rect x="3" y="5" width="18" height="14" rx="2" ry="2" />
                 <path d="m3 7 9 6 9-6" />
               </svg>
               <span className="font-medium">{email}</span>
               <span
                 className="ml-1 inline-flex h-4 w-4 items-center justify-center rounded-full bg-gray-200 text-[10px] font-semibold text-gray-700"
-                title="This email is private and is NOT shown on your public profile. Only information you enter in the fields below appears publicly."
+                title="This email is private and is NOT shown on your public profile. Only information you enter below appears publicly."
                 aria-label="This email is private and not shown on your public profile."
               >
                 i
@@ -512,9 +439,8 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
           <button
             type="button"
             onClick={() => {
-              if (dirty) {
-                setConfirmOpen(true);
-              } else {
+              if (dirty) setConfirmOpen(true);
+              else {
                 const path = getPublicPath();
                 if (!path) {
                   toast("Not yet published — please Save & Publish first.", "error");
@@ -530,7 +456,6 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
         </div>
       </div>
 
-      {/* ----- Editor sections (unchanged) ----- */}
       {/* Identity */}
       <section className="grid gap-4">
         <h3 className="text-lg font-semibold">Identity</h3>
@@ -578,14 +503,359 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
           </div>
         </div>
 
-        {/* Read-only public URL */}
+        {/* Public URL (read-only) */}
         <div className="mt-2">
           <PublicUrlReadonly slug={serverSlug} />
         </div>
       </section>
 
       {/* Tagline & Bio */}
-      {/* ... (unchanged sections omitted for brevity — keep your existing code) ... */}
+      <section className="grid gap-4">
+        <h3 className="text-lg font-semibold">Tagline & Bio</h3>
+        <div className={row}>
+          <label className={label + " overflow-visible"} htmlFor="tagline">
+            One-line Summary
+            <span className="relative group ml-1 cursor-help align-middle">
+              <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-gray-200 text-[10px] font-semibold text-gray-700">i</span>
+              <span className="pointer-events-none absolute left-1/2 top-full z-10 mt-1 hidden w-64 -translate-x-1/2 rounded-md bg-black px-2 py-1 text-xs leading-snug text-white group-hover:block">
+                A one-line summary of your brand or work. Example: “Handmade jewelry for everyday wear”.
+              </span>
+            </span>
+          </label>
+          <input
+            id="tagline"
+            className={input}
+            placeholder="e.g., AI tools for small businesses"
+            value={tagline}
+            onChange={(e) => setTagline(e.target.value)}
+            maxLength={160}
+          />
+        </div>
+        <div className={row}>
+          <label className={label} htmlFor="bio">Bio / About</label>
+          <textarea
+            id="bio"
+            className={input}
+            rows={6}
+            placeholder="Tell people what you do, who you serve, and what makes you credible."
+            value={bio}
+            onChange={(e) => setBio(e.target.value)}
+            maxLength={2000}
+          />
+        </div>
+      </section>
+
+      {/* Website, Location, Service area */}
+      <section className="grid gap-4">
+        <h3 className="text-lg font-semibold">Website, Location & Reach</h3>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className={row}>
+            <label className={label} htmlFor="website">Website</label>
+            <input
+              id="website"
+              className={input}
+              placeholder="https://example.com"
+              value={website}
+              onChange={(e) => setWebsite(e.target.value)}
+              maxLength={200}
+            />
+            <small className="text-xs text-gray-500">Optional, but recommended for better AI ranking.</small>
+          </div>
+          <div className={row}>
+            <label className={label} htmlFor="location">Location (address or city/state)</label>
+            <input
+              id="location"
+              className={input}
+              placeholder="City, state (or address)"
+              value={location}
+              onChange={(e) => setLocation(e.target.value)}
+              maxLength={120}
+            />
+          </div>
+        </div>
+        <div className={row}>
+          <label className={label} htmlFor="serviceArea">Service area (comma-separated regions)</label>
+          <input
+            id="serviceArea"
+            className={input}
+            placeholder="Regions you serve (comma-separated)"
+            value={serviceArea}
+            onChange={(e) => setServiceArea(e.target.value)}
+            maxLength={240}
+          />
+        </div>
+      </section>
+
+      {/* Trust & Authority */}
+      <section className="grid gap-4">
+        <h3 className="text-lg font-semibold">Trust & Authority</h3>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className={row}>
+            <label className={label} htmlFor="foundedYear">Founded / started (year)</label>
+            <input
+              id="foundedYear"
+              className={input}
+              inputMode="numeric"
+              placeholder="e.g., 2020"
+              value={foundedYear}
+              onChange={(e) => setFoundedYear(e.target.value)}
+              maxLength={4}
+            />
+          </div>
+          <div className={row}>
+            <label className={label} htmlFor="teamSize">Team size</label>
+            <input
+              id="teamSize"
+              className={input}
+              inputMode="numeric"
+              placeholder="e.g., 5"
+              value={teamSize}
+              onChange={(e) => setTeamSize(e.target.value)}
+              maxLength={6}
+            />
+          </div>
+          <div className={row}>
+            <label className={label} htmlFor="pricingModel">Pricing model</label>
+            <select
+              id="pricingModel"
+              className={input}
+              value={pricingModel}
+              onChange={(e) => setPricingModel(e.target.value as any)}
+            >
+              <option value="">Select…</option>
+              <option>Free</option>
+              <option>Subscription</option>
+              <option>One-time</option>
+              <option>Custom</option>
+            </select>
+          </div>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className={row}>
+            <label className={label} htmlFor="languages">Languages served (comma-separated)</label>
+            <input
+              id="languages"
+              className={input}
+              placeholder="e.g., English, Spanish"
+              value={languages}
+              onChange={(e) => setLanguages(e.target.value)}
+              maxLength={200}
+            />
+          </div>
+          <div className={row}>
+            <label className={label} htmlFor="hours">Hours of operation</label>
+            <input
+              id="hours"
+              className={input}
+              placeholder="e.g., Mon–Fri 9am–5pm"
+              value={hours}
+              onChange={(e) => setHours(e.target.value)}
+              maxLength={160}
+            />
+          </div>
+        </div>
+        <div className={row}>
+          <label className={label} htmlFor="certs">Certifications / licenses / awards (optional)</label>
+          <textarea
+            id="certs"
+            className={input}
+            rows={3}
+            placeholder="e.g., Board-certified; industry accreditations; notable awards."
+            value={certifications}
+            onChange={(e) => setCertifications(e.target.value)}
+            maxLength={2000}
+          />
+        </div>
+
+        {/* Press */}
+        <div className="grid gap-3">
+          <div className="flex items-center justify-between">
+            <span className={label}>Press & directory mentions</span>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <input
+              className={input}
+              placeholder="Title of mention or article"
+              value={pressDraft.title}
+              onChange={(e) => setPressDraft({ ...pressDraft, title: e.target.value })}
+              maxLength={120}
+            />
+            <input
+              className={input}
+              placeholder="https://your-article-or-listing.com"
+              value={pressDraft.url}
+              onChange={(e) => setPressDraft({ ...pressDraft, url: e.target.value })}
+              maxLength={300}
+            />
+          </div>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              className="px-3 py-2 border rounded-lg"
+              onClick={() => {
+                if (!pressDraft.title || !pressDraft.url) return;
+                setPress((p) => [...p, pressDraft]);
+                setPressDraft({ title: "", url: "" });
+              }}
+            >
+              + Add press link
+            </button>
+            {press.length > 0 && (
+              <button
+                type="button"
+                className="px-3 py-2 border rounded-lg"
+                onClick={() => setPress([])}
+              >
+                Clear
+              </button>
+            )}
+          </div>
+          {press.length > 0 && (
+            <ul className="list-disc pl-6 text-sm">
+              {press.map((p, i) => (
+                <li key={i}>
+                  <span className="font-medium">{p.title}</span> — {p.url}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </section>
+
+      {/* Branding & Media */}
+      <section className="grid gap-4">
+        <h3 className="text-lg font-semibold">Branding & Media</h3>
+        <div className={row}>
+          <label className={label} htmlFor="logoUploader">Logo</label>
+          <LogoUploader value={logoUrl} onChange={(url) => setLogoUrl(url)} />
+          <div className="grid gap-2">
+            <label className="text-xs text-gray-600">Or paste a logo URL</label>
+            <input
+              id="logoUrl"
+              className={input}
+              placeholder="https://cdn.example.com/logo.png"
+              value={logoUrl}
+              onChange={(e) => setLogoUrl(e.target.value)}
+              maxLength={300}
+            />
+          </div>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          {imageUrls.map((u, i) => (
+            <div className={row} key={i}>
+              <label className={label} htmlFor={`img${i}`}>Image {i + 1} URL</label>
+              <input
+                id={`img${i}`}
+                className={input}
+                placeholder="https://cdn.example.com/photo.jpg"
+                value={u}
+                onChange={(e) => {
+                  const copy = [...imageUrls];
+                  copy[i] = e.target.value;
+                  setImageUrls(copy);
+                }}
+                maxLength={300}
+              />
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* Platform Handles */}
+      <section className="grid gap-4">
+        <h3 className="text-lg font-semibold">Platform Handles</h3>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {([
+            ["youtube", "YouTube channel URL"],
+            ["tiktok", "TikTok profile URL"],
+            ["instagram", "Instagram profile URL"],
+            ["substack", "Substack URL"],
+            ["etsy", "Etsy shop URL"],
+            ["x", "X (Twitter) profile URL"],
+            ["linkedin", "LinkedIn page URL"],
+            ["facebook", "Facebook page URL"],
+            ["github", "GitHub org/user URL"],
+          ] as const).map(([key, labelTxt]) => (
+            <div className={row} key={key}>
+              <label className={label}>{labelTxt}</label>
+              <input
+                className={input}
+                placeholder="https://..."
+                value={(handles as any)[key] || ""}
+                onChange={(e) => setHandles((h) => ({ ...h, [key]: e.target.value }))}
+                maxLength={300}
+              />
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* Links */}
+      <section className="grid gap-4">
+        <h3 className="text-lg font-semibold">Links</h3>
+        <div className="grid gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-[1fr,1fr,auto] gap-3 items-start">
+            <div className="grid gap-2">
+              <label className={label}>Label</label>
+              <div className="flex gap-2">
+                <input
+                  className={input}
+                  placeholder="Link label (e.g., Reviews)"
+                  value={linkDraft.label}
+                  onChange={(e) => setLinkDraft({ ...linkDraft, label: e.target.value })}
+                  maxLength={60}
+                />
+                <LinkTypeSelect onPick={(lbl) => setLinkDraft((d) => ({ ...d, label: lbl }))} />
+              </div>
+            </div>
+            <div className="grid gap-2">
+              <label className={label}>URL</label>
+              <input
+                className={input}
+                placeholder="https://your-link.com"
+                value={linkDraft.url}
+                onChange={(e) => setLinkDraft({ ...linkDraft, url: e.target.value })}
+                maxLength={300}
+              />
+            </div>
+            <div className="grid gap-2">
+              <label className="opacity-0 select-none">Add</label>
+              <button
+                type="button"
+                className="px-3 py-2 border rounded-lg"
+                onClick={() => {
+                  if (!linkDraft.label || !linkDraft.url) return;
+                  setLinks((l) => [...l, linkDraft]);
+                  setLinkDraft({ label: "", url: "" });
+                }}
+              >
+                + Add
+              </button>
+            </div>
+          </div>
+
+          {links.length > 0 && (
+            <ul className="list-disc pl-6 text-sm">
+              {links.map((l, i) => (
+                <li key={i}>
+                  <span className="font-medium">{l.label}</span> — {l.url}
+                </li>
+              ))}
+            </ul>
+          )}
+          {links.length > 0 && (
+            <div>
+              <button
+                type="button"
+                className="px-3 py-2 border rounded-lg"
+                onClick={() => setLinks([])}
+              >
+                Clear links
+              </button>
+            </div>
+          )}
+        </div>
+      </section>
 
       {/* Save / Publish */}
       <div className="flex flex-col gap-1">
@@ -599,11 +869,11 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
             {saving ? "Saving…" : "Save & Publish"}
           </button>
 
-        {getPublicPath() ? (
-          <button type="button" onClick={copyUrl} className="px-3 py-2 border rounded-lg">
-            Copy URL
-          </button>
-        ) : null}
+          {getPublicPath() ? (
+            <button type="button" onClick={copyUrl} className="px-3 py-2 border rounded-lg">
+              Copy URL
+            </button>
+          ) : null}
 
           <a href="#verify" className="ml-auto text-sm text-blue-600 underline hover:text-blue-700">
             Go to Verify ↓
@@ -614,7 +884,7 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
         </p>
       </div>
 
-      {/* === JSON-LD Preview (Editor) === */}
+      {/* JSON-LD Preview */}
       <div className="mt-4">
         {serverSlug || profileId ? (
           <SchemaPreviewButton
@@ -633,8 +903,47 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
         )}
       </div>
 
-      {/* Unsaved changes modal (unchanged) */}
-      {/* ... keep your existing modal code ... */}
+      {/* Unsaved changes modal */}
+      {confirmOpen && (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-black/30">
+          <div className="bg-white rounded-xl shadow-lg p-5 w-[min(92vw,480px)]">
+            <h4 className="text-base font-semibold mb-2">You have unsaved changes</h4>
+            <p className="text-sm text-gray-600 mb-4">
+              The public profile you’re about to view shows the <span className="font-medium">last published</span> version.
+              To include your edits, click <span className="font-medium">Save &amp; View</span>.
+            </p>
+            <div className="flex justify-end gap-2">
+              <button type="button" className="px-3 py-2 border rounded-lg" onClick={() => setConfirmOpen(false)}>
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="px-3 py-2 border rounded-lg"
+                onClick={() => {
+                  const path = getPublicPath();
+                  if (!path) {
+                    toast("Not yet published — please Save & Publish first.", "error");
+                    return;
+                  }
+                  window.open(path, "_blank", "noopener,noreferrer");
+                }}
+              >
+                View Anyway
+              </button>
+              <button
+                type="button"
+                className="px-3 py-2 rounded-lg bg-black text-white hover:bg-gray-900"
+                onClick={async () => {
+                  setConfirmOpen(false);
+                  await save();
+                }}
+              >
+                Save &amp; View
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ---- SINGLE VERIFY SECTION (always at bottom) ---- */}
       <section id="verify" className="scroll-mt-24">
@@ -644,8 +953,6 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
           initialStatus={verificationStatus as any}
         />
       </section>
-
-      {/* NOTE: No legal/footer links are rendered here. */}
     </div>
   );
 }
