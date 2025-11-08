@@ -9,7 +9,7 @@ export const revalidate = 86400;
 export const metadata = {
   title: "Terms of Service | AEOBRO",
   description:
-    "AEOBRO Terms of Service covering cancellations, billing cycles, data retention after cancellation, and refund policy.",
+    "AEOBRO Terms of Service covering cancellations, billing cycles, data retention after cancellation, refund policy, and our Content Integrity and AI Manipulation Policy.",
   alternates: { canonical: "/terms" },
 } as const;
 
@@ -17,42 +17,57 @@ export default function Page() {
   const jsonLd = {
     "@context": "https://schema.org",
     "@type": "WebPage",
-    "name": "Terms of Service",
-    "url": "https://aeobro.com/terms",
-    "description":
-      "AEOBRO Terms of Service, including cancellations, billing cycles, data retention after cancellation, and refunds.",
-    "isPartOf": {
+    name: "Terms of Service",
+    url: "https://aeobro.com/terms",
+    description:
+      "AEOBRO Terms of Service, including cancellations, billing cycles, data retention after cancellation, refunds, and content integrity.",
+    isPartOf: {
       "@type": "WebSite",
-      "name": "AEOBRO",
-      "url": "https://aeobro.com"
-    }
+      name: "AEOBRO",
+      url: "https://aeobro.com",
+    },
   };
 
   const breadcrumbLd = {
     "@context": "https://schema.org",
     "@type": "BreadcrumbList",
-    "itemListElement": [
-      { "@type": "ListItem", "position": 1, "name": "Home", "item": "https://aeobro.com/" },
-      { "@type": "ListItem", "position": 2, "name": "Terms of Service", "item": "https://aeobro.com/terms" }
-    ]
+    itemListElement: [
+      { "@type": "ListItem", position: 1, name: "Home", item: "https://aeobro.com/" },
+      { "@type": "ListItem", position: 2, name: "Terms of Service", item: "https://aeobro.com/terms" },
+    ],
   };
+
+  const lastUpdated = new Date().toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
 
   return (
     <section className="container py-16">
       {/* ✅ JSON-LD */}
       <Script type="application/ld+json" strategy="afterInteractive">
-  {JSON.stringify(jsonLd)}
-</Script>
+        {JSON.stringify(jsonLd)}
+      </Script>
       <Script type="application/ld+json" strategy="afterInteractive">
-  {JSON.stringify(breadcrumbLd)}
-</Script>
+        {JSON.stringify(breadcrumbLd)}
+      </Script>
 
       <h1 className="text-4xl font-extrabold mb-2">Terms of Service</h1>
-      <p className="text-gray-600 mb-10">
-        Last updated: {new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" })}
-      </p>
+      <p className="text-gray-600 mb-10">Last updated: {lastUpdated}</p>
 
       <div className="space-y-8">
+        {/* NEW: Content Integrity & AI Manipulation Policy */}
+        <div className="card">
+          <h3 className="font-semibold">Content Integrity and AI Manipulation Policy</h3>
+          <p className="text-gray-700 mt-2">
+            AEOBRO sanitizes and validates all user-submitted content. You agree not to upload,
+            embed, or otherwise distribute instructions, prompts, or code designed to manipulate
+            search engine ranking systems or AI model outputs. AEOBRO may automatically flag,
+            reject, or remove such submissions to protect platform integrity and external data trust.
+          </p>
+        </div>
+
         <div className="card">
           <h3 className="font-semibold">Cancellations &amp; Billing Cycle</h3>
           <p className="text-gray-700 mt-2">
