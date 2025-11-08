@@ -1,17 +1,104 @@
 // middleware.ts
-// Updated: 2025-10-29 10:59 ET
-// - Fix TypeScript cookie option casing: sameSite: "lax" (was "Lax")
-// - Use Edge-safe dynamic import() for Upstash libs
+// Updated: 2025-11-08 06:38 ET
 // - Preserve: legacy auth redirects, Link header on /p/[slug], anti-enumeration
+// - Add: security headers (CSP, HSTS, X-CTO, Referrer-Policy, Permissions-Policy, etc.)
+// - Use Edge-safe dynamic import() for Upstash libs
 
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
-// ---------- Config ----------
+// ---------- Tunables ----------
 const PROBE_LIMIT_PER_MIN =
   parseInt(process.env.AEO_PROBE_LIMIT_PER_MIN || "", 10) || 30;
 const TARPIT_PATH = "/tarpit";
 const ENABLE_ANTI_ENUM = (process.env.AEO_ANTI_ENUM ?? "1") !== "0";
+
+// If you self-host assets from other domains, add them here
+const IMG_SRC = ["'self'", "data:", "https:"].join(" ");
+const FONT_SRC = ["'self'", "data:"].join(" ");
+const CONNECT_SRC = ["'self'", "https:", "wss:"].join(" ");
+
+// Next.js sometimes needs inline styles; keep 'unsafe-inline' for styles.
+// Avoid 'unsafe-inline' for scripts in prod; if something breaks, consider
+// adding a nonce and swapping to 'script-src 'self' 'nonce-<...>'.
+function buildCSP(origin: string) {
+  // Upgrade insecure requests only on HTTPS
+  const upgrade = origin.startsWith("https://") ? "upgrade-insecure-requests; " : "";
+
+  return [
+    upgrade,
+    "default-src 'self';",
+    `base-uri 'none';`,
+    `object-src 'none';`,
+    // Scripts: Next.js inline chunks are hashed; keep fairly strict
+    `script-src 'self';`,
+    // Styles: allow inline for Tailwind/style tags emitted by Next.js
+    `style-src 'self' 'unsafe-inline';`,
+    `img-src ${IMG_SRC};`,
+    `font-src ${FONT_SRC};`,
+    `connect-src ${CONNECT_SRC};`,
+    // Disallow all framing
+    `frame-ancestors 'none';`,
+    // Optional but useful:
+    `form-action 'self';`,
+  ].join(" ");
+}
+
+// Extra security headers (defense-in-depth)
+function applySecurityHeaders(req: NextRequest, res: NextResponse) {
+  const { origin, hostname } = req.nextUrl;
+
+  // Content Security Policy
+  res.headers.set("Content-Security-Policy", buildCSP(origin));
+
+  // Prevent MIME sniffing
+  res.headers.set("X-Content-Type-Options", "nosniff");
+
+  // Legacy clickjacking protection (CSP frame-ancestors already set)
+  res.headers.set("X-Frame-Options", "DENY");
+
+  // Reasonable referrer policy for sites with external links
+  res.headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
+
+  // Lock down powerful APIs by default
+  res.headers.set(
+    "Permissions-Policy",
+    [
+      "accelerometer=()",
+      "ambient-light-sensor=()",
+      "autoplay=()",
+      "battery=()",
+      "camera=()",
+      "display-capture=()",
+      "document-domain=()",
+      "encrypted-media=()",
+      "fullscreen=(self)", // allow your own UI to go fullscreen
+      "geolocation=()",
+      "gyroscope=()",
+      "magnetometer=()",
+      "microphone=()",
+      "midi=()",
+      "payment=()",
+      "picture-in-picture=(self)",
+      "publickey-credentials-get=()",
+      "screen-wake-lock=()",
+      "usb=()",
+      "xr-spatial-tracking=()",
+    ].join(", ")
+  );
+
+  // Cross-origin isolation knobs — choose conservative defaults to avoid breakage
+  res.headers.set("Cross-Origin-Opener-Policy", "same-origin");
+  res.headers.set("Cross-Origin-Resource-Policy", "same-site");
+
+  // HSTS (HTTPS only; safe on Vercel)
+  if (hostname && hostname !== "localhost") {
+    res.headers.set(
+      "Strict-Transport-Security",
+      "max-age=63072000; includeSubDomains; preload"
+    );
+  }
+}
 
 const legacy = new Set([
   "/sign-in",
@@ -31,40 +118,39 @@ export async function middleware(req: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  // Only operate on /p/* pages below
+  // Only operate fully on /p/* pages below (but still add headers)
   const isProfilePage = pathname.startsWith("/p/");
-  if (!isProfilePage) {
-    return NextResponse.next();
-  }
 
-  // Extract slug for /p/[slug]/...
-  const parts = pathname.split("/").filter(Boolean); // ["p", "slug", ...]
-  const slug = parts[1];
+  // Prepare the base response and apply headers
   const res = NextResponse.next();
 
   // ---- 2) Add Link header for JSON-LD association (HTML → JSON) ----
-  if (slug) {
-    res.headers.append(
-      "Link",
-      `<${origin}/api/profile/${encodeURIComponent(
-        slug
-      )}/schema>; rel="alternate"; type="application/ld+json"`
-    );
+  if (isProfilePage) {
+    const parts = pathname.split("/").filter(Boolean); // ["p", "slug", ...]
+    const slug = parts[1];
+    if (slug) {
+      res.headers.append(
+        "Link",
+        `<${origin}/api/profile/${encodeURIComponent(
+          slug
+        )}/schema>; rel="alternate"; type="application/ld+json"`
+      );
+    }
   }
 
   // ---- 3) Anti-enumeration (rate limit /p/* requests) ----
-  if (ENABLE_ANTI_ENUM && (req.method === "GET" || req.method === "HEAD")) {
+  if (isProfilePage && ENABLE_ANTI_ENUM && (req.method === "GET" || req.method === "HEAD")) {
     const ip =
       req.ip ||
       req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
       "unknown";
 
     try {
-      // Prefer robust Upstash limiter if configured
       if (
         process.env.UPSTASH_REDIS_REST_URL &&
         process.env.UPSTASH_REDIS_REST_TOKEN
       ) {
+        // Upstash rate limit (Edge-safe dynamic imports)
         const [{ Ratelimit }, { Redis }] = await Promise.all([
           import("@upstash/ratelimit"),
           import("@upstash/redis"),
@@ -84,9 +170,11 @@ export async function middleware(req: NextRequest) {
           const url = req.nextUrl.clone();
           url.pathname = TARPIT_PATH;
           url.search = "";
-          return NextResponse.rewrite(url, {
+          const blocked = NextResponse.rewrite(url, {
             headers: { "Cache-Control": "no-store" },
           });
+          applySecurityHeaders(req, blocked);
+          return blocked;
         }
       } else {
         // Cookie-based soft limiter (best-effort fallback)
@@ -103,8 +191,6 @@ export async function middleware(req: NextRequest) {
             const parsed = JSON.parse(cookieVal);
             windowStart = parsed.s || now;
             count = parsed.c || 0;
-
-            // Reset window if expired
             if (now - windowStart > windowMs) {
               windowStart = now;
               count = 0;
@@ -117,7 +203,7 @@ export async function middleware(req: NextRequest) {
         count += 1;
         const tooMany = count > PROBE_LIMIT_PER_MIN;
 
-        // ✅ FIX: sameSite must be lowercase ("lax" | "strict" | "none")
+        // sameSite must be lowercase ("lax" | "strict" | "none")
         res.cookies.set(cookieName, JSON.stringify({ s: windowStart, c: count }), {
           path: "/",
           httpOnly: false, // deterrent only
@@ -130,9 +216,11 @@ export async function middleware(req: NextRequest) {
           const url = req.nextUrl.clone();
           url.pathname = TARPIT_PATH;
           url.search = "";
-          return NextResponse.rewrite(url, {
+          const blocked = NextResponse.rewrite(url, {
             headers: { "Cache-Control": "no-store" },
           });
+          applySecurityHeaders(req, blocked);
+          return blocked;
         }
       }
     } catch {
@@ -140,10 +228,13 @@ export async function middleware(req: NextRequest) {
     }
   }
 
+  // Always apply security headers on the way out
+  applySecurityHeaders(req, res);
   return res;
 }
 
 export const config = {
+  // Keep your original matchers; extend if you want headers on more paths.
   matcher: [
     "/sign-in",
     "/signin",
