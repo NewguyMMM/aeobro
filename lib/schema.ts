@@ -1,5 +1,5 @@
 // lib/schema.ts
-// 📅 2025-10-19 03:50 PM ET
+
 import type { Profile } from "@prisma/client";
 import { sanitizeText, sanitizeUrl } from "@/lib/sanitize";
 
@@ -34,23 +34,22 @@ function applyVerificationGating(
 
 /** Turn a platform handle or url into a canonical https URL (if possible). */
 function handleToCanonicalUrl(key: string, raw: any): string | null {
-  // First: if they already gave us a full URL, honor it.
+  // If they already gave a full URL, honor it (sanitized).
   const asUrl = sanitizeUrl(typeof raw === "string" ? raw : raw?.url);
   if (asUrl) return asUrl;
 
-  // Else try to build a canonical URL from a handle string
+  // Else build canonical from a handle string
   const vRaw = typeof raw === "string" ? raw : raw?.handle ?? "";
   const v = sanitizeText(vRaw, 120);
   if (!v) return null;
 
-  // strip leading @ for platforms that use @
+  // strip leading @
   const noAt = v.replace(/^@/, "");
 
-  // conservative guards: no spaces, no quotes
+  // conservative guards: no spaces/quotes/angle-brackets/NUL
   if (/\s|["'<>\u0000]/.test(noAt)) return null;
 
   const k = (key || "").toLowerCase();
-
   switch (k) {
     case "youtube":
       return `https://www.youtube.com/@${noAt}`;
@@ -79,14 +78,11 @@ function handleToCanonicalUrl(key: string, raw: any): string | null {
 /** Build Event object from a loose event/news shape */
 function buildEventLike(e: any) {
   if (!e) return null;
-  const name =
-    sanitizeText(e.name ?? e.title ?? e.headline ?? "", 200) || null;
+  const name = sanitizeText(e.name ?? e.title ?? e.headline ?? "", 200) || null;
   const url = sanitizeUrl(e.url ?? null) || undefined;
   const startDate = e.startDate ?? e.date ?? e.start_time ?? undefined;
   const endDate = e.endDate ?? e.end_time ?? undefined;
-  const description = e.description
-    ? sanitizeText(e.description, 500)
-    : undefined;
+  const description = e.description ? sanitizeText(e.description, 500) : undefined;
 
   if (!name && !url && !startDate && !description) return null;
 
@@ -102,14 +98,10 @@ function buildEventLike(e: any) {
 /** Build CreativeWork for “news” items */
 function buildNewsLike(n: any) {
   if (!n) return null;
-  const headline =
-    sanitizeText(n.headline ?? n.title ?? n.name ?? "", 200) || null;
+  const headline = sanitizeText(n.headline ?? n.title ?? n.name ?? "", 200) || null;
   const url = sanitizeUrl(n.url ?? null) || undefined;
-  const datePublished =
-    n.datePublished ?? n.publishedAt ?? n.date ?? undefined;
-  const description = n.description
-    ? sanitizeText(n.description, 500)
-    : undefined;
+  const datePublished = n.datePublished ?? n.publishedAt ?? n.date ?? undefined;
+  const description = n.description ? sanitizeText(n.description, 500) : undefined;
 
   if (!headline && !url && !datePublished && !description) return null;
 
@@ -146,9 +138,7 @@ export function buildProfileSchema(profile: Partial<Profile>, baseUrl: string) {
   const bioRaw = (profile as any)?.bio as string | null;
   const taglineRaw = (profile as any)?.tagline as string | null;
   const description =
-    sanitizeText(bioRaw ?? "", 5000) ||
-    sanitizeText(taglineRaw ?? "", 500) ||
-    undefined;
+    sanitizeText(bioRaw ?? "", 5000) || sanitizeText(taglineRaw ?? "", 500) || undefined;
 
   // Images: logo/avatar/image + imageUrls[] (URLs sanitized)
   const imagesSet = new Set<string>();
@@ -191,11 +181,9 @@ export function buildProfileSchema(profile: Partial<Profile>, baseUrl: string) {
     return sanitizeUrl(u);
   };
 
-  const linksArr = Array.isArray((profile as any)?.links)
-    ? (profile as any)?.links
-    : [];
+  const linksArr = Array.isArray((profile as any)?.links) ? (profile as any).links : [];
   const socialsArr = Array.isArray((profile as any)?.socialLinks)
-    ? (profile as any)?.socialLinks
+    ? (profile as any).socialLinks
     : [];
 
   ([] as any[]).concat(linksArr, socialsArr).forEach((v) => {
@@ -217,10 +205,20 @@ export function buildProfileSchema(profile: Partial<Profile>, baseUrl: string) {
   // Address (sanitized optional structured object)
   const addr = ((profile as any)?.address as any) || {};
   const streetAddress = addr?.streetAddress ? sanitizeText(addr.streetAddress, 200) : undefined;
-  const addressLocality = (addr?.addressLocality || addr?.city) ? sanitizeText(addr.addressLocality || addr.city, 120) : undefined;
-  const addressRegion = (addr?.addressRegion || addr?.state) ? sanitizeText(addr.addressRegion || addr.state, 60) : undefined;
+  const addressLocality =
+    (addr?.addressLocality || addr?.city)
+      ? sanitizeText(addr.addressLocality || addr.city, 120)
+      : undefined;
+  const addressRegion =
+    (addr?.addressRegion || addr?.state)
+      ? sanitizeText(addr.addressRegion || addr.state, 60)
+      : undefined;
   const postalCode = addr?.postalCode ? sanitizeText(addr.postalCode, 40) : undefined;
-  const addressCountry = (addr?.addressCountry || addr?.country) ? sanitizeText(addr.addressCountry || addr.country, 60) : undefined;
+  const addressCountry =
+    (addr?.addressCountry || addr?.country)
+      ? sanitizeText(addr.addressCountry || addr.country, 60)
+      : undefined;
+
   const address =
     streetAddress || addressLocality || addressRegion || postalCode || addressCountry
       ? {
@@ -243,10 +241,7 @@ export function buildProfileSchema(profile: Partial<Profile>, baseUrl: string) {
   if (!schemaType) return null;
 
   // Name rules: prefer displayName; for orgs fall back to legalName
-  const name =
-    displayName ??
-    (schemaType !== "Person" ? legalName : null) ??
-    undefined;
+  const name = displayName ?? (schemaType !== "Person" ? legalName : null) ?? undefined;
 
   const base: any = {
     "@context": "https://schema.org",
@@ -263,9 +258,7 @@ export function buildProfileSchema(profile: Partial<Profile>, baseUrl: string) {
   };
 
   // ---- Optional: Press / Mentions -> CreativeWork ----
-  const pressArr = Array.isArray((profile as any)?.press)
-    ? (profile as any)?.press
-    : [];
+  const pressArr = Array.isArray((profile as any)?.press) ? (profile as any).press : [];
   const mentions = pressArr
     .map((p: any) => {
       const url = sanitizeUrl(p?.url);
@@ -281,9 +274,7 @@ export function buildProfileSchema(profile: Partial<Profile>, baseUrl: string) {
   // ---- Optional: Certifications / Awards ----
   const certs = (profile as any)?.certifications;
   if (Array.isArray(certs)) {
-    const awards = certs
-      .map((c: any) => sanitizeText(String(c), 160))
-      .filter(Boolean);
+    const awards = certs.map((c: any) => sanitizeText(String(c), 160)).filter(Boolean);
     if (awards.length) base.award = awards;
   } else if (typeof certs === "string" && certs.trim()) {
     base.award = sanitizeText(certs, 400);
@@ -292,17 +283,13 @@ export function buildProfileSchema(profile: Partial<Profile>, baseUrl: string) {
   // ---- Optional: Upcoming Events / Latest News → subjectOf ----
   const subjectOf: any[] = [];
 
-  const eventsArr = Array.isArray((profile as any)?.events)
-    ? (profile as any).events
-    : [];
+  const eventsArr = Array.isArray((profile as any)?.events) ? (profile as any).events : [];
   for (const e of eventsArr) {
     const ev = buildEventLike(e);
     if (ev) subjectOf.push(ev);
   }
 
-  const newsArr = Array.isArray((profile as any)?.news)
-    ? (profile as any).news
-    : [];
+  const newsArr = Array.isArray((profile as any)?.news) ? (profile as any).news : [];
   for (const n of newsArr) {
     const nw = buildNewsLike(n);
     if (nw) subjectOf.push(nw);
@@ -373,7 +360,7 @@ export function buildProfileSchema(profile: Partial<Profile>, baseUrl: string) {
   return base;
 }
 
-/** FAQ JSON-LD (unchanged) */
+/** FAQ JSON-LD (unchanged, sanitized) */
 export function buildFAQJsonLd(
   slug: string,
   faqs: Array<{ question: string; answer: string }>
@@ -407,7 +394,7 @@ export function buildFAQJsonLd(
   };
 }
 
-/** Services JSON-LD (unchanged) */
+/** Services JSON-LD (sanitized) */
 export function buildServiceJsonLd(
   providerIdUrl: string,
   services: Array<{
