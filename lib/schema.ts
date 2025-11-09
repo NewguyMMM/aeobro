@@ -113,6 +113,41 @@ function buildNewsLike(n: any) {
   return obj;
 }
 
+/** Helper: compose a simple "City, ST" text from address or fall back to free text */
+function composeLocationText(profile: any): string | undefined {
+  const addr = (profile?.address as any) || {};
+  const city = addr?.addressLocality || addr?.city;
+  const region = addr?.addressRegion || addr?.state;
+  const parts = [
+    city ? sanitizeText(String(city), 120) : undefined,
+    region ? sanitizeText(String(region), 60) : undefined,
+  ].filter(Boolean);
+  const composed = parts.length ? parts.join(", ") : undefined;
+
+  // Optional free-text override if you store it
+  const free = profile?.locationText ? sanitizeText(profile.locationText, 200) : undefined;
+
+  return free || composed;
+}
+
+/** Helper: normalize service area into either an array (preferred) or one string */
+function normalizeServiceArea(profile: any): string[] | string | undefined {
+  // Array form (your current Organization logic already uses this)
+  const arr = Array.isArray(profile?.serviceArea)
+    ? profile.serviceArea.map((s: any) => sanitizeText(String(s), 80)).filter(Boolean)
+    : [];
+
+  // Free-text single value, if you use it in the UI (e.g., "The world")
+  const single =
+    profile?.serviceAreaText && String(profile.serviceAreaText).trim()
+      ? sanitizeText(String(profile.serviceAreaText), 120)
+      : undefined;
+
+  if (arr.length) return arr;
+  if (single) return single.toLowerCase() === "the world" ? "Worldwide" : single;
+  return undefined;
+}
+
 /**
  * Build the primary JSON-LD block for a public profile.
  * - Uses entityType to pick @type, then applies verification gating
@@ -120,6 +155,7 @@ function buildNewsLike(n: any) {
  * - Consolidates website + links + socials + handles into sameAs
  * - Adds: mentions (press), award (certifications), subjectOf (events/news)
  * - Supports multiple images
+ * - NEW: Person emits homeLocation + areaServed; Org keeps address + areaServed
  */
 export function buildProfileSchema(profile: Partial<Profile>, baseUrl: string) {
   const slug = (profile as any)?.slug as string | undefined;
@@ -297,7 +333,10 @@ export function buildProfileSchema(profile: Partial<Profile>, baseUrl: string) {
 
   if (subjectOf.length) base.subjectOf = subjectOf;
 
-  // Organization / LocalBusiness extras
+  // ----- NEW: Location & Service Area emission -----
+  const locationText = composeLocationText(profile as any); // "Newark, NJ" etc.
+  const normalizedServiceArea = normalizeServiceArea(profile as any); // array or single string
+
   if (schemaType === "Organization" || schemaType === "LocalBusiness") {
     base.legalName = legalName || undefined;
 
@@ -311,11 +350,8 @@ export function buildProfileSchema(profile: Partial<Profile>, baseUrl: string) {
       : [];
     if (languages.length) base.availableLanguage = languages;
 
-    const serviceAreaRaw = (profile as any)?.serviceArea as string[] | null;
-    const serviceArea = Array.isArray(serviceAreaRaw)
-      ? serviceAreaRaw.map((s) => sanitizeText(s, 80)).filter(Boolean)
-      : [];
-    if (serviceArea.length) base.areaServed = serviceArea;
+    // Keep your existing Organization areaServed (arrays) but also honor free-text
+    if (normalizedServiceArea) base.areaServed = normalizedServiceArea;
 
     const foundedYear = (profile as any)?.foundedYear as number | null;
     if (foundedYear) base.foundingDate = String(foundedYear);
@@ -343,6 +379,14 @@ export function buildProfileSchema(profile: Partial<Profile>, baseUrl: string) {
       null;
     const worksFor = worksForRaw ? sanitizeText(worksForRaw, 200) : null;
     if (worksFor) base.worksFor = { "@type": "Organization", name: worksFor };
+
+    // NEW: Person location + service area
+    if (locationText) {
+      base.homeLocation = { "@type": "Place", name: locationText };
+    }
+    if (normalizedServiceArea) {
+      base.areaServed = normalizedServiceArea;
+    }
   }
 
   // Remove empty values
