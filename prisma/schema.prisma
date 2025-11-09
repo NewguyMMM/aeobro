@@ -1,5 +1,5 @@
 // prisma/schema.prisma
-// 📅 Updated: 2025-10-31 14:56 ET
+// 📅 Updated: 2025-11-09 18:41 ET
 
 generator client {
   provider = "prisma-client-js"
@@ -32,8 +32,10 @@ enum VerifyStatus {
 enum Plan {
   FREE
   LITE
+  PLUS        // <-- restored to avoid destructive enum change
   PRO
   BUSINESS
+  ENTERPRISE  // <-- safe addition; non-destructive
 }
 
 /* Change-history entities */
