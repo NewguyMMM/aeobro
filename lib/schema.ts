@@ -1,5 +1,5 @@
 // lib/schema.ts
-// 📅 Updated: 2025-11-09 19:24 ET
+// 📅 Updated: 2025-11-09 19:55 ET
 
 import type { Profile } from "@prisma/client";
 import { sanitizeText, sanitizeUrl } from "@/lib/sanitize";
@@ -35,41 +35,29 @@ function applyVerificationGating(
 
 /** Turn a platform handle or url into a canonical https URL (if possible). */
 function handleToCanonicalUrl(key: string, raw: any): string | null {
-  // Full URL provided?
   const asUrl = sanitizeUrl(typeof raw === "string" ? raw : raw?.url);
   if (asUrl) return asUrl;
 
-  // Else build canonical from a handle string
   const vRaw = typeof raw === "string" ? raw : raw?.handle ?? "";
   const v = sanitizeText(vRaw, 120);
   if (!v) return null;
 
   const noAt = v.replace(/^@/, "");
-  if (/\s|["'<>\u0000]/.test(noAt)) return null; // conservative guards
+  if (/\s|["'<>\u0000]/.test(noAt)) return null;
 
   const k = (key || "").toLowerCase();
   switch (k) {
-    case "youtube":
-      return `https://www.youtube.com/@${noAt}`;
-    case "tiktok":
-      return `https://www.tiktok.com/@${noAt}`;
-    case "instagram":
-      return `https://www.instagram.com/${noAt}`;
+    case "youtube": return `https://www.youtube.com/@${noAt}`;
+    case "tiktok": return `https://www.tiktok.com/@${noAt}`;
+    case "instagram": return `https://www.instagram.com/${noAt}`;
     case "x":
-    case "twitter":
-      return `https://twitter.com/${noAt}`;
-    case "linkedin":
-      return `https://www.linkedin.com/in/${noAt}`;
-    case "facebook":
-      return `https://www.facebook.com/${noAt}`;
-    case "github":
-      return `https://github.com/${noAt}`;
-    case "substack":
-      return `https://${noAt}.substack.com/`;
-    case "etsy":
-      return `https://www.etsy.com/shop/${noAt}`;
-    default:
-      return null;
+    case "twitter": return `https://twitter.com/${noAt}`;
+    case "linkedin": return `https://www.linkedin.com/in/${noAt}`;
+    case "facebook": return `https://www.facebook.com/${noAt}`;
+    case "github": return `https://github.com/${noAt}`;
+    case "substack": return `https://${noAt}.substack.com/`;
+    case "etsy": return `https://www.etsy.com/shop/${noAt}`;
+    default: return null;
   }
 }
 
@@ -136,20 +124,22 @@ function normalizeServiceArea(profile: any): string[] | string | undefined {
   return undefined;
 }
 
+/** Helper: ensure additionalProperty exists and push */
+function pushAdditional(base: any, name: string, value: string | number) {
+  if (value === undefined || value === null || (typeof value === "string" && !value.trim())) return;
+  const pv = { "@type": "PropertyValue", name, value };
+  if (!base.additionalProperty) base.additionalProperty = [pv];
+  else base.additionalProperty.push(pv);
+}
+
 /**
  * Build the primary JSON-LD block for a public profile.
- * - Uses entityType to pick @type, then applies verification gating
- * - description prefers Bio → Tagline
- * - Consolidates website + links + socials + handles into sameAs
- * - Adds: mentions (press), award (certifications), subjectOf (events/news)
- * - Supports multiple images
- * - Emits Person.homeLocation + areaServed
  */
 export function buildProfileSchema(profile: Partial<Profile>, baseUrl: string) {
   const slug = (profile as any)?.slug as string | undefined;
   const url = slug ? `${baseUrl}/p/${sanitizeText(slug, 120)}` : baseUrl;
 
-  // Core identity (sanitized)
+  // Core identity
   const displayNameRaw = (profile as any)?.displayName as string | null;
   const legalNameRaw = (profile as any)?.legalName as string | null;
   const entityTypeRaw = (profile as any)?.entityType as string | null;
@@ -172,9 +162,7 @@ export function buildProfileSchema(profile: Partial<Profile>, baseUrl: string) {
   if (logoUrl) imagesSet.add(logoUrl);
   if (avatarUrl) imagesSet.add(avatarUrl);
   if (imageUrl) imagesSet.add(imageUrl);
-  const imageUrls = Array.isArray((profile as any)?.imageUrls)
-    ? (profile as any).imageUrls
-    : [];
+  const imageUrls = Array.isArray((profile as any)?.imageUrls) ? (profile as any).imageUrls : [];
   for (const u of imageUrls) {
     const s = sanitizeUrl(u);
     if (s) imagesSet.add(s);
@@ -196,7 +184,6 @@ export function buildProfileSchema(profile: Partial<Profile>, baseUrl: string) {
 
   // sameAs: website + links + socials + handles
   const sameAsSet = new Set<string>();
-
   const websiteUrl = sanitizeUrl((profile as any)?.website as string | null);
   if (websiteUrl) sameAsSet.add(websiteUrl);
 
@@ -209,7 +196,6 @@ export function buildProfileSchema(profile: Partial<Profile>, baseUrl: string) {
   const socialsArr = Array.isArray((profile as any)?.socialLinks)
     ? (profile as any).socialLinks
     : [];
-
   ([] as any[]).concat(linksArr, socialsArr).forEach((v) => {
     const u = toMaybeUrl(v);
     if (u) sameAsSet.add(u);
@@ -286,10 +272,10 @@ export function buildProfileSchema(profile: Partial<Profile>, baseUrl: string) {
   const mentions = pressArr
     .map((p: any) => {
       const url = sanitizeUrl(p?.url);
-      const name = p?.title ? sanitizeText(p.title, 200) : undefined;
+      const pname = p?.title ? sanitizeText(p.title, 200) : undefined;
       if (!url) return null;
       const cw: any = { "@type": "CreativeWork", url };
-      if (name) cw.name = name;
+      if (pname) cw.name = pname;
       return cw;
     })
     .filter(Boolean);
@@ -306,24 +292,27 @@ export function buildProfileSchema(profile: Partial<Profile>, baseUrl: string) {
 
   // ---- Optional: Upcoming Events / Latest News → subjectOf ----
   const subjectOf: any[] = [];
-
   const eventsArr = Array.isArray((profile as any)?.events) ? (profile as any).events : [];
   for (const e of eventsArr) {
     const ev = buildEventLike(e);
     if (ev) subjectOf.push(ev);
   }
-
   const newsArr = Array.isArray((profile as any)?.news) ? (profile as any).news : [];
   for (const n of newsArr) {
     const nw = buildNewsLike(n);
     if (nw) subjectOf.push(nw);
   }
-
   if (subjectOf.length) base.subjectOf = subjectOf;
 
   // ----- Location & Service Area -----
   const normalizedServiceArea = normalizeServiceArea(profile as any);
   const locationText = composeLocationText(profile as any, addressLocality, addressRegion);
+
+  // Trust/authority inputs (used below in both branches)
+  const foundedYear = (profile as any)?.foundedYear as number | null;
+  const teamSize = (profile as any)?.teamSize as number | null;
+  const pricingModelRaw = (profile as any)?.pricingModel as string | null;
+  const pricingModel = pricingModelRaw ? sanitizeText(pricingModelRaw, 40) : null;
 
   if (schemaType === "Organization" || schemaType === "LocalBusiness") {
     base.legalName = legalName || undefined;
@@ -340,19 +329,9 @@ export function buildProfileSchema(profile: Partial<Profile>, baseUrl: string) {
 
     if (normalizedServiceArea) base.areaServed = normalizedServiceArea;
 
-    const foundedYear = (profile as any)?.foundedYear as number | null;
     if (foundedYear) base.foundingDate = String(foundedYear);
-
-    const teamSize = (profile as any)?.teamSize as number | null;
     if (teamSize) base.numberOfEmployees = teamSize;
-
-    const pricingModelRaw = (profile as any)?.pricingModel as string | null;
-    const pricingModel = pricingModelRaw ? sanitizeText(pricingModelRaw, 40) : null;
-    if (pricingModel) {
-      base.additionalProperty = [
-        { "@type": "PropertyValue", name: "pricingModel", value: pricingModel },
-      ];
-    }
+    if (pricingModel) pushAdditional(base, "pricingModel", pricingModel);
   } else {
     // Person extras
     const jobTitleRaw = (profile as any)?.jobTitle as string | null;
@@ -367,15 +346,16 @@ export function buildProfileSchema(profile: Partial<Profile>, baseUrl: string) {
     const worksFor = worksForRaw ? sanitizeText(worksForRaw, 200) : null;
     if (worksFor) base.worksFor = { "@type": "Organization", name: worksFor };
 
-    if (locationText) {
-      base.homeLocation = { "@type": "Place", name: locationText };
-    }
-    if (normalizedServiceArea) {
-      base.areaServed = normalizedServiceArea;
-    }
+    if (locationText) base.homeLocation = { "@type": "Place", name: locationText };
+    if (normalizedServiceArea) base.areaServed = normalizedServiceArea;
+
+    // Surface trust/authority for Person
+    if (foundedYear) pushAdditional(base, "foundedYear", String(foundedYear));
+    if (teamSize) pushAdditional(base, "teamSize", teamSize);
+    if (pricingModel) pushAdditional(base, "pricingModel", pricingModel);
   }
 
-  // Remove empty values
+  // Remove empty/blank values
   for (const k of Object.keys(base)) {
     if (
       base[k] === undefined ||
@@ -406,10 +386,7 @@ export function buildFAQJsonLd(
       return {
         "@type": "Question",
         name: question,
-        acceptedAnswer: {
-          "@type": "Answer",
-          text: answer,
-        },
+        acceptedAnswer: { "@type": "Answer", text: answer },
       };
     })
     .filter(Boolean) as Array<any>;
@@ -464,10 +441,8 @@ export function buildServiceJsonLd(
               ...(currency ? { priceCurrency: currency } : {}),
               ...(svc.priceMin !== undefined && svc.priceMin !== null ? { price: String(svc.priceMin) } : {}),
               ...(svc.priceMax !== undefined && svc.priceMax !== null ? { highPrice: String(svc.priceMax) } : {}),
-              ...(svc.priceMin !== undefined &&
-              svc.priceMin !== null &&
-              svc.priceMax !== undefined &&
-              svc.priceMax !== null
+              ...(svc.priceMin !== undefined && svc.priceMin !== null &&
+                svc.priceMax !== undefined && svc.priceMax !== null
                 ? {
                     priceSpecification: {
                       "@type": "PriceSpecification",
@@ -478,12 +453,7 @@ export function buildServiceJsonLd(
                 : {}),
               ...(url ? { url } : {}),
               ...(priceUnit
-                ? {
-                    eligibleQuantity: {
-                      "@type": "QuantitativeValue",
-                      unitText: priceUnit,
-                    },
-                  }
+                ? { eligibleQuantity: { "@type": "QuantitativeValue", unitText: priceUnit } }
                 : {}),
             }
           : undefined;
