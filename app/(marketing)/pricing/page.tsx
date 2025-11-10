@@ -323,7 +323,7 @@ export default function PricingPage() {
         <PlanCard
           title="Plus"
           price="$19.99/mo"
-          bestFor="For brands that are growing and already engage in frequent updates to social media, have calendar updates — e.g. real estate agents with new listings, social media brands with latest postings, surgeons with upcoming surgeries, retailers with upcoming sales promotions."
+          bestFor="For brands that are growing and already engage in frequent updates to social media, have calendar updates, retailers with upcoming sales promotions."
           features={[
             { label: "Centralized AI Ready Profile", tooltip: CENTRALIZED_TOOLTIP },
             { label: "Updates", tooltip: UPDATES_TOOLTIP },
