@@ -1,4 +1,5 @@
 // lib/schema.ts
+// 📅 Updated: 2025-11-09 19:24 ET
 
 import type { Profile } from "@prisma/client";
 import { sanitizeText, sanitizeUrl } from "@/lib/sanitize";
@@ -34,7 +35,7 @@ function applyVerificationGating(
 
 /** Turn a platform handle or url into a canonical https URL (if possible). */
 function handleToCanonicalUrl(key: string, raw: any): string | null {
-  // If they already gave a full URL, honor it (sanitized).
+  // Full URL provided?
   const asUrl = sanitizeUrl(typeof raw === "string" ? raw : raw?.url);
   if (asUrl) return asUrl;
 
@@ -43,11 +44,8 @@ function handleToCanonicalUrl(key: string, raw: any): string | null {
   const v = sanitizeText(vRaw, 120);
   if (!v) return null;
 
-  // strip leading @
   const noAt = v.replace(/^@/, "");
-
-  // conservative guards: no spaces/quotes/angle-brackets/NUL
-  if (/\s|["'<>\u0000]/.test(noAt)) return null;
+  if (/\s|["'<>\u0000]/.test(noAt)) return null; // conservative guards
 
   const k = (key || "").toLowerCase();
   switch (k) {
@@ -113,36 +111,26 @@ function buildNewsLike(n: any) {
   return obj;
 }
 
-/** Helper: compose a simple "City, ST" text from address or fall back to free text */
-function composeLocationText(profile: any): string | undefined {
-  const addr = (profile?.address as any) || {};
-  const city = addr?.addressLocality || addr?.city;
-  const region = addr?.addressRegion || addr?.state;
-  const parts = [
-    city ? sanitizeText(String(city), 120) : undefined,
-    region ? sanitizeText(String(region), 60) : undefined,
-  ].filter(Boolean);
-  const composed = parts.length ? parts.join(", ") : undefined;
-
-  // Optional free-text override if you store it
-  const free = profile?.locationText ? sanitizeText(profile.locationText, 200) : undefined;
-
-  return free || composed;
+/** Helper: compose "City, ST" (or free-text) for Person.homeLocation */
+function composeLocationText(profile: any, addressLocality?: string, addressRegion?: string) {
+  const locationTextRaw = profile?.location as string | null;
+  const fromField = locationTextRaw ? sanitizeText(locationTextRaw, 200) : undefined;
+  const fromAddress =
+    (addressLocality || addressRegion)
+      ? [addressLocality, addressRegion].filter(Boolean).join(", ")
+      : undefined;
+  return fromField || fromAddress || undefined;
 }
 
-/** Helper: normalize service area into either an array (preferred) or one string */
+/** Helper: normalize service area into array or a single string */
 function normalizeServiceArea(profile: any): string[] | string | undefined {
-  // Array form (your current Organization logic already uses this)
   const arr = Array.isArray(profile?.serviceArea)
     ? profile.serviceArea.map((s: any) => sanitizeText(String(s), 80)).filter(Boolean)
     : [];
-
-  // Free-text single value, if you use it in the UI (e.g., "The world")
   const single =
     profile?.serviceAreaText && String(profile.serviceAreaText).trim()
       ? sanitizeText(String(profile.serviceAreaText), 120)
       : undefined;
-
   if (arr.length) return arr;
   if (single) return single.toLowerCase() === "the world" ? "Worldwide" : single;
   return undefined;
@@ -155,7 +143,7 @@ function normalizeServiceArea(profile: any): string[] | string | undefined {
  * - Consolidates website + links + socials + handles into sameAs
  * - Adds: mentions (press), award (certifications), subjectOf (events/news)
  * - Supports multiple images
- * - NEW: Person emits homeLocation + areaServed; Org keeps address + areaServed
+ * - Emits Person.homeLocation + areaServed
  */
 export function buildProfileSchema(profile: Partial<Profile>, baseUrl: string) {
   const slug = (profile as any)?.slug as string | undefined;
@@ -170,13 +158,13 @@ export function buildProfileSchema(profile: Partial<Profile>, baseUrl: string) {
   const legalName = legalNameRaw ? sanitizeText(legalNameRaw, 200) : null;
   const entityType = entityTypeRaw ? sanitizeText(entityTypeRaw, 50) : null;
 
-  // Description: Bio → Tagline (sanitized)
+  // Description: Bio → Tagline
   const bioRaw = (profile as any)?.bio as string | null;
   const taglineRaw = (profile as any)?.tagline as string | null;
   const description =
     sanitizeText(bioRaw ?? "", 5000) || sanitizeText(taglineRaw ?? "", 500) || undefined;
 
-  // Images: logo/avatar/image + imageUrls[] (URLs sanitized)
+  // Images: logo/avatar/image + imageUrls[]
   const imagesSet = new Set<string>();
   const logoUrl = sanitizeUrl((profile as any)?.logoUrl as string | null);
   const avatarUrl = sanitizeUrl((profile as any)?.avatarUrl as string | null);
@@ -194,7 +182,7 @@ export function buildProfileSchema(profile: Partial<Profile>, baseUrl: string) {
   const images = Array.from(imagesSet);
   const imageOut = images.length === 0 ? undefined : images.length === 1 ? images[0] : images;
 
-  // Contact (sanitized)
+  // Contact
   const emailRaw =
     ((profile as any)?.publicEmail as string | null) ??
     ((profile as any)?.email as string | null) ??
@@ -206,7 +194,7 @@ export function buildProfileSchema(profile: Partial<Profile>, baseUrl: string) {
   const email = emailRaw ? sanitizeText(emailRaw, 200) : undefined;
   const telephone = telephoneRaw ? sanitizeText(telephoneRaw, 50) : undefined;
 
-  // sameAs: website + links + socialLinks + handles (canonicalized)
+  // sameAs: website + links + socials + handles
   const sameAsSet = new Set<string>();
 
   const websiteUrl = sanitizeUrl((profile as any)?.website as string | null);
@@ -238,7 +226,7 @@ export function buildProfileSchema(profile: Partial<Profile>, baseUrl: string) {
   const sameAs = Array.from(sameAsSet);
   const sameAsOut = sameAs.length ? sameAs : undefined;
 
-  // Address (sanitized optional structured object)
+  // Address
   const addr = ((profile as any)?.address as any) || {};
   const streetAddress = addr?.streetAddress ? sanitizeText(addr.streetAddress, 200) : undefined;
   const addressLocality =
@@ -333,9 +321,9 @@ export function buildProfileSchema(profile: Partial<Profile>, baseUrl: string) {
 
   if (subjectOf.length) base.subjectOf = subjectOf;
 
-  // ----- NEW: Location & Service Area emission -----
-  const locationText = composeLocationText(profile as any); // "Newark, NJ" etc.
-  const normalizedServiceArea = normalizeServiceArea(profile as any); // array or single string
+  // ----- Location & Service Area -----
+  const normalizedServiceArea = normalizeServiceArea(profile as any);
+  const locationText = composeLocationText(profile as any, addressLocality, addressRegion);
 
   if (schemaType === "Organization" || schemaType === "LocalBusiness") {
     base.legalName = legalName || undefined;
@@ -350,7 +338,6 @@ export function buildProfileSchema(profile: Partial<Profile>, baseUrl: string) {
       : [];
     if (languages.length) base.availableLanguage = languages;
 
-    // Keep your existing Organization areaServed (arrays) but also honor free-text
     if (normalizedServiceArea) base.areaServed = normalizedServiceArea;
 
     const foundedYear = (profile as any)?.foundedYear as number | null;
@@ -380,7 +367,6 @@ export function buildProfileSchema(profile: Partial<Profile>, baseUrl: string) {
     const worksFor = worksForRaw ? sanitizeText(worksForRaw, 200) : null;
     if (worksFor) base.worksFor = { "@type": "Organization", name: worksFor };
 
-    // NEW: Person location + service area
     if (locationText) {
       base.homeLocation = { "@type": "Place", name: locationText };
     }
@@ -397,14 +383,14 @@ export function buildProfileSchema(profile: Partial<Profile>, baseUrl: string) {
       (typeof base[k] === "string" && base[k].trim() === "") ||
       (Array.isArray(base[k]) && base[k].length === 0)
     ) {
-      delete base[k];
+      delete (base as any)[k];
     }
   }
 
   return base;
 }
 
-/** FAQ JSON-LD (unchanged, sanitized) */
+/** FAQ JSON-LD (sanitized) */
 export function buildFAQJsonLd(
   slug: string,
   faqs: Array<{ question: string; answer: string }>
