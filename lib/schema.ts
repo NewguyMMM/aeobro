@@ -1,5 +1,5 @@
 // lib/schema.ts
-// 📅 Updated: 2025-11-09 19:55 ET
+// 📅 Updated: 2025-11-09 20:12 ET
 
 import type { Profile } from "@prisma/client";
 import { sanitizeText, sanitizeUrl } from "@/lib/sanitize";
@@ -132,9 +132,7 @@ function pushAdditional(base: any, name: string, value: string | number) {
   else base.additionalProperty.push(pv);
 }
 
-/**
- * Build the primary JSON-LD block for a public profile.
- */
+/** Build the primary JSON-LD block for a public profile. */
 export function buildProfileSchema(profile: Partial<Profile>, baseUrl: string) {
   const slug = (profile as any)?.slug as string | undefined;
   const url = slug ? `${baseUrl}/p/${sanitizeText(slug, 120)}` : baseUrl;
@@ -154,7 +152,7 @@ export function buildProfileSchema(profile: Partial<Profile>, baseUrl: string) {
   const description =
     sanitizeText(bioRaw ?? "", 5000) || sanitizeText(taglineRaw ?? "", 500) || undefined;
 
-  // Images: logo/avatar/image + imageUrls[]
+  // Images
   const imagesSet = new Set<string>();
   const logoUrl = sanitizeUrl((profile as any)?.logoUrl as string | null);
   const avatarUrl = sanitizeUrl((profile as any)?.avatarUrl as string | null);
@@ -173,12 +171,10 @@ export function buildProfileSchema(profile: Partial<Profile>, baseUrl: string) {
   // Contact
   const emailRaw =
     ((profile as any)?.publicEmail as string | null) ??
-    ((profile as any)?.email as string | null) ??
-    null;
+    ((profile as any)?.email as string | null) ?? null;
   const telephoneRaw =
     ((profile as any)?.publicPhone as string | null) ??
-    ((profile as any)?.phone as string | null) ??
-    null;
+    ((profile as any)?.phone as string | null) ?? null;
   const email = emailRaw ? sanitizeText(emailRaw, 200) : undefined;
   const telephone = telephoneRaw ? sanitizeText(telephoneRaw, 50) : undefined;
 
@@ -208,7 +204,6 @@ export function buildProfileSchema(profile: Partial<Profile>, baseUrl: string) {
       if (canon) sameAsSet.add(canon);
     }
   }
-
   const sameAs = Array.from(sameAsSet);
   const sameAsOut = sameAs.length ? sameAs : undefined;
 
@@ -241,16 +236,16 @@ export function buildProfileSchema(profile: Partial<Profile>, baseUrl: string) {
         }
       : undefined;
 
-  // Heuristic: treat as org if legalName exists and entityType is missing
+  // Heuristic → @type
   const orgHeuristic = !!legalName && !entityType;
   const preliminaryType = schemaTypeFor(entityType || undefined, orgHeuristic);
 
-  // Apply verification gating
+  // Verification gating
   const verificationStatus = (profile as any)?.verificationStatus as string | null;
   const schemaType = applyVerificationGating(preliminaryType as any, verificationStatus);
   if (!schemaType) return null;
 
-  // Name rules: prefer displayName; for orgs fall back to legalName
+  // Name rules
   const name = displayName ?? (schemaType !== "Person" ? legalName : null) ?? undefined;
 
   const base: any = {
@@ -267,21 +262,27 @@ export function buildProfileSchema(profile: Partial<Profile>, baseUrl: string) {
     ...(address ? { address } : {}),
   };
 
-  // ---- Optional: Press / Mentions -> CreativeWork ----
+  // ---- Mentions (Press) ----
   const pressArr = Array.isArray((profile as any)?.press) ? (profile as any).press : [];
   const mentions = pressArr
     .map((p: any) => {
       const url = sanitizeUrl(p?.url);
-      const pname = p?.title ? sanitizeText(p.title, 200) : undefined;
-      if (!url) return null;
-      const cw: any = { "@type": "CreativeWork", url };
-      if (pname) cw.name = pname;
+      const title =
+        p?.title ? sanitizeText(p.title, 200)
+        : p?.name ? sanitizeText(p.name, 200)
+        : p?.label ? sanitizeText(p.label, 200)
+        : undefined;
+
+      if (!url && !title) return null; // need at least one
+      const cw: any = { "@type": "CreativeWork" };
+      if (url) cw.url = url;
+      if (title) cw.name = title;
       return cw;
     })
     .filter(Boolean);
   if (mentions.length) base.mentions = mentions;
 
-  // ---- Optional: Certifications / Awards ----
+  // ---- Certifications / Awards ----
   const certs = (profile as any)?.certifications;
   if (Array.isArray(certs)) {
     const awards = certs.map((c: any) => sanitizeText(String(c), 160)).filter(Boolean);
@@ -290,7 +291,7 @@ export function buildProfileSchema(profile: Partial<Profile>, baseUrl: string) {
     base.award = sanitizeText(certs, 400);
   }
 
-  // ---- Optional: Upcoming Events / Latest News → subjectOf ----
+  // ---- Events & News → subjectOf ----
   const subjectOf: any[] = [];
   const eventsArr = Array.isArray((profile as any)?.events) ? (profile as any).events : [];
   for (const e of eventsArr) {
@@ -341,17 +342,26 @@ export function buildProfileSchema(profile: Partial<Profile>, baseUrl: string) {
     const worksForRaw =
       ((profile as any)?.organizationName as string | null) ??
       ((profile as any)?.company as string | null) ??
-      legalName ??
-      null;
+      legalName ?? null;
     const worksFor = worksForRaw ? sanitizeText(worksForRaw, 200) : null;
     if (worksFor) base.worksFor = { "@type": "Organization", name: worksFor };
 
     if (locationText) base.homeLocation = { "@type": "Place", name: locationText };
     if (normalizedServiceArea) base.areaServed = normalizedServiceArea;
 
-    // Surface trust/authority for Person
+    // NEW: Person fields mirroring org trust details
+    const languagesRaw = (profile as any)?.languages as string[] | null;
+    const knowsLang = Array.isArray(languagesRaw)
+      ? languagesRaw.map((s) => sanitizeText(s, 60)).filter(Boolean)
+      : [];
+    if (knowsLang.length) base.knowsLanguage = knowsLang;
+
+    const hoursRaw = (profile as any)?.hours as string | null;
+    const hours = hoursRaw ? sanitizeText(hoursRaw, 160) : null;
+    if (hours) pushAdditional(base, "hours", hours);
+
     if (foundedYear) pushAdditional(base, "foundedYear", String(foundedYear));
-    if (teamSize) pushAdditional(base, "teamSize", teamSize);
+    if (teamSize) pushAdditional(base, "teamSize", teamSize!);
     if (pricingModel) pushAdditional(base, "pricingModel", pricingModel);
   }
 
