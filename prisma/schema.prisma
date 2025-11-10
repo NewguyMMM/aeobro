@@ -1,5 +1,5 @@
 // prisma/schema.prisma
-// 📅 Updated: 2025-11-09 22:40 ET
+// 📅 Updated: 2025-11-09 22:53 ET
 
 generator client {
   provider = "prisma-client-js"
@@ -9,7 +9,7 @@ datasource db {
   provider          = "postgresql"
   url               = env("DATABASE_URL")           // pooled URL for app runtime
   directUrl         = env("DATABASE_DIRECT_URL")    // direct (non-pooler) URL for migrations
-  shadowDatabaseUrl = env("SHADOW_DATABASE_URL")    // NEW: Neon shadow branch/DB for migrate dev
+  shadowDatabaseUrl = env("SHADOW_DATABASE_URL")    // Neon shadow branch/DB for migrate dev
 }
 
 /* ===============================
@@ -32,10 +32,10 @@ enum VerifyStatus {
 enum Plan {
   FREE
   LITE
-  PLUS        // <-- restored to avoid destructive enum change
+  PLUS        // restored to avoid destructive enum change
   PRO
   BUSINESS
-  ENTERPRISE  // <-- safe addition; non-destructive
+  ENTERPRISE  // safe addition; non-destructive
 }
 
 /* Change-history entities */
