@@ -1,5 +1,5 @@
 // prisma/schema.prisma
-// 📅 Updated: 2025-11-09 18:41 ET
+// 📅 Updated: 2025-11-09 22:40 ET
 
 generator client {
   provider = "prisma-client-js"
@@ -147,6 +147,9 @@ model Profile {
   // Story
   tagline     String?
   bio         String?
+
+  // 🔔 Pro feature: single public “Latest Update” message (nullable)
+  updateMessage String? @db.Text
 
   // Anchors
   website     String?
