@@ -9,7 +9,7 @@ const PRICES = {
   BUSINESS: process.env.NEXT_PUBLIC_STRIPE_PRICE_BUSINESS ?? "",
 } as const;
 
-type PlanTitle = "Lite" | "Pro" | "Business";
+type PlanTitle = "Lite" | "Plus" | "Pro" | "Business";
 
 function cx(...parts: Array<string | false | null | undefined>) {
   return parts.filter(Boolean).join(" ");
@@ -159,23 +159,27 @@ export default function PricingPage() {
     onClick,
     disabled,
     title,
+    variant = "primary",
   }: {
     children: React.ReactNode;
     onClick?: () => void;
     disabled?: boolean;
     title?: string;
+    variant?: "primary" | "disabled";
   }) => {
     const base =
       "mt-auto inline-flex h-10 items-center justify-center rounded-xl px-4 py-2 text-center font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-sky-500";
     const enabled = "bg-black text-white hover:bg-sky-600";
-    const disabledCls = "bg-black/50 text-white/80 cursor-not-allowed";
+    const disabledCls = "bg-neutral-200 text-neutral-500 cursor-not-allowed";
+
+    const isDisabled = disabled || variant === "disabled";
 
     return (
       <button
-        className={cx(base, disabled ? disabledCls : enabled)}
-        disabled={disabled}
+        className={cx(base, isDisabled ? disabledCls : enabled)}
+        disabled={isDisabled}
         title={title}
-        onClick={onClick}
+        onClick={isDisabled ? undefined : onClick}
       >
         {children}
       </button>
@@ -193,6 +197,7 @@ export default function PricingPage() {
     btnText,
     priceId,
     featured = false,
+    comingSoon = false, // forces disabled + gray highlight
   }: {
     title: PlanTitle;
     price: string;
@@ -202,14 +207,16 @@ export default function PricingPage() {
     btnText: string;
     priceId: string;
     featured?: boolean;
+    comingSoon?: boolean;
   }) => {
-    const disabled = !priceId;
+    const disabled = comingSoon || !priceId;
 
     return (
       <div
         className={cx(
-          "relative flex flex-col gap-4 rounded-2xl border p-6 shadow-sm",
-          featured && "border-sky-500/40 shadow-md"
+          "relative flex flex-col gap-4 rounded-2xl p-6 shadow-sm border",
+          featured && "border-sky-500/40 shadow-md",
+          comingSoon ? "bg-neutral-50 border-neutral-200" : "bg-white"
         )}
       >
         {featured && (
@@ -247,11 +254,20 @@ export default function PricingPage() {
         </ul>
 
         <Button
-          disabled={disabled}
-          title={disabled ? `Missing Stripe Price ID for ${title}.` : undefined}
-          onClick={disabled ? undefined : () => startCheckout(priceId, title)}
+          disabled={!comingSoon && !priceId ? true : false}
+          variant={comingSoon ? "disabled" : "primary"}
+          title={
+            comingSoon
+              ? "This tier is coming soon."
+              : !priceId
+              ? `Missing Stripe Price ID for ${title}.`
+              : undefined
+          }
+          onClick={
+            comingSoon || !priceId ? undefined : () => startCheckout(priceId, title)
+          }
         >
-          {loading === title ? "Redirecting…" : btnText}
+          {loading === title ? "Redirecting…" : comingSoon ? "Coming soon" : btnText}
         </Button>
       </div>
     );
@@ -262,14 +278,14 @@ export default function PricingPage() {
   const CENTRALIZED_TOOLTIP =
     "You get a basic, centralized AI-ready profile with your business/creator name, logo, links, and a capped number of images/links. This is like having a business card for machines — enough for AI and search engines to know who you are and where to find you. But: no advanced schema types (FAQ, Services, Reviews, etc.) and no audit trail.";
 
+  const UPDATES_TOOLTIP =
+    "Publish quick, structured updates (e.g., posts, announcements, listings, events) that AI can index — ideal for frequent changes like new inventory, listings, or promos.";
+
   const FAQ_TOOLTIP =
     "Beyond just listing a tagline, you can build a structured Q&A section AI can read.";
 
   const SERVICE_TOOLTIP =
     "Not just “We do photography,” but “We offer wedding packages, family sessions, pricing ranges, etc.” in schema format.";
-
-  const HISTORY_TOOLTIP =
-    "Tracks updates to your profile/schema over time and lets you audit or roll back changes.";
 
   const MULTI_LOCATION_TOOLTIP =
     "Manage up to 10 locations under one account—each with its own hours, address, and phone—published in structured data.";
@@ -291,7 +307,9 @@ export default function PricingPage() {
         </div>
       )}
 
-      <div className="grid gap-6 md:grid-cols-3 mt-2">
+      {/* Four cards now – include Plus */}
+      <div className="grid gap-6 md:grid-cols-4 mt-2">
+        {/* Lite */}
         <PlanCard
           title="Lite"
           price="$4.99/mo"
@@ -301,16 +319,30 @@ export default function PricingPage() {
           priceId={PRICES.LITE}
         />
 
-        {/* Pro with updated descriptor */}
+        {/* Plus (Coming soon) */}
+        <PlanCard
+          title="Plus"
+          price="$19.99/mo"
+          bestFor="For brands that are growing and already engage in frequent updates to social media, have calendar updates — e.g. real estate agents with new listings, social media brands with latest postings, surgeons with upcoming surgeries, retailers with upcoming sales promotions."
+          features={[
+            { label: "Centralized AI Ready Profile", tooltip: CENTRALIZED_TOOLTIP },
+            { label: "Updates", tooltip: UPDATES_TOOLTIP },
+          ]}
+          btnText="Coming soon"
+          priceId=""           // intentionally blank; tier disabled
+          comingSoon
+        />
+
+        {/* Pro (Most Popular) */}
         <PlanCard
           title="Pro"
           price="$49/mo"
           bestFor="professionals, small businesses, and product brands looking for richer AI visibility with FAQs, services, and updates."
           features={[
             { label: "Centralized AI Ready Profile", tooltip: CENTRALIZED_TOOLTIP },
+            { label: "Updates", tooltip: UPDATES_TOOLTIP },
             { label: "FAQ markup", tooltip: FAQ_TOOLTIP },
             { label: "Service markup", tooltip: SERVICE_TOOLTIP },
-            { label: "Change history", tooltip: HISTORY_TOOLTIP },
           ]}
           soon={[]}
           btnText="Get Pro"
@@ -318,6 +350,7 @@ export default function PricingPage() {
           featured
         />
 
+        {/* Business (Coming soon) */}
         <PlanCard
           title="Business"
           price="$199/mo"
@@ -329,14 +362,16 @@ export default function PricingPage() {
             { label: "Bulk import + webhooks", tooltip: BULK_WEBHOOKS_TOOLTIP },
             { label: "Advanced analytics", tooltip: ANALYTICS_TOOLTIP },
           ]}
-          btnText="Get Business"
-          priceId={PRICES.BUSINESS}
+          btnText="Coming soon"
+          priceId=""           // intentionally blank; tier disabled
+          comingSoon
         />
       </div>
 
       {showConfigHint && (
         <p className="mt-4 text-sm text-gray-500">
-          If a plan button is disabled, add the corresponding Stripe Price ID to your environment variables.
+          If a plan button is disabled due to configuration, add the corresponding Stripe Price ID to your environment variables.
+          (Note: some tiers are intentionally marked “Coming soon.”)
         </p>
       )}
     </div>
