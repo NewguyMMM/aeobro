@@ -1,0 +1,40 @@
+{
+  "env": [
+    {
+      "key": "DATABASE_URL",
+      "value": "postgresql://<user>:<password>@<project>-pooler.<region>.neon.tech/<database>?sslmode=require&channel_binding=require&pgbouncer=true&connect_timeout=15",
+      "target": ["production", "preview", "development"]
+    },
+    {
+      "key": "DIRECT_URL",
+      "value": "postgresql://<user>:<password>@<project>.<region>.neon.tech/<database>?sslmode=require&channel_binding=require",
+      "target": ["production", "preview", "development"]
+    },
+    {
+      "key": "SHADOW_DATABASE_URL",
+      "value": "postgresql://<user>:<password>@<project>.<region>.neon.tech/<shadow_database>?sslmode=require&channel_binding=require",
+      "target": ["production", "preview", "development"]
+    },
+    {
+      "key": "NEXTAUTH_SECRET",
+      "value": "<set-in-vercel>",
+      "target": ["production", "preview", "development"]
+    },
+    {
+      "key": "NEXTAUTH_URL",
+      "value": "https://aeobro.vercel.app",
+      "target": ["production", "preview", "development"]
+    },
+    {
+      "key": "STRIPE_SECRET_KEY",
+      "value": "<set-in-vercel>",
+      "target": ["production", "preview", "development"]
+    },
+    {
+      "key": "RESEND_API_KEY",
+      "value": "<set-in-vercel>",
+      "target": ["production", "preview", "development"]
+    }
+  ]
+}
+
