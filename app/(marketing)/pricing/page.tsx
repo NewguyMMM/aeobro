@@ -336,7 +336,7 @@ export default function PricingPage() {
             { label: "Updates", tooltip: UPDATES_TOOLTIP },
           ]}
           btnText="Get Plus"
-          priceId={PRICES.PLUS} // uses env or fallback
+          priceId={PRICES.PLUS}
         />
 
         {/* Pro (Most Popular) */}
@@ -365,4 +365,21 @@ export default function PricingPage() {
           soon={[
             { label: "Multi-location (10)", tooltip: MULTI_LOCATION_TOOLTIP },
             { label: "Team seats (3)", tooltip: TEAM_SEATS_TOOLTIP },
-            { label: "Bulk import + webhooks", tooltip: BU
+            { label: "Bulk import + webhooks", tooltip: BULK_WEBHOOKS_TOOLTIP },
+            { label: "Advanced analytics", tooltip: ANALYTICS_TOOLTIP },
+          ]}
+          btnText="Coming soon"
+          priceId="" // intentionally blank; tier disabled
+          comingSoon
+        />
+      </div>
+
+      {showConfigHint && (
+        <p className="mt-4 text-sm text-gray-500">
+          If a plan button is disabled due to configuration, add the corresponding Stripe Price ID to your environment variables.
+          (Note: some tiers are intentionally marked “Coming soon.”)
+        </p>
+      )}
+    </div>
+  );
+}
