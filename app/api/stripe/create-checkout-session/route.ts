@@ -15,6 +15,7 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
 // Allow only the prices you’ve exposed via env
 const ALLOWED_PRICE_IDS = [
   process.env.NEXT_PUBLIC_STRIPE_PRICE_LITE,
+  process.env.NEXT_PUBLIC_STRIPE_PRICE_PLUS,      // ✅ NEW: Plus tier
   process.env.NEXT_PUBLIC_STRIPE_PRICE_PRO,
   process.env.NEXT_PUBLIC_STRIPE_PRICE_BUSINESS,
   process.env.NEXT_PUBLIC_STRIPE_PRICE_ENTERPRISE,
