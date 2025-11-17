@@ -15,7 +15,7 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
 // Allow only the prices you’ve exposed via env
 const ALLOWED_PRICE_IDS = [
   process.env.NEXT_PUBLIC_STRIPE_PRICE_LITE,
-  process.env.NEXT_PUBLIC_STRIPE_PRICE_PLUS,      // ✅ NEW: Plus tier
+  process.env.NEXT_PUBLIC_STRIPE_PRICE_PLUS,      // ✅ Plus tier
   process.env.NEXT_PUBLIC_STRIPE_PRICE_PRO,
   process.env.NEXT_PUBLIC_STRIPE_PRICE_BUSINESS,
   process.env.NEXT_PUBLIC_STRIPE_PRICE_ENTERPRISE,
@@ -28,6 +28,7 @@ function appBaseUrl() {
     process.env.NEXT_PUBLIC_APP_URL ||
     process.env.SITE_URL ||
     "http://localhost:3000";
+
   return u.startsWith("http") ? u : `https://${u}`;
 }
 
@@ -36,13 +37,21 @@ export async function POST(req: Request) {
     // Require auth so we can associate the purchase with a user
     const session = await getServerSession(authOptions);
     if (!session?.user?.email) {
-      return NextResponse.json({ ok: false, message: "Unauthorized" }, { status: 401 });
+      return NextResponse.json(
+        { ok: false, message: "Unauthorized" },
+        { status: 401 }
+      );
     }
 
     const { priceId } = (await req.json()) as { priceId?: string };
+
     if (!priceId) {
-      return NextResponse.json({ ok: false, message: "Missing priceId" }, { status: 400 });
+      return NextResponse.json(
+        { ok: false, message: "Missing priceId" },
+        { status: 400 }
+      );
     }
+
     if (!ALLOWED_PRICE_IDS.includes(priceId)) {
       return NextResponse.json(
         {
@@ -59,9 +68,13 @@ export async function POST(req: Request) {
       where: { email: session.user.email },
       select: { id: true, email: true, name: true },
     });
+
     if (!user) {
       user = await prisma.user.create({
-        data: { email: session.user.email, name: session.user.name ?? null },
+        data: {
+          email: session.user.email,
+          name: session.user.name ?? null,
+        },
         select: { id: true, email: true, name: true },
       });
     }
@@ -84,7 +97,10 @@ export async function POST(req: Request) {
       automatic_tax: { enabled: false },
       success_url: `${base}/dashboard?checkout=success`,
       cancel_url: `${base}/pricing?checkout=cancel`,
-      metadata: { plan_price_id: priceId, user_email: email },
+      metadata: {
+        plan_price_id: priceId,
+        user_email: email,
+      },
     });
 
     if (!checkout.url) {
