@@ -3,9 +3,14 @@
 
 import { useEffect, useMemo, useState, useCallback } from "react";
 
+// ✅ Belt-and-suspenders: if env is missing, still use the known Plus price ID
+const PLUS_PRICE_ID =
+  process.env.NEXT_PUBLIC_STRIPE_PRICE_PLUS ||
+  "price_1SUQ2lB1vvKzOrheks1KGG6J";
+
 const PRICES = {
   LITE: process.env.NEXT_PUBLIC_STRIPE_PRICE_LITE ?? "",
-  PLUS: process.env.NEXT_PUBLIC_STRIPE_PRICE_PLUS ?? "",       // ✅ NEW: Plus wired to env
+  PLUS: PLUS_PRICE_ID,
   PRO: process.env.NEXT_PUBLIC_STRIPE_PRICE_PRO ?? "",
   BUSINESS: process.env.NEXT_PUBLIC_STRIPE_PRICE_BUSINESS ?? "",
 } as const;
@@ -331,7 +336,7 @@ export default function PricingPage() {
             { label: "Updates", tooltip: UPDATES_TOOLTIP },
           ]}
           btnText="Get Plus"
-          priceId={PRICES.PLUS}      // ✅ uses env price; button auto-disables if missing
+          priceId={PRICES.PLUS} // uses env or fallback
         />
 
         {/* Pro (Most Popular) */}
@@ -360,21 +365,4 @@ export default function PricingPage() {
           soon={[
             { label: "Multi-location (10)", tooltip: MULTI_LOCATION_TOOLTIP },
             { label: "Team seats (3)", tooltip: TEAM_SEATS_TOOLTIP },
-            { label: "Bulk import + webhooks", tooltip: BULK_WEBHOOKS_TOOLTIP },
-            { label: "Advanced analytics", tooltip: ANALYTICS_TOOLTIP },
-          ]}
-          btnText="Coming soon"
-          priceId=""           // intentionally blank; tier disabled
-          comingSoon
-        />
-      </div>
-
-      {showConfigHint && (
-        <p className="mt-4 text-sm text-gray-500">
-          If a plan button is disabled due to configuration, add the corresponding Stripe Price ID to your environment variables.
-          (Note: some tiers are intentionally marked “Coming soon.”)
-        </p>
-      )}
-    </div>
-  );
-}
+            { label: "Bulk import + webhooks", tooltip: BU
