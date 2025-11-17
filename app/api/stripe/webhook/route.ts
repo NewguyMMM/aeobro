@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import Stripe from "stripe";
 import { prisma } from "@/lib/prisma";
+import type { Plan as DbPlan } from "@prisma/client";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -12,10 +13,13 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
 const WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET!;
 
 // Map Stripe Price IDs → your Prisma Plan enum
-const PRICE_TO_PLAN: Record<string, "LITE" | "PRO" | "BUSINESS"> = {
+const PRICE_TO_PLAN: Record<string, DbPlan> = {
   [process.env.NEXT_PUBLIC_STRIPE_PRICE_LITE ?? ""]: "LITE",
+  [process.env.NEXT_PUBLIC_STRIPE_PRICE_PLUS ?? ""]: "PLUS",
   [process.env.NEXT_PUBLIC_STRIPE_PRICE_PRO ?? ""]: "PRO",
   [process.env.NEXT_PUBLIC_STRIPE_PRICE_BUSINESS ?? ""]: "BUSINESS",
+  // If you later add NEXT_PUBLIC_STRIPE_PRICE_ENTERPRISE, you can also map it here:
+  // [process.env.NEXT_PUBLIC_STRIPE_PRICE_ENTERPRISE ?? ""]: "ENTERPRISE",
 };
 
 // Type guard: true when it's a live (non-deleted) Customer
@@ -30,7 +34,7 @@ async function upsertUserFromCustomerId(
   customerId: string,
   fields: {
     stripeSubscriptionId?: string | null;
-    plan?: "FREE" | "LITE" | "PRO" | "BUSINESS";
+    plan?: DbPlan;
     planStatus?: string;
     currentPeriodEnd?: Date | null;
   },
@@ -98,10 +102,11 @@ export async function POST(req: Request) {
 
         const priceId = sub.items?.data?.[0]?.price?.id || "";
         const mappedPlan = PRICE_TO_PLAN[priceId];
-        const plan =
+
+        const plan: DbPlan =
           mappedPlan && ["trialing", "active", "past_due"].includes(sub.status)
             ? mappedPlan
-            : ("FREE" as const);
+            : "FREE";
 
         await upsertUserFromCustomerId(sub.customer as string, {
           stripeSubscriptionId: sub.id,
