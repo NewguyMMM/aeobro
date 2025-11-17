@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState, useCallback } from "react";
 
 const PRICES = {
   LITE: process.env.NEXT_PUBLIC_STRIPE_PRICE_LITE ?? "",
+  PLUS: process.env.NEXT_PUBLIC_STRIPE_PRICE_PLUS ?? "",       // ✅ NEW: Plus wired to env
   PRO: process.env.NEXT_PUBLIC_STRIPE_PRICE_PRO ?? "",
   BUSINESS: process.env.NEXT_PUBLIC_STRIPE_PRICE_BUSINESS ?? "",
 } as const;
@@ -150,7 +151,8 @@ export default function PricingPage() {
   }, []);
 
   const showConfigHint = useMemo(() => {
-    const missing = !PRICES.LITE || !PRICES.PRO || !PRICES.BUSINESS;
+    // ✅ Include PLUS in dev hint so you see if its env is missing
+    const missing = !PRICES.LITE || !PRICES.PLUS || !PRICES.PRO || !PRICES.BUSINESS;
     return process.env.NODE_ENV !== "production" && missing;
   }, []);
 
@@ -319,7 +321,7 @@ export default function PricingPage() {
           priceId={PRICES.LITE}
         />
 
-        {/* Plus (Coming soon) */}
+        {/* Plus (now active, not coming soon) */}
         <PlanCard
           title="Plus"
           price="$19.99/mo"
@@ -328,9 +330,8 @@ export default function PricingPage() {
             { label: "Centralized AI Ready Profile", tooltip: CENTRALIZED_TOOLTIP },
             { label: "Updates", tooltip: UPDATES_TOOLTIP },
           ]}
-          btnText="Coming soon"
-          priceId=""           // intentionally blank; tier disabled
-          comingSoon
+          btnText="Get Plus"
+          priceId={PRICES.PLUS}      // ✅ uses env price; button auto-disables if missing
         />
 
         {/* Pro (Most Popular) */}
