@@ -1,3 +1,4 @@
+// app/api/stripe/webhook/route.ts
 import { NextResponse } from "next/server";
 import Stripe from "stripe";
 import { prisma } from "@/lib/prisma";
@@ -6,21 +7,44 @@ import type { Plan as DbPlan } from "@prisma/client";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
+const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY;
+const WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET;
+
+if (!STRIPE_SECRET_KEY) {
+  throw new Error("Missing STRIPE_SECRET_KEY in environment");
+}
+if (!WEBHOOK_SECRET) {
+  throw new Error("Missing STRIPE_WEBHOOK_SECRET in environment");
+}
+
+const stripe = new Stripe(STRIPE_SECRET_KEY, {
   apiVersion: "2024-06-20",
 });
 
-const WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET!;
+/**
+ * Build a safe mapping: Stripe Price ID → Prisma Plan enum.
+ * Only envs that are actually set get added (no empty-string keys).
+ */
+const PRICE_TO_PLAN: Record<string, DbPlan> = {};
+const pricePlanPairs: Array<[string | undefined | null, DbPlan]> = [
+  [process.env.NEXT_PUBLIC_STRIPE_PRICE_LITE, "LITE"],
+  [process.env.NEXT_PUBLIC_STRIPE_PRICE_PLUS, "PLUS"],
+  [process.env.NEXT_PUBLIC_STRIPE_PRICE_PRO, "PRO"],
+  [process.env.NEXT_PUBLIC_STRIPE_PRICE_BUSINESS, "BUSINESS"],
+  // If/when you wire a distinct Enterprise price:
+  [process.env.NEXT_PUBLIC_STRIPE_PRICE_ENTERPRISE, "ENTERPRISE"],
+];
 
-// Map Stripe Price IDs → your Prisma Plan enum
-const PRICE_TO_PLAN: Record<string, DbPlan> = {
-  [process.env.NEXT_PUBLIC_STRIPE_PRICE_LITE ?? ""]: "LITE",
-  [process.env.NEXT_PUBLIC_STRIPE_PRICE_PLUS ?? ""]: "PLUS",
-  [process.env.NEXT_PUBLIC_STRIPE_PRICE_PRO ?? ""]: "PRO",
-  [process.env.NEXT_PUBLIC_STRIPE_PRICE_BUSINESS ?? ""]: "BUSINESS",
-  // If you later add NEXT_PUBLIC_STRIPE_PRICE_ENTERPRISE, you can also map it here:
-  // [process.env.NEXT_PUBLIC_STRIPE_PRICE_ENTERPRISE ?? ""]: "ENTERPRISE",
-};
+for (const [priceId, plan] of pricePlanPairs) {
+  if (priceId) {
+    PRICE_TO_PLAN[priceId] = plan;
+  }
+}
+
+function mapPriceToPlan(priceId?: string | null): DbPlan | undefined {
+  if (!priceId) return undefined;
+  return PRICE_TO_PLAN[priceId];
+}
 
 // Type guard: true when it's a live (non-deleted) Customer
 function isLiveCustomer(
@@ -39,6 +63,8 @@ async function upsertUserFromCustomerId(
     currentPeriodEnd?: Date | null;
   },
 ) {
+  if (!customerId) return null;
+
   // 1) Try by customerId
   const byCustomer = await prisma.user.findFirst({
     where: { stripeCustomerId: customerId },
@@ -50,7 +76,7 @@ async function upsertUserFromCustomerId(
 
   // 2) Fallback: fetch customer and try by email
   const retrieved = await stripe.customers.retrieve(customerId);
-  const cust = retrieved as unknown as Stripe.Customer | Stripe.DeletedCustomer;
+  const cust = retrieved as Stripe.Customer | Stripe.DeletedCustomer;
 
   if (isLiveCustomer(cust) && cust.email) {
     const byEmail = await prisma.user.findUnique({
@@ -73,7 +99,11 @@ export async function POST(req: Request) {
 
   // Verify signature
   try {
-    const signature = req.headers.get("stripe-signature")!;
+    const signature = req.headers.get("stripe-signature");
+    if (!signature) {
+      console.error("❌ Missing stripe-signature header");
+      return new NextResponse("Missing stripe-signature", { status: 400 });
+    }
     const raw = await req.text();
     event = stripe.webhooks.constructEvent(raw, signature, WEBHOOK_SECRET);
   } catch (err: any) {
@@ -83,6 +113,11 @@ export async function POST(req: Request) {
 
   try {
     switch (event.type) {
+      /**
+       * Fired when Checkout completes successfully.
+       * We link the user ↔ customer ↔ subscription, but plan status is driven
+       * by the subscription + invoice events below.
+       */
       case "checkout.session.completed": {
         const session = event.data.object as Stripe.Checkout.Session;
         const customerId = session.customer as string | undefined;
@@ -96,17 +131,22 @@ export async function POST(req: Request) {
         break;
       }
 
+      /**
+       * Main driver for plan + status.
+       * Handles new subscriptions and changes (upgrades/downgrades, renewals, etc.)
+       */
       case "customer.subscription.created":
       case "customer.subscription.updated": {
         const sub = event.data.object as Stripe.Subscription;
 
-        const priceId = sub.items?.data?.[0]?.price?.id || "";
-        const mappedPlan = PRICE_TO_PLAN[priceId];
+        const priceId = sub.items?.data?.[0]?.price?.id || undefined;
+        const mappedPlan = mapPriceToPlan(priceId);
+
+        const activeStatuses = ["trialing", "active", "past_due"] as const;
+        const isActive = activeStatuses.includes(sub.status as any);
 
         const plan: DbPlan =
-          mappedPlan && ["trialing", "active", "past_due"].includes(sub.status)
-            ? mappedPlan
-            : "FREE";
+          mappedPlan && isActive ? mappedPlan : "FREE";
 
         await upsertUserFromCustomerId(sub.customer as string, {
           stripeSubscriptionId: sub.id,
@@ -117,6 +157,43 @@ export async function POST(req: Request) {
         break;
       }
 
+      /**
+       * Safety net: whenever an invoice is paid, make sure subscription + plan
+       * are set correctly (especially first invoice from Checkout).
+       */
+      case "invoice.payment_succeeded": {
+        const invoice = event.data.object as Stripe.Invoice;
+        const customerId = invoice.customer as string | null;
+        if (!customerId) break;
+
+        const firstLine = invoice.lines?.data?.[0];
+        const priceId = firstLine?.price?.id || undefined;
+        const mappedPlan = mapPriceToPlan(priceId);
+
+        const subscriptionId =
+          typeof invoice.subscription === "string"
+            ? invoice.subscription
+            : invoice.subscription?.id;
+
+        const periodEndUnix = firstLine?.period?.end;
+        const currentPeriodEnd = periodEndUnix
+          ? new Date(periodEndUnix * 1000)
+          : null;
+
+        await upsertUserFromCustomerId(customerId, {
+          stripeSubscriptionId: subscriptionId ?? undefined,
+          plan: mappedPlan ?? undefined, // only set if we can map cleanly
+          planStatus: "active",
+          currentPeriodEnd,
+        });
+
+        break;
+      }
+
+      /**
+       * Fired when a subscription is canceled or ends.
+       * We downgrade to FREE and clear subscription linkage.
+       */
       case "customer.subscription.deleted": {
         const sub = event.data.object as Stripe.Subscription;
         await upsertUserFromCustomerId(sub.customer as string, {
