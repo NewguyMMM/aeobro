@@ -7,8 +7,9 @@ import type { Plan as DbPlan } from "@prisma/client";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY;
-const WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET;
+// Assert as string for TypeScript, then still runtime-check.
+const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY as string;
+const WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET as string;
 
 if (!STRIPE_SECRET_KEY) {
   throw new Error("Missing STRIPE_SECRET_KEY in environment");
