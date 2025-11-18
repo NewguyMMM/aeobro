@@ -1,5 +1,5 @@
 // components/ProfileEditor.tsx
-// 📅 Updated: 2025-11-05 06:00 ET
+// 📅 Updated: 2025-11-18 14:40 ET
 "use client";
 
 import * as React from "react";
@@ -12,10 +12,13 @@ import LogoUploader from "@/components/LogoUploader";
 import LinkTypeSelect from "@/components/LinkTypeSelect";
 import PublicUrlReadonly from "@/components/PublicUrlReadonly";
 import SchemaPreviewButton from "@/components/SchemaPreviewButton";
+import UpdatesCard from "@/components/UpdatesCard"; // 👈 NEW
 
 // Load the verification UI purely on the client (single source of truth at bottom)
 import dynamic from "next/dynamic";
-const VerificationCard = dynamic(() => import("@/components/VerificationCard"), { ssr: false });
+const VerificationCard = dynamic(() => import("@/components/VerificationCard"), {
+  ssr: false,
+});
 
 /** -------- Types -------- */
 type EntityType =
@@ -65,6 +68,7 @@ type Profile = {
   handles?: PlatformHandles | null;
   slug?: string | null;
   verificationStatus?: VerificationStatus | null;
+  updateMessage?: string | null; // 👈 NEW
 };
 
 /** -------- Utils -------- */
@@ -169,8 +173,8 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
   // ---- Modal for viewing with unsaved changes
   const [confirmOpen, setConfirmOpen] = React.useState(false);
 
-  // ---- Plan pill (Lite/Pro/Business)
-  type PlanTitle = "Lite" | "Pro" | "Business";
+  // ---- Plan pill (Free/Lite/Plus/Pro/Business)
+  type PlanTitle = "Free" | "Lite" | "Plus" | "Pro" | "Business";
   const [plan, setPlan] = React.useState<PlanTitle | null>(null);
   React.useEffect(() => {
     let cancelled = false;
@@ -180,7 +184,10 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
         if (!r.ok) return;
         const j = await r.json();
         const p = j?.plan as PlanTitle | undefined;
-        if (!cancelled && (p === "Lite" || p === "Pro" || p === "Business")) {
+        if (
+          !cancelled &&
+          (p === "Free" || p === "Lite" || p === "Plus" || p === "Pro" || p === "Business")
+        ) {
           setPlan(p);
         }
       } catch {
@@ -210,20 +217,44 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
       hours: (hours || "").trim() || null,
       certifications: (certifications || "").trim() || null,
       press: press.length
-        ? press.map((p) => ({ title: (p.title || "").trim(), url: normalizeUrl(p.url || "") }))
+        ? press.map((p) => ({
+            title: (p.title || "").trim(),
+            url: normalizeUrl(p.url || ""),
+          }))
         : null,
       logoUrl: logoUrl ? normalizeUrl(logoUrl) : null,
       imageUrls: imageUrls.filter(Boolean).map(normalizeUrl),
       handles,
       links:
-        links.length
-          ? links.map((l) => ({ label: (l.label || "").trim(), url: normalizeUrl(l.url || "") }))
+        links.length > 0
+          ? links.map((l) => ({
+              label: (l.label || "").trim(),
+              url: normalizeUrl(l.url || ""),
+            }))
           : null,
+      // NOTE: updateMessage is handled by a separate endpoint (/api/profile/update-message)
+      // so we don't include it here; UpdatesCard owns that state.
     };
   }, [
-    displayName, legalName, entityType, tagline, bio, website, location, serviceArea,
-    foundedYear, teamSize, languages, pricingModel, hours, certifications, press,
-    logoUrl, imageUrls, handles, links,
+    displayName,
+    legalName,
+    entityType,
+    tagline,
+    bio,
+    website,
+    location,
+    serviceArea,
+    foundedYear,
+    teamSize,
+    languages,
+    pricingModel,
+    hours,
+    certifications,
+    press,
+    logoUrl,
+    imageUrls,
+    handles,
+    links,
   ]);
 
   /** ---- Prefill from API on mount ---- */
@@ -267,7 +298,9 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
         if (data.links) setLinks(data.links || []);
 
         setServerSlug(data.slug || null);
-        setVerificationStatus((data.verificationStatus as VerificationStatus) ?? "UNVERIFIED");
+        setVerificationStatus(
+          (data.verificationStatus as VerificationStatus) ?? "UNVERIFIED"
+        );
 
         const snapshot = JSON.stringify(buildPayload());
         lastSavedRef.current = snapshot;
@@ -299,13 +332,19 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
         throw new Error("Logo URL must be a valid URL.");
       }
       for (const u of imageUrls) {
-        if (u && !isValidUrl(normalizeUrl(u))) throw new Error("Every image URL must be valid.");
+        if (u && !isValidUrl(normalizeUrl(u))) {
+          throw new Error("Every image URL must be valid.");
+        }
       }
       for (const p of press) {
-        if (p.url && !isValidUrl(normalizeUrl(p.url))) throw new Error("Press links must be valid URLs.");
+        if (p.url && !isValidUrl(normalizeUrl(p.url))) {
+          throw new Error("Press links must be valid URLs.");
+        }
       }
       for (const l of links) {
-        if (l.url && !isValidUrl(normalizeUrl(l.url))) throw new Error("Extra links must be valid URLs.");
+        if (l.url && !isValidUrl(normalizeUrl(l.url))) {
+          throw new Error("Extra links must be valid URLs.");
+        }
       }
 
       const payload = buildPayload();
@@ -319,14 +358,19 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
       const json = await res.json().catch(() => null);
 
       if (!res.ok) {
-        const text = (json && (json.error || json.message)) || `Save failed (HTTP ${res.status}).`;
+        const text =
+          (json && (json.error || json.message)) ||
+          `Save failed (HTTP ${res.status}).`;
         throw new Error(text);
       }
 
-      const finalSlug: string | undefined = json?.profile?.slug || json?.slug || undefined;
-      const finalId: string | undefined = json?.profile?.id || json?.id || profileId || undefined;
+      const finalSlug: string | undefined =
+        json?.profile?.slug || json?.slug || undefined;
+      const finalId: string | undefined =
+        json?.profile?.id || json?.id || profileId || undefined;
       const finalStatus: VerificationStatus | undefined =
-        (json?.profile?.verificationStatus || json?.verificationStatus) as VerificationStatus | undefined;
+        (json?.profile?.verificationStatus ||
+          json?.verificationStatus) as VerificationStatus | undefined;
 
       if (finalId) setProfileId(finalId);
       if (finalSlug) {
@@ -380,7 +424,11 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
 
   /** ---- Status pill ---- */
   const hasEverSaved = Boolean(serverSlug || profileId);
-  const status = !hasEverSaved ? "Not yet published" : dirty ? "Unsaved changes" : "Published";
+  const status = !hasEverSaved
+    ? "Not yet published"
+    : dirty
+    ? "Unsaved changes"
+    : "Published";
   const statusClasses =
     status === "Published"
       ? "bg-green-100 text-green-700 ring-1 ring-green-200"
@@ -398,8 +446,9 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
       {/* Top note + plan pill */}
       <div className="flex items-start justify-between">
         <p className="text-sm text-gray-600">
-          Only <span className="font-medium">Display name</span> is required to publish.
-          Add more when you’re ready — the more details you include, the better your AI visibility.
+          Only <span className="font-medium">Display name</span> is required to
+          publish. Add more when you’re ready — the more details you include,
+          the better your AI visibility.
         </p>
         {plan && (
           <span
@@ -416,7 +465,16 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
         {email ? (
           <div className="flex items-center gap-3">
             <span className="inline-flex items-center gap-2 rounded-full border border-gray-200 bg-gray-50 px-3 py-1 text-sm text-gray-700">
-              <svg aria-hidden="true" viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <svg
+                aria-hidden="true"
+                viewBox="0 0 24 24"
+                className="h-4 w-4"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
                 <rect x="3" y="5" width="18" height="14" rx="2" ry="2" />
                 <path d="m3 7 9 6 9-6" />
               </svg>
@@ -435,7 +493,9 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
         )}
 
         <div className="flex items-center gap-3">
-          <span className={`text-xs px-2.5 py-1 rounded-full ${statusClasses}`}>{status}</span>
+          <span className={`text-xs px-2.5 py-1 rounded-full ${statusClasses}`}>
+            {status}
+          </span>
           <button
             type="button"
             onClick={() => {
@@ -443,7 +503,10 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
               else {
                 const path = getPublicPath();
                 if (!path) {
-                  toast("Not yet published — please Save & Publish first.", "error");
+                  toast(
+                    "Not yet published — please Save & Publish first.",
+                    "error"
+                  );
                   return;
                 }
                 window.open(path, "_blank", "noopener,noreferrer");
@@ -460,7 +523,9 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
       <section className="grid gap-4">
         <h3 className="text-lg font-semibold">Identity</h3>
         <div className={row}>
-          <label className={label} htmlFor="displayName">Display name *</label>
+          <label className={label} htmlFor="displayName">
+            Display name *
+          </label>
           <input
             id="displayName"
             className={input}
@@ -473,7 +538,9 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className={row}>
-            <label className={label} htmlFor="legalName">Legal/brand name (if different)</label>
+            <label className={label} htmlFor="legalName">
+              Legal/brand name (if different)
+            </label>
             <input
               id="legalName"
               className={input}
@@ -516,9 +583,12 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
           <label className={label + " overflow-visible"} htmlFor="tagline">
             One-line Summary
             <span className="relative group ml-1 cursor-help align-middle">
-              <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-gray-200 text-[10px] font-semibold text-gray-700">i</span>
+              <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-gray-200 text-[10px] font-semibold text-gray-700">
+                i
+              </span>
               <span className="pointer-events-none absolute left-1/2 top-full z-10 mt-1 hidden w-64 -translate-x-1/2 rounded-md bg-black px-2 py-1 text-xs leading-snug text-white group-hover:block">
-                A one-line summary of your brand or work. Example: “Handmade jewelry for everyday wear”.
+                A one-line summary of your brand or work. Example: “Handmade
+                jewelry for everyday wear”.
               </span>
             </span>
           </label>
@@ -532,7 +602,9 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
           />
         </div>
         <div className={row}>
-          <label className={label} htmlFor="bio">Bio / About</label>
+          <label className={label} htmlFor="bio">
+            Bio / About
+          </label>
           <textarea
             id="bio"
             className={input}
@@ -545,12 +617,22 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
         </div>
       </section>
 
+      {/* Updates (Plus+ feature) */}
+      <section className="grid gap-4">
+        <UpdatesCard
+          plan={(plan as string) || "Free"}
+          initialUpdateMessage={initial?.updateMessage ?? null}
+        />
+      </section>
+
       {/* Website, Location, Service area */}
       <section className="grid gap-4">
         <h3 className="text-lg font-semibold">Website, Location & Reach</h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className={row}>
-            <label className={label} htmlFor="website">Website</label>
+            <label className={label} htmlFor="website">
+              Website
+            </label>
             <input
               id="website"
               className={input}
@@ -559,10 +641,14 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
               onChange={(e) => setWebsite(e.target.value)}
               maxLength={200}
             />
-            <small className="text-xs text-gray-500">Optional, but recommended for better AI ranking.</small>
+            <small className="text-xs text-gray-500">
+              Optional, but recommended for better AI ranking.
+            </small>
           </div>
           <div className={row}>
-            <label className={label} htmlFor="location">Location (address or city/state)</label>
+            <label className={label} htmlFor="location">
+              Location (address or city/state)
+            </label>
             <input
               id="location"
               className={input}
@@ -574,7 +660,9 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
           </div>
         </div>
         <div className={row}>
-          <label className={label} htmlFor="serviceArea">Service area (comma-separated regions)</label>
+          <label className={label} htmlFor="serviceArea">
+            Service area (comma-separated regions)
+          </label>
           <input
             id="serviceArea"
             className={input}
@@ -591,7 +679,9 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
         <h3 className="text-lg font-semibold">Trust & Authority</h3>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <div className={row}>
-            <label className={label} htmlFor="foundedYear">Founded / started (year)</label>
+            <label className={label} htmlFor="foundedYear">
+              Founded / started (year)
+            </label>
             <input
               id="foundedYear"
               className={input}
@@ -603,7 +693,9 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
             />
           </div>
           <div className={row}>
-            <label className={label} htmlFor="teamSize">Team size</label>
+            <label className={label} htmlFor="teamSize">
+              Team size
+            </label>
             <input
               id="teamSize"
               className={input}
@@ -615,7 +707,9 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
             />
           </div>
           <div className={row}>
-            <label className={label} htmlFor="pricingModel">Pricing model</label>
+            <label className={label} htmlFor="pricingModel">
+              Pricing model
+            </label>
             <select
               id="pricingModel"
               className={input}
@@ -632,7 +726,9 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className={row}>
-            <label className={label} htmlFor="languages">Languages served (comma-separated)</label>
+            <label className={label} htmlFor="languages">
+              Languages served (comma-separated)
+            </label>
             <input
               id="languages"
               className={input}
@@ -643,7 +739,9 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
             />
           </div>
           <div className={row}>
-            <label className={label} htmlFor="hours">Hours of operation</label>
+            <label className={label} htmlFor="hours">
+              Hours of operation
+            </label>
             <input
               id="hours"
               className={input}
@@ -655,7 +753,9 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
           </div>
         </div>
         <div className={row}>
-          <label className={label} htmlFor="certs">Certifications / licenses / awards (optional)</label>
+          <label className={label} htmlFor="certs">
+            Certifications / licenses / awards (optional)
+          </label>
           <textarea
             id="certs"
             className={input}
@@ -677,14 +777,18 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
               className={input}
               placeholder="Title of mention or article"
               value={pressDraft.title}
-              onChange={(e) => setPressDraft({ ...pressDraft, title: e.target.value })}
+              onChange={(e) =>
+                setPressDraft({ ...pressDraft, title: e.target.value })
+              }
               maxLength={120}
             />
             <input
               className={input}
               placeholder="https://your-article-or-listing.com"
               value={pressDraft.url}
-              onChange={(e) => setPressDraft({ ...pressDraft, url: e.target.value })}
+              onChange={(e) =>
+                setPressDraft({ ...pressDraft, url: e.target.value })
+              }
               maxLength={300}
             />
           </div>
@@ -726,10 +830,14 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
       <section className="grid gap-4">
         <h3 className="text-lg font-semibold">Branding & Media</h3>
         <div className={row}>
-          <label className={label} htmlFor="logoUploader">Logo</label>
+          <label className={label} htmlFor="logoUploader">
+            Logo
+          </label>
           <LogoUploader value={logoUrl} onChange={(url) => setLogoUrl(url)} />
           <div className="grid gap-2">
-            <label className="text-xs text-gray-600">Or paste a logo URL</label>
+            <label className="text-xs text-gray-600">
+              Or paste a logo URL
+            </label>
             <input
               id="logoUrl"
               className={input}
@@ -743,7 +851,9 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           {imageUrls.map((u, i) => (
             <div className={row} key={i}>
-              <label className={label} htmlFor={`img${i}`}>Image {i + 1} URL</label>
+              <label className={label} htmlFor={`img${i}`}>
+                Image {i + 1} URL
+              </label>
               <input
                 id={`img${i}`}
                 className={input}
@@ -765,24 +875,28 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
       <section className="grid gap-4">
         <h3 className="text-lg font-semibold">Platform Handles</h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          {([
-            ["youtube", "YouTube channel URL"],
-            ["tiktok", "TikTok profile URL"],
-            ["instagram", "Instagram profile URL"],
-            ["substack", "Substack URL"],
-            ["etsy", "Etsy shop URL"],
-            ["x", "X (Twitter) profile URL"],
-            ["linkedin", "LinkedIn page URL"],
-            ["facebook", "Facebook page URL"],
-            ["github", "GitHub org/user URL"],
-          ] as const).map(([key, labelTxt]) => (
+          {(
+            [
+              ["youtube", "YouTube channel URL"],
+              ["tiktok", "TikTok profile URL"],
+              ["instagram", "Instagram profile URL"],
+              ["substack", "Substack URL"],
+              ["etsy", "Etsy shop URL"],
+              ["x", "X (Twitter) profile URL"],
+              ["linkedin", "LinkedIn page URL"],
+              ["facebook", "Facebook page URL"],
+              ["github", "GitHub org/user URL"],
+            ] as const
+          ).map(([key, labelTxt]) => (
             <div className={row} key={key}>
               <label className={label}>{labelTxt}</label>
               <input
                 className={input}
                 placeholder="https://..."
                 value={(handles as any)[key] || ""}
-                onChange={(e) => setHandles((h) => ({ ...h, [key]: e.target.value }))}
+                onChange={(e) =>
+                  setHandles((h) => ({ ...h, [key]: e.target.value }))
+                }
                 maxLength={300}
               />
             </div>
@@ -802,10 +916,16 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
                   className={input}
                   placeholder="Link label (e.g., Reviews)"
                   value={linkDraft.label}
-                  onChange={(e) => setLinkDraft({ ...linkDraft, label: e.target.value })}
+                  onChange={(e) =>
+                    setLinkDraft({ ...linkDraft, label: e.target.value })
+                  }
                   maxLength={60}
                 />
-                <LinkTypeSelect onPick={(lbl) => setLinkDraft((d) => ({ ...d, label: lbl }))} />
+                <LinkTypeSelect
+                  onPick={(lbl) =>
+                    setLinkDraft((d) => ({ ...d, label: lbl }))
+                  }
+                />
               </div>
             </div>
             <div className="grid gap-2">
@@ -814,7 +934,9 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
                 className={input}
                 placeholder="https://your-link.com"
                 value={linkDraft.url}
-                onChange={(e) => setLinkDraft({ ...linkDraft, url: e.target.value })}
+                onChange={(e) =>
+                  setLinkDraft({ ...linkDraft, url: e.target.value })
+                }
                 maxLength={300}
               />
             </div>
@@ -870,17 +992,25 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
           </button>
 
           {getPublicPath() ? (
-            <button type="button" onClick={copyUrl} className="px-3 py-2 border rounded-lg">
+            <button
+              type="button"
+              onClick={copyUrl}
+              className="px-3 py-2 border rounded-lg"
+            >
               Copy URL
             </button>
           ) : null}
 
-          <a href="#verify" className="ml-auto text-sm text-blue-600 underline hover:text-blue-700">
+          <a
+            href="#verify"
+            className="ml-auto text-sm text-blue-600 underline hover:text-blue-700"
+          >
             Go to Verify ↓
           </a>
         </div>
         <p className="text-xs text-gray-500">
-          Your changes go live immediately when you <span className="font-medium">Save &amp; Publish</span>.
+          Your changes go live immediately when you{" "}
+          <span className="font-medium">Save &amp; Publish</span>.
         </p>
       </div>
 
@@ -907,13 +1037,21 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
       {confirmOpen && (
         <div className="fixed inset-0 z-50 grid place-items-center bg-black/30">
           <div className="bg-white rounded-xl shadow-lg p-5 w-[min(92vw,480px)]">
-            <h4 className="text-base font-semibold mb-2">You have unsaved changes</h4>
+            <h4 className="text-base font-semibold mb-2">
+              You have unsaved changes
+            </h4>
             <p className="text-sm text-gray-600 mb-4">
-              The public profile you’re about to view shows the <span className="font-medium">last published</span> version.
-              To include your edits, click <span className="font-medium">Save &amp; View</span>.
+              The public profile you’re about to view shows the{" "}
+              <span className="font-medium">last published</span> version. To
+              include your edits, click{" "}
+              <span className="font-medium">Save &amp; View</span>.
             </p>
             <div className="flex justify-end gap-2">
-              <button type="button" className="px-3 py-2 border rounded-lg" onClick={() => setConfirmOpen(false)}>
+              <button
+                type="button"
+                className="px-3 py-2 border rounded-lg"
+                onClick={() => setConfirmOpen(false)}
+              >
                 Cancel
               </button>
               <button
@@ -922,7 +1060,10 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
                 onClick={() => {
                   const path = getPublicPath();
                   if (!path) {
-                    toast("Not yet published — please Save & Publish first.", "error");
+                    toast(
+                      "Not yet published — please Save & Publish first.",
+                      "error"
+                    );
                     return;
                   }
                   window.open(path, "_blank", "noopener,noreferrer");
