@@ -13,7 +13,7 @@ type Props = {
 };
 
 export default function UpdatesCard({ plan, initialUpdateMessage }: Props) {
-  const toast = useToast(); // ✅ hook returns a function, not { pushToast }
+  const toast = useToast(); // ✅ hook returns a function (string) => void
   const [value, setValue] = useState(initialUpdateMessage ?? "");
   const [saving, setSaving] = useState(false);
 
@@ -34,18 +34,11 @@ export default function UpdatesCard({ plan, initialUpdateMessage }: Props) {
         throw new Error(data?.message || "Failed to save update.");
       }
 
-      toast({
-        type: "success",
-        title: "Update saved",
-        message: "Your latest update is now live.",
-      });
+      // ✅ useToast expects a string
+      toast("Update saved. Your latest update is now live.");
     } catch (err: any) {
       console.error("UpdatesCard save error:", err);
-      toast({
-        type: "error",
-        title: "Error",
-        message: err?.message || "Could not save update.",
-      });
+      toast(err?.message || "Could not save update.");
     } finally {
       setSaving(false);
     }
