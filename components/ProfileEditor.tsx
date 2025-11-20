@@ -1,5 +1,5 @@
 // components/ProfileEditor.tsx
-// 📅 Updated: 2025-11-18 14:40 ET
+// 📅 Updated: 2025-11-20 07:15 ET
 "use client";
 
 import * as React from "react";
@@ -12,7 +12,6 @@ import LogoUploader from "@/components/LogoUploader";
 import LinkTypeSelect from "@/components/LinkTypeSelect";
 import PublicUrlReadonly from "@/components/PublicUrlReadonly";
 import SchemaPreviewButton from "@/components/SchemaPreviewButton";
-import UpdatesCard from "@/components/UpdatesCard"; // 👈 NEW
 
 // Load the verification UI purely on the client (single source of truth at bottom)
 import dynamic from "next/dynamic";
@@ -68,7 +67,7 @@ type Profile = {
   handles?: PlatformHandles | null;
   slug?: string | null;
   verificationStatus?: VerificationStatus | null;
-  updateMessage?: string | null; // 👈 NEW
+  updateMessage?: string | null; // latest update / announcement
 };
 
 /** -------- Utils -------- */
@@ -127,6 +126,11 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
   // ---- Story
   const [tagline, setTagline] = React.useState(initial?.tagline ?? "");
   const [bio, setBio] = React.useState(initial?.bio ?? "");
+
+  // ---- Updates (latest announcement)
+  const [updateMessage, setUpdateMessage] = React.useState(
+    initial?.updateMessage ?? ""
+  );
 
   // ---- Anchors
   const [website, setWebsite] = React.useState(initial?.website ?? "");
@@ -232,8 +236,8 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
               url: normalizeUrl(l.url || ""),
             }))
           : null,
-      // NOTE: updateMessage is handled by a separate endpoint (/api/profile/update-message)
-      // so we don't include it here; UpdatesCard owns that state.
+      // 🔹 Latest update is now saved with the main profile payload
+      updateMessage: (updateMessage || "").trim() || null,
     };
   }, [
     displayName,
@@ -255,6 +259,7 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
     imageUrls,
     handles,
     links,
+    updateMessage,
   ]);
 
   /** ---- Prefill from API on mount ---- */
@@ -277,6 +282,10 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
 
         if (data.tagline != null) setTagline(data.tagline || "");
         if (data.bio != null) setBio(data.bio || "");
+
+        // Updates
+        if (data.updateMessage != null)
+          setUpdateMessage(data.updateMessage || "");
 
         if (data.website != null) setWebsite(data.website || "");
         if (data.location != null) setLocation(data.location || "");
@@ -617,12 +626,27 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
         </div>
       </section>
 
-      {/* Updates (Plus+ feature) */}
+      {/* Updates */}
       <section className="grid gap-4">
-        <UpdatesCard
-          plan={(plan as string) || "Free"}
-          initialUpdateMessage={initial?.updateMessage ?? null}
-        />
+        <div className="rounded-2xl border bg-white p-6 shadow-sm space-y-3">
+          <h3 className="text-lg font-semibold">Updates</h3>
+          <p className="text-sm text-gray-600">
+            Post your latest offer, launch, or announcement. This becomes a
+            machine-readable “Latest update” that AEOBRO exposes to AI systems.
+          </p>
+          <textarea
+            className={input}
+            rows={3}
+            placeholder="Getting ready for launch."
+            value={updateMessage}
+            onChange={(e) => setUpdateMessage(e.target.value)}
+            maxLength={500}
+          />
+          <p className="text-xs text-gray-500">
+            Updates are saved when you click{" "}
+            <span className="font-medium">Save &amp; Publish</span>.
+          </p>
+        </div>
       </section>
 
       {/* Website, Location, Service area */}
