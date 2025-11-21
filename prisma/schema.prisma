@@ -1,5 +1,5 @@
 // prisma/schema.prisma
-// 📅 Updated: 2025-11-11 05:24 ET
+// 📅 Updated: 2025-11-21 09:44 ET
 
 generator client {
   provider = "prisma-client-js"
@@ -172,6 +172,10 @@ model Profile {
   // Platforms & extra links
   handles    Json?      // { youtube, tiktok, ... }
   links      Json?      // [{ label, url }]
+
+  // Aggregated FAQ/Services JSON blobs for markup (Pro/Business only)
+  faqJson      Json?
+  servicesJson Json?
 
   // --- Verified Badge & gating state (existing) ---
   verificationStatus  VerificationLevel @default(UNVERIFIED)
