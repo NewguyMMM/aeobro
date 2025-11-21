@@ -1,6 +1,6 @@
 // components/VerificationCard.tsx
 // AEOBRO — Domain + Platform Verification Card (DNS • Code-in-Bio • OAuth Connect)
-// ✅ Updated: 2025-11-02 09:06 ET — Removed legacy "Use code-in-bio (legacy)" flow; kept DNS, OAuth, and new Code-in-Bio rows.
+// ✅ Updated: 2025-11-21 06:00 ET — Domain/DNS section moved to top of card (preferred method first)
 
 "use client";
 
@@ -317,126 +317,11 @@ export default function VerificationCard({
         </div>
       )}
 
-      {/* === Code-in-Bio (Generate & Check) === */}
-      <section className="mt-2 rounded-xl border bg-neutral-50 p-4">
-        <div className="mb-2 text-sm font-medium">Verify with Code-in-Bio</div>
-        <p className="mb-3 text-xs text-neutral-600">
-          Paste your profile URL, generate a short code, add it to your bio/about, then click <em>Check Now</em>.
-        </p>
-
-        <div className="grid gap-3">
-          {PLATFORMS.map((p) => (
-            <PlatformBioRow
-              key={p.key}
-              platform={p.key}
-              label={p.label}
-              placeholder={p.placeholder}
-              disabled={loading || profileMissing}
-              onVerified={() => updateStatus("PLATFORM_VERIFIED")}
-            />
-          ))}
-        </div>
-      </section>
-
-      {/* OAuth Connect — quick path to Platform Verified */}
-      <section className="mt-4 rounded-xl border bg-neutral-50 p-4">
-        <div className="mb-2 text-sm font-medium">Connect a platform (OAuth)</div>
-        <p className="mb-3 text-xs text-neutral-600">
-          We’ll fetch your canonical identity (e.g., YouTube Channel ID, Twitter/X User ID) and mark your profile{" "}
-          <span className="font-medium">PLATFORM_VERIFIED</span>.
-        </p>
-        <div className="flex flex-wrap gap-2">
-          <button
-            type="button"
-            onClick={() => startOAuth("google")}
-            disabled={loading || profileMissing}
-            className="rounded-xl border px-3 py-2 text-sm disabled:opacity-50"
-            title="Google / YouTube"
-          >
-            Connect Google · YouTube
-          </button>
-          <button
-            type="button"
-            onClick={() => startOAuth("facebook")}
-            disabled={loading || profileMissing}
-            className="rounded-xl border px-3 py-2 text-sm disabled:opacity-50"
-            title="Facebook (and Facebook Pages/IG Business via Graph later)"
-          >
-            Connect Facebook
-          </button>
-          <button
-            type="button"
-            onClick={() => startOAuth("twitter")}
-            disabled={loading || profileMissing}
-            className="rounded-xl border px-3 py-2 text-sm disabled:opacity-50"
-            title="X (Twitter)"
-          >
-            Connect X (Twitter)
-          </button>
-        </div>
-
-        {/* Linked accounts list (if API route exists) */}
-        <div className="mt-4">
-          <div className="text-xs font-medium text-neutral-700">Linked accounts</div>
-          {accounts === null ? (
-            <p className="mt-1 text-xs text-neutral-500">
-              (Linked accounts will appear here once available.)
-            </p>
-          ) : accounts?.length ? (
-            <ul className="mt-2 divide-y rounded-xl border bg-white">
-              {accounts.map((a) => (
-                <li key={a.id} className="flex items-center justify-between gap-3 p-3 text-sm">
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="rounded border px-2 py-0.5 text-xs uppercase text-neutral-700">
-                        {a.provider}
-                      </span>
-                      {a.status === "VERIFIED" ? (
-                        <span className="rounded bg-emerald-100 px-2 py-0.5 text-xs text-emerald-800">Verified</span>
-                      ) : a.status === "PENDING" ? (
-                        <span className="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-800">Pending</span>
-                      ) : (
-                        <span className="rounded bg-rose-100 px-2 py-0.5 text-xs text-rose-800">Failed</span>
-                      )}
-                    </div>
-                    <div className="mt-1 truncate font-mono text-xs text-neutral-700">
-                      {a.externalId}
-                    </div>
-                    {a.handle && (
-                      <div className="truncate text-xs text-neutral-600">{a.handle}</div>
-                    )}
-                    {a.url ? (
-                      <Link
-                        href={a.url}
-                        target="_blank"
-                        className="truncate text-xs text-blue-700 underline"
-                      >
-                        {a.url}
-                      </Link>
-                    ) : null}
-                  </div>
-                  <div className="shrink-0">
-                    <button
-                      onClick={() => disconnectAccount(a.id)}
-                      className="rounded-lg border px-3 py-1 text-xs hover:bg-neutral-50"
-                      type="button"
-                    >
-                      Disconnect
-                    </button>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="mt-1 text-xs text-neutral-500">No accounts linked yet.</p>
-          )}
-          {!!accountsMsg && <p className="mt-2 text-xs text-neutral-700">{accountsMsg}</p>}
-        </div>
-      </section>
-
-      {/* Domain input (used for DNS flow) */}
-      <div className="mt-5">
-        <label htmlFor="domain" className="text-sm font-medium">Your domain</label>
+      {/* === Domain / DNS TXT (Preferred) === */}
+      <div className="mt-2">
+        <label htmlFor="domain" className="text-sm font-medium">
+          Your domain
+        </label>
         <div className="mt-2 flex items-center gap-2">
           <input
             id="domain"
@@ -543,6 +428,131 @@ export default function VerificationCard({
           <span className="font-medium">DOMAIN_VERIFIED</span>.
         </p>
       </details>
+
+      {/* === Code-in-Bio (Generate & Check) === */}
+      <section className="mt-6 rounded-xl border bg-neutral-50 p-4">
+        <div className="mb-2 text-sm font-medium">Verify with Code-in-Bio</div>
+        <p className="mb-3 text-xs text-neutral-600">
+          Paste your profile URL, generate a short code, add it to your bio/about, then click <em>Check Now</em>.
+        </p>
+
+        <div className="grid gap-3">
+          {PLATFORMS.map((p) => (
+            <PlatformBioRow
+              key={p.key}
+              platform={p.key}
+              label={p.label}
+              placeholder={p.placeholder}
+              disabled={loading || profileMissing}
+              onVerified={() => updateStatus("PLATFORM_VERIFIED")}
+            />
+          ))}
+        </div>
+      </section>
+
+      {/* OAuth Connect — quick path to Platform Verified */}
+      <section className="mt-4 rounded-xl border bg-neutral-50 p-4">
+        <div className="mb-2 text-sm font-medium">Connect a platform (OAuth)</div>
+        <p className="mb-3 text-xs text-neutral-600">
+          We’ll fetch your canonical identity (e.g., YouTube Channel ID, Twitter/X User ID) and mark your profile{" "}
+          <span className="font-medium">PLATFORM_VERIFIED</span>.
+        </p>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => startOAuth("google")}
+            disabled={loading || profileMissing}
+            className="rounded-xl border px-3 py-2 text-sm disabled:opacity-50"
+            title="Google / YouTube"
+          >
+            Connect Google · YouTube
+          </button>
+          <button
+            type="button"
+            onClick={() => startOAuth("facebook")}
+            disabled={loading || profileMissing}
+            className="rounded-xl border px-3 py-2 text-sm disabled:opacity-50"
+            title="Facebook (and Facebook Pages/IG Business via Graph later)"
+          >
+            Connect Facebook
+          </button>
+          <button
+            type="button"
+            onClick={() => startOAuth("twitter")}
+            disabled={loading || profileMissing}
+            className="rounded-xl border px-3 py-2 text-sm disabled:opacity-50"
+            title="X (Twitter)"
+          >
+            Connect X (Twitter)
+          </button>
+        </div>
+
+        {/* Linked accounts list (if API route exists) */}
+        <div className="mt-4">
+          <div className="text-xs font-medium text-neutral-700">Linked accounts</div>
+          {accounts === null ? (
+            <p className="mt-1 text-xs text-neutral-500">
+              (Linked accounts will appear here once available.)
+            </p>
+          ) : accounts?.length ? (
+            <ul className="mt-2 divide-y rounded-xl border bg-white">
+              {accounts.map((a) => (
+                <li key={a.id} className="flex items-center justify-between gap-3 p-3 text-sm">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="rounded border px-2 py-0.5 text-xs uppercase text-neutral-700">
+                        {a.provider}
+                      </span>
+                      {a.status === "VERIFIED" ? (
+                        <span className="rounded bg-emerald-100 px-2 py-0.5 text-xs text-emerald-800">
+                          Verified
+                        </span>
+                      ) : a.status === "PENDING" ? (
+                        <span className="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-800">
+                          Pending
+                        </span>
+                      ) : (
+                        <span className="rounded bg-rose-100 px-2 py-0.5 text-xs text-rose-800">
+                          Failed
+                        </span>
+                      )}
+                    </div>
+                    <div className="mt-1 truncate font-mono text-xs text-neutral-700">
+                      {a.externalId}
+                    </div>
+                    {a.handle && (
+                      <div className="truncate text-xs text-neutral-600">
+                        {a.handle}
+                      </div>
+                    )}
+                    {a.url ? (
+                      <Link
+                        href={a.url}
+                        target="_blank"
+                        className="truncate text-xs text-blue-700 underline"
+                      >
+                        {a.url}
+                      </Link>
+                    ) : null}
+                  </div>
+                  <div className="shrink-0">
+                    <button
+                      onClick={() => disconnectAccount(a.id)}
+                      className="rounded-lg border px-3 py-1 text-xs hover:bg-neutral-50"
+                      type="button"
+                    >
+                      Disconnect
+                    </button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="mt-1 text-xs text-neutral-500">No accounts linked yet.</p>
+          )}
+          {!!accountsMsg && <p className="mt-2 text-xs text-neutral-700">{accountsMsg}</p>}
+        </div>
+      </section>
     </div>
   );
 }
@@ -677,10 +687,12 @@ function PlatformBioRow({
               Expires: {new Date(expiresAt).toLocaleString()}
             </div>
           )}
-          <ul className="mt-1 list-disc pl-5 text-[11px] text-neutral-700 space-y-0.5">
+          <ul className="mt-1 list-disc space-y-0.5 pl-5 text-[11px] text-neutral-700">
             <li>Copy the code exactly as shown.</li>
             <li>Edit your {label} profile and paste it into the bio/about section.</li>
-            <li>Make sure your profile is public, then click <strong>Check Now</strong>.</li>
+            <li>
+              Make sure your profile is public, then click <strong>Check Now</strong>.
+            </li>
           </ul>
         </div>
       )}
