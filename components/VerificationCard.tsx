@@ -477,7 +477,7 @@ export default function VerificationCard({
         <p className="mb-3 text-xs text-neutral-600">
           Use this if you can sign in with the same Google, Facebook, or X (Twitter) account that owns your channel or
           page. We&apos;ll fetch your canonical identity (e.g., YouTube Channel ID, Twitter/X User ID) and mark your
-          profile <span className="font-medium">PLATFORM_VERIFIED</span>.
+          profile <span className="font-medium">VERIFIED</span>.
         </p>
 
         <div className="flex flex-wrap gap-2">
