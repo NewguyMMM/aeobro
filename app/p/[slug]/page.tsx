@@ -1,5 +1,5 @@
 // app/p/[slug]/page.tsx
-// ✅ Updated: 2025-10-31 08:29 ET – show Domain/Platform badges and list verified platform accounts
+// ✅ Updated: 2025-11-21 05:25 ET – show Domain/Platform badges, list verified platform accounts, and surface Latest Update block
 
 import { prisma } from "@/lib/prisma";
 import {
@@ -42,6 +42,7 @@ const getProfileFullCached = (slug: string) =>
   unstable_cache(
     async () => {
       // Include verified platform accounts for the Platform Verified badge + list
+      // Scalars (including updateMessage/updatedAt) are returned by default.
       return prisma.profile.findUnique({
         where: { slug },
         include: {
@@ -331,6 +332,18 @@ export default async function PublicProfilePage({ params }: PageProps) {
       : []),
   ]);
 
+  // ======== NEW: Latest update (announcement block) ========
+  const latestUpdateRaw: string | null = (profile as any)?.updateMessage ?? null;
+  const latestUpdate = latestUpdateRaw ? latestUpdateRaw.trim() : "";
+  let latestUpdateDateLabel: string | null = null;
+  if (profile?.updatedAt) {
+    const d = new Date(profile.updatedAt as any);
+    if (!Number.isNaN(d.getTime())) {
+      // Simple ISO-style date: YYYY-MM-DD
+      latestUpdateDateLabel = d.toISOString().slice(0, 10);
+    }
+  }
+
   // ======== Links (visible on page) should mirror JSON-LD sameAs ========
   const sameAsSet = new Set<string>();
 
@@ -412,7 +425,7 @@ export default async function PublicProfilePage({ params }: PageProps) {
       ))}
 
       {/* Header */}
-      <header className="mb-8">
+      <header className="mb-6">
         {image ? (
           <div className="mb-4 h-24 w-24 overflow-hidden rounded-2xl">
             <OptimizedImg
@@ -436,6 +449,36 @@ export default async function PublicProfilePage({ params }: PageProps) {
 
         {headline ? <p className="mt-2 text-muted-foreground">{headline}</p> : null}
       </header>
+
+      {/* 🔔 Latest update block (Option C) */}
+      {latestUpdate && (
+        <section className="mb-8">
+          <div className="flex gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+            <div className="mt-1">
+              <div className="flex h-7 w-7 items-center justify-center rounded-full bg-amber-100">
+                <span aria-hidden="true">📢</span>
+              </div>
+            </div>
+            <div className="flex-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-[0.7rem] font-semibold uppercase tracking-wide text-amber-800">
+                  Latest update
+                </span>
+                {latestUpdateDateLabel && (
+                  <span className="text-[0.7rem] text-amber-700">
+                    • {latestUpdateDateLabel}
+                  </span>
+                )}
+              </div>
+              <p className="mt-1 leading-snug">{latestUpdate}</p>
+              <p className="mt-1 text-[0.68rem] text-amber-700">
+                AEOBRO exposes this update in machine-readable JSON-LD so AI systems can
+                see what’s new.
+              </p>
+            </div>
+          </div>
+        </section>
+      )}
 
       {/* Branding & Media */}
       {(safeUrl(profile.logoUrl) || (profile.imageUrls?.length ?? 0) > 1) && (
