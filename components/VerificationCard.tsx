@@ -1,6 +1,6 @@
 // components/VerificationCard.tsx
 // AEOBRO — Domain + Platform Verification Card (DNS • Code-in-Bio • OAuth Connect)
-// ✅ Updated: 2025-11-21 06:00 ET — Domain/DNS section moved to top of card (preferred method first)
+// ✅ Updated: 2025-11-21 06:31 ET — Domain/DNS placed first and grouped into "Option 1" card; added Option labels and clearer explainer.
 
 "use client";
 
@@ -304,7 +304,8 @@ export default function VerificationCard({
         <div>
           <div className="text-base font-semibold">Verify</div>
           <p className="text-sm text-neutral-600">
-            Prefer DNS TXT verification. You can also connect a platform via OAuth, or use our Code-in-Bio verifier.
+            You have 3 options to verify your profile: 1) DNS TXT, 2) Code-in-Bio, and 3) OAuth. We prefer DNS TXT, and
+            you should use this option if your brand has a domain.
           </p>
         </div>
         <StatusBadge status={status} />
@@ -317,123 +318,141 @@ export default function VerificationCard({
         </div>
       )}
 
-      {/* === Domain / DNS TXT (Preferred) === */}
-      <div className="mt-2">
-        <label htmlFor="domain" className="text-sm font-medium">
-          Your domain
-        </label>
-        <div className="mt-2 flex items-center gap-2">
-          <input
-            id="domain"
-            value={domainInput}
-            onChange={(e) => setDomainInput(e.target.value)}
-            placeholder="example.com or https://www.example.com/path"
-            className="w-full rounded-xl border px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-600"
-          />
-          <button
-            type="button"
-            className="rounded-xl border px-3 py-2 text-sm"
-            onClick={() => copy(normalizedDomain || "", "Domain copied")}
-          >
-            Copy domain
-          </button>
+      {/* === Option 1: DNS TXT (Preferred) === */}
+      <section className="mt-2 rounded-xl border bg-neutral-50 p-4">
+        <div className="mb-1 text-sm font-semibold text-neutral-900">
+          Option 1 for Verification — DNS TXT (preferred)
         </div>
-        {!!normalizedDomain && (
-          <p className="mt-1 text-xs text-neutral-500">
-            Normalized: <span className="font-mono">{normalizedDomain}</span>
-          </p>
-        )}
-      </div>
-
-      {/* Mode selector for DNS actions */}
-      {!mode && (
-        <div className="mt-4 flex flex-wrap gap-2">
-          <button
-            onClick={handleDnsGenerate}
-            disabled={loading || profileMissing}
-            className="rounded-xl bg-[#2563EB] px-4 py-2 text-white disabled:opacity-50"
-            type="button"
-          >
-            {loading ? "Working…" : "Generate DNS record"}
-          </button>
-        </div>
-      )}
-
-      {/* DNS instructions */}
-      {mode === "dns" && (
-        <div className="mt-5 rounded-xl border bg-neutral-50 p-4">
-          <p className="mb-2 text-sm font-medium">Create this DNS TXT record, then click “Check record now”:</p>
-
-          <div className="grid grid-cols-1 items-center gap-3 text-sm md:grid-cols-12">
-            <div className="text-xs uppercase tracking-wide text-neutral-500 md:col-span-2">Host</div>
-            <div className="font-mono break-all md:col-span-9">
-              {dnsRecordHost || preferredHost(normalizedDomain)}
-            </div>
-            <div className="md:col-span-1">
-              <button
-                type="button"
-                onClick={() => copy(dnsRecordHost || preferredHost(normalizedDomain))}
-                className="text-sm underline"
-              >
-                Copy
-              </button>
-            </div>
-
-            <div className="text-xs uppercase tracking-wide text-neutral-500 md:col-span-2">Type</div>
-            <div className="font-mono md:col-span-9">{dnsRecordType}</div>
-            <div className="md:col-span-1">
-              <button type="button" onClick={() => copy("TXT")} className="text-sm underline">
-                Copy
-              </button>
-            </div>
-
-            <div className="text-xs uppercase tracking-wide text-neutral-500 md:col-span-2">Value</div>
-            <div className="font-mono break-all md:col-span-9">
-              {dnsRecordValue || preferredValue(dnsToken)}
-            </div>
-            <div className="md:col-span-1">
-              <button
-                type="button"
-                onClick={() => copy(dnsRecordValue || preferredValue(dnsToken))}
-                className="text-sm underline"
-              >
-                Copy
-              </button>
-            </div>
-          </div>
-
-          <p className="mt-3 text-xs text-neutral-600">
-            DNS propagation can take time (often minutes, sometimes longer). When ready, click{" "}
-            <span className="font-medium">“Check record now”</span>.
-          </p>
-
-          <button
-            onClick={handleDnsCheck}
-            disabled={loading || profileMissing}
-            className="mt-3 rounded-xl border px-4 py-2 disabled:opacity-50"
-            type="button"
-          >
-            {loading ? "Checking…" : "Check record now"}
-          </button>
-        </div>
-      )}
-
-      {!!message && <div className="mt-4 text-sm text-neutral-700">{message}</div>}
-
-      <details className="mt-4">
-        <summary className="cursor-pointer text-sm text-neutral-700">Why DNS TXT verification?</summary>
-        <p className="mt-2 text-sm text-neutral-600">
-          We look up <span className="font-mono">{preferredHost(normalizedDomain)}</span> for a TXT record that equals{" "}
-          <span className="font-mono">aeobro-site-verify=&lt;token&gt;</span>. If it matches, your domain is marked{" "}
-          <span className="font-medium">DOMAIN_VERIFIED</span>.
-        </p>
-      </details>
-
-      {/* === Code-in-Bio (Generate & Check) === */}
-      <section className="mt-6 rounded-xl border bg-neutral-50 p-4">
-        <div className="mb-2 text-sm font-medium">Verify with Code-in-Bio</div>
         <p className="mb-3 text-xs text-neutral-600">
-          Paste your profile URL, generate a short code, add it to your bio/about, then click <em>Check Now</em>.
+          Use this if you (or your team) can add a TXT record at your domain&apos;s DNS provider. This is the strongest
+          way to prove you control your brand&apos;s website.
+        </p>
+
+        {/* Domain input */}
+        <div>
+          <label htmlFor="domain" className="text-sm font-medium">
+            Your domain
+          </label>
+          <div className="mt-2 flex items-center gap-2">
+            <input
+              id="domain"
+              value={domainInput}
+              onChange={(e) => setDomainInput(e.target.value)}
+              placeholder="example.com or https://www.example.com/path"
+              className="w-full rounded-xl border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600"
+            />
+            <button
+              type="button"
+              className="rounded-xl border px-3 py-2 text-sm"
+              onClick={() => copy(normalizedDomain || "", "Domain copied")}
+            >
+              Copy domain
+            </button>
+          </div>
+          {!!normalizedDomain && (
+            <p className="mt-1 text-xs text-neutral-500">
+              Normalized: <span className="font-mono">{normalizedDomain}</span>
+            </p>
+          )}
+        </div>
+
+        {/* Mode selector for DNS actions */}
+        {!mode && (
+          <div className="mt-4 flex flex-wrap gap-2">
+            <button
+              onClick={handleDnsGenerate}
+              disabled={loading || profileMissing}
+              className="rounded-xl bg-[#2563EB] px-4 py-2 text-sm text-white disabled:opacity-50"
+              type="button"
+            >
+              {loading ? "Working…" : "Generate DNS record"}
+            </button>
+          </div>
+        )}
+
+        {/* DNS instructions */}
+        {mode === "dns" && (
+          <div className="mt-5 rounded-xl border bg-white p-4">
+            <p className="mb-2 text-sm font-medium">
+              Create this DNS TXT record, then click “Check record now”:
+            </p>
+
+            <div className="grid grid-cols-1 items-center gap-3 text-sm md:grid-cols-12">
+              <div className="text-xs uppercase tracking-wide text-neutral-500 md:col-span-2">Host</div>
+              <div className="font-mono break-all md:col-span-9">
+                {dnsRecordHost || preferredHost(normalizedDomain)}
+              </div>
+              <div className="md:col-span-1">
+                <button
+                  type="button"
+                  onClick={() => copy(dnsRecordHost || preferredHost(normalizedDomain))}
+                  className="text-sm underline"
+                >
+                  Copy
+                </button>
+              </div>
+
+              <div className="text-xs uppercase tracking-wide text-neutral-500 md:col-span-2">Type</div>
+              <div className="font-mono md:col-span-9">{dnsRecordType}</div>
+              <div className="md:col-span-1">
+                <button type="button" onClick={() => copy("TXT")} className="text-sm underline">
+                  Copy
+                </button>
+              </div>
+
+              <div className="text-xs uppercase tracking-wide text-neutral-500 md:col-span-2">Value</div>
+              <div className="font-mono break-all md:col-span-9">
+                {dnsRecordValue || preferredValue(dnsToken)}
+              </div>
+              <div className="md:col-span-1">
+                <button
+                  type="button"
+                  onClick={() => copy(dnsRecordValue || preferredValue(dnsToken))}
+                  className="text-sm underline"
+                >
+                  Copy
+                </button>
+              </div>
+            </div>
+
+            <p className="mt-3 text-xs text-neutral-600">
+              DNS propagation can take time (often minutes, sometimes longer). When ready, click{" "}
+              <span className="font-medium">“Check record now”</span>.
+            </p>
+
+            <button
+              onClick={handleDnsCheck}
+              disabled={loading || profileMissing}
+              className="mt-3 rounded-xl border px-4 py-2 text-sm disabled:opacity-50"
+              type="button"
+            >
+              {loading ? "Checking…" : "Check record now"}
+            </button>
+          </div>
+        )}
+
+        {!!message && <div className="mt-4 text-sm text-neutral-700">{message}</div>}
+
+        <details className="mt-4">
+          <summary className="cursor-pointer text-sm text-neutral-700">
+            Why DNS TXT verification?
+          </summary>
+          <p className="mt-2 text-sm text-neutral-600">
+            We look up <span className="font-mono">{preferredHost(normalizedDomain)}</span> for a TXT record that equals{" "}
+            <span className="font-mono">aeobro-site-verify=&lt;token&gt;</span>. If it matches, your domain is marked{" "}
+            <span className="font-medium">DOMAIN_VERIFIED</span>.
+          </p>
+        </details>
+      </section>
+
+      {/* === Option 2: Code-in-Bio === */}
+      <section className="mt-6 rounded-xl border bg-neutral-50 p-4">
+        <div className="mb-1 text-sm font-semibold text-neutral-900">
+          Option 2 for Verification — Code-in-Bio
+        </div>
+        <p className="mb-3 text-xs text-neutral-600">
+          Use this if you can update the bio/about text on a public social profile (Instagram, X, TikTok, etc.). We&apos;ll
+          generate a short code for you to paste, then we&apos;ll check for it.
         </p>
 
         <div className="grid gap-3">
@@ -450,13 +469,17 @@ export default function VerificationCard({
         </div>
       </section>
 
-      {/* OAuth Connect — quick path to Platform Verified */}
-      <section className="mt-4 rounded-xl border bg-neutral-50 p-4">
-        <div className="mb-2 text-sm font-medium">Connect a platform (OAuth)</div>
+      {/* === Option 3: OAuth Connect === */}
+      <section className="mt-6 rounded-xl border bg-neutral-50 p-4">
+        <div className="mb-1 text-sm font-semibold text-neutral-900">
+          Option 3 for Verification — OAuth (Connect a Platform)
+        </div>
         <p className="mb-3 text-xs text-neutral-600">
-          We’ll fetch your canonical identity (e.g., YouTube Channel ID, Twitter/X User ID) and mark your profile{" "}
-          <span className="font-medium">PLATFORM_VERIFIED</span>.
+          Use this if you can sign in with the same Google, Facebook, or X (Twitter) account that owns your channel or
+          page. We&apos;ll fetch your canonical identity (e.g., YouTube Channel ID, Twitter/X User ID) and mark your
+          profile <span className="font-medium">PLATFORM_VERIFIED</span>.
         </p>
+
         <div className="flex flex-wrap gap-2">
           <button
             type="button"
