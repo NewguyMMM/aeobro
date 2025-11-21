@@ -1,6 +1,5 @@
 // app/api/profile/[slug]/schema/route.ts
-// ✅ Updated: 2025-11-02 08:49 ET
-// Reconciled: allow Lite + PLATFORM_VERIFIED for /schema; never cache errors; short, safe cache on 200s; keep Link + X-Robots-Tag.
+// 📅 Updated: 2025-11-20 — Reconciled to include latestUpdate + all previous fixes.
 
 import { NextResponse, NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
@@ -10,13 +9,13 @@ import {
   buildServiceJsonLd,
 } from "@/lib/schema";
 import { getBaseUrl } from "@/lib/getBaseUrl";
-import { isSyndicationAllowed } from "@/lib/isSyndicationAllowed"; // ← single source of truth
+import { isSyndicationAllowed } from "@/lib/isSyndicationAllowed";
 
-export const dynamic = "force-dynamic"; // prevent ISR/ISR-like stickiness
+export const dynamic = "force-dynamic";
 
 type Params = { params: { slug: string } };
 
-/** Escape `<` so `</script>` can’t prematurely close tags if embedded somewhere */
+/** Prevent </script> injection */
 function escapeForJsonLd(obj: unknown) {
   return JSON.stringify(obj).replace(/</g, "\\u003c");
 }
@@ -24,23 +23,24 @@ function escapeForJsonLd(obj: unknown) {
 export async function GET(req: NextRequest, { params }: Params) {
   const { slug } = params;
 
-  // Query controls
   const url = new URL(req.url);
   const wantAll = url.searchParams.get("all") === "1";
   const pretty = url.searchParams.get("pretty") === "1";
   const download = url.searchParams.get("download") === "1";
 
-  // Accept either canonical slug or internal id as the URL segment
+  // ⭐ NOW INCLUDING LATEST UPDATE
   const profile = await prisma.profile.findFirst({
-    where: { OR: [{ slug }, { id: slug }] },
+    where: {
+      OR: [{ slug }, { id: slug }],
+    },
     include: {
-      // Keep minimal for gating + whatever your schema builders need elsewhere
       user: { select: { plan: true, planStatus: true } },
+      // 👇 NEW — required to surface Updates in JSON-LD
+      latestUpdate: true,
     },
   });
 
   if (!profile) {
-    // ❌ Never cache errors to avoid "stuck" behavior
     return NextResponse.json(
       { error: "Profile not found" },
       {
@@ -55,12 +55,15 @@ export async function GET(req: NextRequest, { params }: Params) {
   }
 
   const baseUrl = getBaseUrl();
-  const humanUrl = `${baseUrl}/p/${encodeURIComponent(profile.slug ?? slug)}`;
+  const humanUrl = `${baseUrl}/p/${encodeURIComponent(
+    profile.slug ?? slug
+  )}`;
 
-  // Normalize plan for gating (adjust if your plan actually lives on Profile)
+  /** Normalize plan */
   const plan =
     (profile as any).plan ??
-    (profile.user?.plan ?? null);
+    profile.user?.plan ??
+    null;
 
   const verificationStatus =
     (profile.verificationStatus as
@@ -69,24 +72,21 @@ export async function GET(req: NextRequest, { params }: Params) {
       | "DOMAIN_VERIFIED"
       | null) ?? "UNVERIFIED";
 
-  // ✅ Gate for schema export:
-  // Allow DOMAIN_VERIFIED always; allow PLATFORM_VERIFIED even on Lite for /schema;
-  // paid plans (Plus/Pro/Business/Enterprise) allowed too.
+  /** Gating — allow PLATFORM_VERIFIED (even Lite) for JSON-LD */
   const gate = isSyndicationAllowed(
     { verificationStatus, plan },
     {
       enforcePlan: true,
-      allowPlatformVerified: true, // ← key change for /schema
+      allowPlatformVerified: true,
       feedKind: "schema",
     }
   );
 
   if (!gate.allowed) {
-    // ❌ Never cache errors; include helpful hints without leaking private data
     return NextResponse.json(
       {
         error:
-          gate.reason ||
+          gate.reason ??
           "Syndication disabled. Verify your domain or connect a platform (or activate an eligible plan).",
         verificationStatus,
         plan,
@@ -96,38 +96,45 @@ export async function GET(req: NextRequest, { params }: Params) {
       {
         status: 403,
         headers: {
-          "Cache-Control": "no-store", // ← critical anti-stick
+          "Cache-Control": "no-store",
           "X-Robots-Tag": "noindex, nofollow",
-          "Link": `<${humanUrl}>; rel="alternate"; type="text/html"`,
+          Link: `<${humanUrl}>; rel="alternate"; type="text/html"`,
         },
       }
     );
   }
 
   try {
-    // ✅ Build the main Profile JSON-LD
-    const profileSchema = buildProfileSchema(profile, baseUrl);
+    // ⭐ MAIN CHANGE — pass latestUpdate to schema builder
+    const profileSchema = buildProfileSchema(
+      profile,
+      baseUrl,
+      profile.latestUpdate ?? null // 👈 NEW
+    );
 
+    /** Return profile only */
     if (!wantAll) {
-      const payload = profileSchema;
-      const body = pretty ? JSON.stringify(payload, null, 2) : escapeForJsonLd(payload);
+      const body = pretty
+        ? JSON.stringify(profileSchema, null, 2)
+        : escapeForJsonLd(profileSchema);
 
       return new NextResponse(body, {
         status: 200,
         headers: {
           "Content-Type": "application/ld+json; charset=utf-8",
           ...(download
-            ? { "Content-Disposition": `attachment; filename="${slug}-schema.json"` }
+            ? {
+                "Content-Disposition": `attachment; filename="${slug}-schema.json"`,
+              }
             : {}),
-          // ✅ Short, safe edge TTL (avoid hour-long stickiness)
           "Cache-Control": "public, s-maxage=60, stale-while-revalidate=300",
           "X-Robots-Tag": "all",
-          "Link": `<${humanUrl}>; rel="describes alternate"; type="text/html"`,
+          Link: `<${humanUrl}>; rel="describes alternate"; type="text/html"`,
         },
       });
     }
 
-    // If all=1 → append Services + FAQ JSON-LD too
+    // ⭐ all=1 → include Services + FAQ
     const [services, faqs] = await Promise.all([
       prisma.serviceItem.findMany({
         where: { profileId: profile.id, isPublic: true },
@@ -149,7 +156,7 @@ export async function GET(req: NextRequest, { params }: Params) {
       }),
     ]);
 
-    const serviceJsonLd = buildServiceJsonLd(
+    const servicesJsonLd = buildServiceJsonLd(
       `${humanUrl}#profile`,
       services.map((s) => ({
         name: s.name,
@@ -164,11 +171,17 @@ export async function GET(req: NextRequest, { params }: Params) {
 
     const faqJsonLd = buildFAQJsonLd(
       profile.slug ?? slug,
-      faqs.map((f) => ({ question: f.question, answer: f.answer }))
+      faqs.map((f) => ({
+        question: f.question,
+        answer: f.answer,
+      }))
     );
 
-    const payload: any[] = [profileSchema, ...serviceJsonLd, faqJsonLd];
-    const body = pretty ? JSON.stringify(payload, null, 2) : escapeForJsonLd(payload);
+    const payload = [profileSchema, ...servicesJsonLd, faqJsonLd];
+
+    const body = pretty
+      ? JSON.stringify(payload, null, 2)
+      : escapeForJsonLd(payload);
 
     return new NextResponse(body, {
       status: 200,
@@ -179,10 +192,9 @@ export async function GET(req: NextRequest, { params }: Params) {
               "Content-Disposition": `attachment; filename="${slug}-schema-all.json"`,
             }
           : {}),
-        // ✅ Short, safe edge TTL
         "Cache-Control": "public, s-maxage=60, stale-while-revalidate=300",
         "X-Robots-Tag": "all",
-        "Link": `<${humanUrl}>; rel="describes alternate"; type="text/html"`,
+        Link: `<${humanUrl}>; rel="describes alternate"; type="text/html"`,
       },
     });
   } catch (err: any) {
@@ -191,7 +203,6 @@ export async function GET(req: NextRequest, { params }: Params) {
       name: err?.name,
       message: err?.message,
     });
-    // ❌ Never cache errors
     return NextResponse.json(
       { error: "Failed to build JSON-LD" },
       { status: 500, headers: { "Cache-Control": "no-store" } }
