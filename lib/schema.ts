@@ -1,5 +1,5 @@
 // lib/schema.ts
-// 📅 Updated: 2025-11-09 20:12 ET
+// 📅 Updated: 2025-11-20 07:40 ET
 
 import type { Profile } from "@prisma/client";
 import { sanitizeText, sanitizeUrl } from "@/lib/sanitize";
@@ -133,7 +133,11 @@ function pushAdditional(base: any, name: string, value: string | number) {
 }
 
 /** Build the primary JSON-LD block for a public profile. */
-export function buildProfileSchema(profile: Partial<Profile>, baseUrl: string) {
+export function buildProfileSchema(
+  profile: Partial<Profile>,
+  baseUrl: string,
+  latestUpdateRaw?: string | null
+) {
   const slug = (profile as any)?.slug as string | undefined;
   const url = slug ? `${baseUrl}/p/${sanitizeText(slug, 120)}` : baseUrl;
 
@@ -151,6 +155,15 @@ export function buildProfileSchema(profile: Partial<Profile>, baseUrl: string) {
   const taglineRaw = (profile as any)?.tagline as string | null;
   const description =
     sanitizeText(bioRaw ?? "", 5000) || sanitizeText(taglineRaw ?? "", 500) || undefined;
+
+  // 🔹 Latest update (updateMessage) — from argument or from profile
+  const updateMessageSource =
+    latestUpdateRaw ??
+    ((profile as any)?.updateMessage as string | null) ??
+    null;
+  const latestUpdate = updateMessageSource
+    ? sanitizeText(updateMessageSource, 500)
+    : null;
 
   // Images
   const imagesSet = new Set<string>();
@@ -333,6 +346,8 @@ export function buildProfileSchema(profile: Partial<Profile>, baseUrl: string) {
     if (foundedYear) base.foundingDate = String(foundedYear);
     if (teamSize) base.numberOfEmployees = teamSize;
     if (pricingModel) pushAdditional(base, "pricingModel", pricingModel);
+    // 🔹 Latest update as an additionalProperty for org/local service
+    if (latestUpdate) pushAdditional(base, "latestUpdate", latestUpdate);
   } else {
     // Person extras
     const jobTitleRaw = (profile as any)?.jobTitle as string | null;
@@ -349,7 +364,7 @@ export function buildProfileSchema(profile: Partial<Profile>, baseUrl: string) {
     if (locationText) base.homeLocation = { "@type": "Place", name: locationText };
     if (normalizedServiceArea) base.areaServed = normalizedServiceArea;
 
-    // NEW: Person fields mirroring org trust details
+    // Person fields mirroring org trust details
     const languagesRaw = (profile as any)?.languages as string[] | null;
     const knowsLang = Array.isArray(languagesRaw)
       ? languagesRaw.map((s) => sanitizeText(s, 60)).filter(Boolean)
@@ -363,6 +378,8 @@ export function buildProfileSchema(profile: Partial<Profile>, baseUrl: string) {
     if (foundedYear) pushAdditional(base, "foundedYear", String(foundedYear));
     if (teamSize) pushAdditional(base, "teamSize", teamSize!);
     if (pricingModel) pushAdditional(base, "pricingModel", pricingModel);
+    // 🔹 Latest update for Person as well
+    if (latestUpdate) pushAdditional(base, "latestUpdate", latestUpdate);
   }
 
   // Remove empty/blank values
