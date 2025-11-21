@@ -1,5 +1,5 @@
 // app/api/profile/[slug]/schema/route.ts
-// 📅 Updated: 2025-11-20 — Reconciled to include latestUpdate + all previous fixes.
+// 📅 Updated: 2025-11-21 — Include updateMessage in JSON-LD without invalid Prisma include.
 
 import { NextResponse, NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
@@ -28,15 +28,14 @@ export async function GET(req: NextRequest, { params }: Params) {
   const pretty = url.searchParams.get("pretty") === "1";
   const download = url.searchParams.get("download") === "1";
 
-  // ⭐ NOW INCLUDING LATEST UPDATE
+  // Accept slug or internal id; include only what's needed
   const profile = await prisma.profile.findFirst({
     where: {
       OR: [{ slug }, { id: slug }],
     },
     include: {
       user: { select: { plan: true, planStatus: true } },
-      // 👇 NEW — required to surface Updates in JSON-LD
-      latestUpdate: true,
+      // ❌ no latestUpdate here – updateMessage is a scalar on Profile
     },
   });
 
@@ -105,14 +104,14 @@ export async function GET(req: NextRequest, { params }: Params) {
   }
 
   try {
-    // ⭐ MAIN CHANGE — pass latestUpdate to schema builder
+    // ⭐ Pass updateMessage (the “latest update” text) into the schema builder
     const profileSchema = buildProfileSchema(
       profile,
       baseUrl,
-      profile.latestUpdate ?? null // 👈 NEW
+      profile.updateMessage ?? null
     );
 
-    /** Return profile only */
+    /** Return profile-only schema */
     if (!wantAll) {
       const body = pretty
         ? JSON.stringify(profileSchema, null, 2)
