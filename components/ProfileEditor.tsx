@@ -1,5 +1,5 @@
 // components/ProfileEditor.tsx
-// 📅 Updated: 2025-11-23 13:45 ET
+// 📅 Updated: 2025-11-23 15:40 ET
 "use client";
 
 import * as React from "react";
@@ -210,9 +210,7 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
   });
 
   // ---- Phase 2: FAQ + Services JSON editors
-  const [faqs, setFaqs] = React.useState<FAQItem[]>(
-    initial?.faqJson ?? []
-  );
+  const [faqs, setFaqs] = React.useState<FAQItem[]>(initial?.faqJson ?? []);
   const [faqDraft, setFaqDraft] = React.useState<FAQItem>({
     question: "",
     answer: "",
@@ -276,7 +274,7 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
 
   /** ---- Build a normalized payload ---- */
   const buildPayload = React.useCallback((): Profile => {
-    return {
+    const base: Profile = {
       displayName: (displayName || "").trim(),
       legalName: (legalName || "").trim() || null,
       entityType: (entityType as EntityType) || null,
@@ -309,24 +307,46 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
           : null,
       // 🔹 Latest update is now saved with the main profile payload
       updateMessage: (updateMessage || "").trim() || null,
-
-      // 🔹 Phase 2 JSON editors (Pro/Business only)
-      faqJson: (faqs ?? []).map((f, index) => ({
-        question: (f.question || "").trim(),
-        answer: (f.answer || "").trim(),
-        position: f.position ?? index + 1,
-      })),
-      servicesJson: (services ?? []).map((s, index) => ({
-        name: (s.name || "").trim(),
-        description: (s.description || "").trim() || null,
-        url: s.url ? normalizeUrl(s.url) : null,
-        priceMin: s.priceMin?.toString().trim() || null,
-        priceMax: s.priceMax?.toString().trim() || null,
-        priceUnit: (s.priceUnit || "").trim() || null,
-        currency: (s.currency || "").trim() || null,
-        position: s.position ?? index + 1,
-      })),
     };
+
+    // 🔹 Phase 2 JSON editors — only send when Pro / Business so
+    // Lite users don’t accidentally wipe existing structured data.
+    if (isProPlan) {
+      const faqJson = (faqs ?? [])
+        .map((f, index) => {
+          const q = (f.question || "").trim();
+          const a = (f.answer || "").trim();
+          if (!q || !a) return null;
+          return {
+            question: q,
+            answer: a,
+            position: f.position ?? index + 1,
+          };
+        })
+        .filter(Boolean) as FAQItem[];
+
+      const servicesJson = (services ?? [])
+        .map((s, index) => {
+          const name = (s.name || "").trim();
+          if (!name) return null;
+          return {
+            name,
+            description: (s.description || "").trim() || null,
+            url: s.url ? normalizeUrl(s.url) : null,
+            priceMin: s.priceMin?.toString().trim() || null,
+            priceMax: s.priceMax?.toString().trim() || null,
+            priceUnit: (s.priceUnit || "").trim() || null,
+            currency: (s.currency || "").trim() || null,
+            position: s.position ?? index + 1,
+          };
+        })
+        .filter(Boolean) as ServiceItem[];
+
+      base.faqJson = faqJson;
+      base.servicesJson = servicesJson;
+    }
+
+    return base;
   }, [
     displayName,
     legalName,
@@ -350,6 +370,7 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
     updateMessage,
     faqs,
     services,
+    isProPlan,
   ]);
 
   /** ---- Prefill from API on mount ---- */
@@ -399,7 +420,7 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
         if (data.handles) setHandles(data.handles);
         if (data.links) setLinks(data.links || []);
 
-        // Phase 2 JSON editors
+        // Phase 2 JSON editors (always prefill; Lite users see read-only)
         if (Array.isArray(data.faqJson)) setFaqs(data.faqJson);
         if (Array.isArray(data.servicesJson)) setServices(data.servicesJson);
 
@@ -452,10 +473,16 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
           throw new Error("Extra links must be valid URLs.");
         }
       }
-      // Services validation (URLs only; other fields are free-form)
-      for (const s of services) {
-        if (s.url && !isValidUrl(normalizeUrl(s.url))) {
-          throw new Error("Service URLs must be valid (https://example.com).");
+
+      // Services validation (URLs only; other fields are free-form),
+      // and only for Pro/Business where the editor is unlocked.
+      if (isProPlan) {
+        for (const s of services) {
+          if (s.url && !isValidUrl(normalizeUrl(s.url))) {
+            throw new Error(
+              "Service URLs must be valid (https://example.com)."
+            );
+          }
         }
       }
 
@@ -1408,7 +1435,9 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
                         type="button"
                         className="text-xs text-red-600 hover:underline"
                         onClick={() =>
-                          setServices((prev) => prev.filter((_, i) => i !== idx))
+                          setServices((prev) =>
+                            prev.filter((_, i) => i !== idx)
+                          )
                         }
                       >
                         Remove
