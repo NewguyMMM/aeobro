@@ -1,5 +1,5 @@
 // components/ProfileEditor.tsx
-// 📅 Updated: 2025-11-20 07:15 ET
+// 📅 Updated: 2025-11-23 13:45 ET
 "use client";
 
 import * as React from "react";
@@ -44,6 +44,25 @@ type PressItem = { title: string; url: string };
 
 type VerificationStatus = "UNVERIFIED" | "PLATFORM_VERIFIED" | "DOMAIN_VERIFIED";
 
+type PlanTitle = "Free" | "Lite" | "Plus" | "Pro" | "Business";
+
+type FAQItem = {
+  question: string;
+  answer: string;
+  position?: number;
+};
+
+type ServiceItem = {
+  name: string;
+  description?: string | null;
+  url?: string | null;
+  priceMin?: string | null;
+  priceMax?: string | null;
+  priceUnit?: string | null;
+  currency?: string | null;
+  position?: number;
+};
+
 type Profile = {
   id?: string | null;
   displayName?: string | null;
@@ -68,6 +87,10 @@ type Profile = {
   slug?: string | null;
   verificationStatus?: VerificationStatus | null;
   updateMessage?: string | null; // latest update / announcement
+
+  // Phase 2 JSON editors
+  faqJson?: FAQItem[] | null;
+  servicesJson?: ServiceItem[] | null;
 };
 
 /** -------- Utils -------- */
@@ -108,16 +131,23 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
   const toast = useToast();
 
   // ---- Server identifiers
-  const [profileId, setProfileId] = React.useState<string | null>(initial?.id ?? null);
-  const [serverSlug, setServerSlug] = React.useState<string | null>(initial?.slug ?? null);
-
-  // ---- Verification status
-  const [verificationStatus, setVerificationStatus] = React.useState<VerificationStatus>(
-    (initial?.verificationStatus as VerificationStatus) ?? "UNVERIFIED"
+  const [profileId, setProfileId] = React.useState<string | null>(
+    initial?.id ?? null
+  );
+  const [serverSlug, setServerSlug] = React.useState<string | null>(
+    initial?.slug ?? null
   );
 
+  // ---- Verification status
+  const [verificationStatus, setVerificationStatus] =
+    React.useState<VerificationStatus>(
+      (initial?.verificationStatus as VerificationStatus) ?? "UNVERIFIED"
+    );
+
   // ---- Core identity
-  const [displayName, setDisplayName] = React.useState(initial?.displayName ?? "");
+  const [displayName, setDisplayName] = React.useState(
+    initial?.displayName ?? ""
+  );
   const [legalName, setLegalName] = React.useState(initial?.legalName ?? "");
   const [entityType, setEntityType] = React.useState<EntityType | "">(
     (initial?.entityType as EntityType) ?? ""
@@ -135,7 +165,9 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
   // ---- Anchors
   const [website, setWebsite] = React.useState(initial?.website ?? "");
   const [location, setLocation] = React.useState(initial?.location ?? "");
-  const [serviceArea, setServiceArea] = React.useState(toCsv(initial?.serviceArea));
+  const [serviceArea, setServiceArea] = React.useState(
+    toCsv(initial?.serviceArea)
+  );
 
   // ---- Trust & Authority
   const [foundedYear, setFoundedYear] = React.useState(
@@ -150,20 +182,54 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
   >((initial?.pricingModel as any) ?? "");
   const [hours, setHours] = React.useState(initial?.hours ?? "");
 
-  const [certifications, setCertifications] = React.useState(initial?.certifications ?? "");
+  const [certifications, setCertifications] = React.useState(
+    initial?.certifications ?? ""
+  );
   const [press, setPress] = React.useState<PressItem[]>(initial?.press ?? []);
-  const [pressDraft, setPressDraft] = React.useState<PressItem>({ title: "", url: "" });
+  const [pressDraft, setPressDraft] = React.useState<PressItem>({
+    title: "",
+    url: "",
+  });
 
   // ---- Branding & media
   const [logoUrl, setLogoUrl] = React.useState(initial?.logoUrl ?? "");
   const [imageUrls, setImageUrls] = React.useState<string[]>(
-    initial?.imageUrls && initial.imageUrls.length ? initial.imageUrls : ["", "", ""]
+    initial?.imageUrls && initial.imageUrls.length
+      ? initial.imageUrls
+      : ["", "", ""]
   );
 
   // ---- Platforms & links
-  const [handles, setHandles] = React.useState<PlatformHandles>(initial?.handles ?? {});
+  const [handles, setHandles] = React.useState<PlatformHandles>(
+    initial?.handles ?? {}
+  );
   const [links, setLinks] = React.useState<LinkItem[]>(initial?.links ?? []);
-  const [linkDraft, setLinkDraft] = React.useState<LinkItem>({ label: "", url: "" });
+  const [linkDraft, setLinkDraft] = React.useState<LinkItem>({
+    label: "",
+    url: "",
+  });
+
+  // ---- Phase 2: FAQ + Services JSON editors
+  const [faqs, setFaqs] = React.useState<FAQItem[]>(
+    initial?.faqJson ?? []
+  );
+  const [faqDraft, setFaqDraft] = React.useState<FAQItem>({
+    question: "",
+    answer: "",
+  });
+
+  const [services, setServices] = React.useState<ServiceItem[]>(
+    initial?.servicesJson ?? []
+  );
+  const [serviceDraft, setServiceDraft] = React.useState<ServiceItem>({
+    name: "",
+    description: "",
+    url: "",
+    priceMin: "",
+    priceMax: "",
+    priceUnit: "",
+    currency: "",
+  });
 
   // ---- UI
   const [saving, setSaving] = React.useState(false);
@@ -178,7 +244,6 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
   const [confirmOpen, setConfirmOpen] = React.useState(false);
 
   // ---- Plan pill (Free/Lite/Plus/Pro/Business)
-  type PlanTitle = "Free" | "Lite" | "Plus" | "Pro" | "Business";
   const [plan, setPlan] = React.useState<PlanTitle | null>(null);
   React.useEffect(() => {
     let cancelled = false;
@@ -190,7 +255,11 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
         const p = j?.plan as PlanTitle | undefined;
         if (
           !cancelled &&
-          (p === "Free" || p === "Lite" || p === "Plus" || p === "Pro" || p === "Business")
+          (p === "Free" ||
+            p === "Lite" ||
+            p === "Plus" ||
+            p === "Pro" ||
+            p === "Business")
         ) {
           setPlan(p);
         }
@@ -202,6 +271,8 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
       cancelled = true;
     };
   }, []);
+
+  const isProPlan = plan === "Pro" || plan === "Business";
 
   /** ---- Build a normalized payload ---- */
   const buildPayload = React.useCallback((): Profile => {
@@ -238,6 +309,23 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
           : null,
       // 🔹 Latest update is now saved with the main profile payload
       updateMessage: (updateMessage || "").trim() || null,
+
+      // 🔹 Phase 2 JSON editors (Pro/Business only)
+      faqJson: (faqs ?? []).map((f, index) => ({
+        question: (f.question || "").trim(),
+        answer: (f.answer || "").trim(),
+        position: f.position ?? index + 1,
+      })),
+      servicesJson: (services ?? []).map((s, index) => ({
+        name: (s.name || "").trim(),
+        description: (s.description || "").trim() || null,
+        url: s.url ? normalizeUrl(s.url) : null,
+        priceMin: s.priceMin?.toString().trim() || null,
+        priceMax: s.priceMax?.toString().trim() || null,
+        priceUnit: (s.priceUnit || "").trim() || null,
+        currency: (s.currency || "").trim() || null,
+        position: s.position ?? index + 1,
+      })),
     };
   }, [
     displayName,
@@ -260,6 +348,8 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
     handles,
     links,
     updateMessage,
+    faqs,
+    services,
   ]);
 
   /** ---- Prefill from API on mount ---- */
@@ -291,20 +381,27 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
         if (data.location != null) setLocation(data.location || "");
         if (data.serviceArea) setServiceArea(toCsv(data.serviceArea));
 
-        if (data.foundedYear != null) setFoundedYear(String(data.foundedYear || ""));
+        if (data.foundedYear != null)
+          setFoundedYear(String(data.foundedYear || ""));
         if (data.teamSize != null) setTeamSize(String(data.teamSize || ""));
         if (data.languages) setLanguages(toCsv(data.languages));
         if (data.pricingModel) setPricingModel(data.pricingModel as any);
         if (data.hours != null) setHours(data.hours || "");
 
-        if (data.certifications != null) setCertifications(data.certifications || "");
+        if (data.certifications != null)
+          setCertifications(data.certifications || "");
         if (data.press) setPress(data.press);
 
         if (data.logoUrl != null) setLogoUrl(data.logoUrl || "");
-        if (data.imageUrls && data.imageUrls.length) setImageUrls(data.imageUrls);
+        if (data.imageUrls && data.imageUrls.length)
+          setImageUrls(data.imageUrls);
 
         if (data.handles) setHandles(data.handles);
         if (data.links) setLinks(data.links || []);
+
+        // Phase 2 JSON editors
+        if (Array.isArray(data.faqJson)) setFaqs(data.faqJson);
+        if (Array.isArray(data.servicesJson)) setServices(data.servicesJson);
 
         setServerSlug(data.slug || null);
         setVerificationStatus(
@@ -353,6 +450,12 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
       for (const l of links) {
         if (l.url && !isValidUrl(normalizeUrl(l.url))) {
           throw new Error("Extra links must be valid URLs.");
+        }
+      }
+      // Services validation (URLs only; other fields are free-form)
+      for (const s of services) {
+        if (s.url && !isValidUrl(normalizeUrl(s.url))) {
+          throw new Error("Service URLs must be valid (https://example.com).");
         }
       }
 
@@ -859,9 +962,7 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
           </label>
           <LogoUploader value={logoUrl} onChange={(url) => setLogoUrl(url)} />
           <div className="grid gap-2">
-            <label className="text-xs text-gray-600">
-              Or paste a logo URL
-            </label>
+            <label className="text-xs text-gray-600">Or paste a logo URL</label>
             <input
               id="logoUrl"
               className={input}
@@ -1001,6 +1102,363 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
             </div>
           )}
         </div>
+      </section>
+
+      {/* Phase 2: FAQ Builder (Pro/Business gating) */}
+      <section className="grid gap-4">
+        <div className="flex items-center justify-between">
+          <h3 className="text-lg font-semibold">FAQs (Pro / Business)</h3>
+          {!isProPlan && (
+            <span className="text-xs rounded-full bg-yellow-50 px-2.5 py-1 text-yellow-800 border border-yellow-200">
+              Upgrade to Pro or Business to edit FAQs
+            </span>
+          )}
+        </div>
+
+        {isProPlan ? (
+          <div className="grid gap-3 rounded-2xl border bg-white p-4 shadow-sm">
+            <p className="text-sm text-gray-600">
+              Add common questions and answers about your brand, services, or
+              policies. AEOBRO turns these into FAQ JSON-LD for AI and search.
+            </p>
+
+            {/* FAQ Draft inputs */}
+            <div className="grid gap-2">
+              <label className={label}>New question</label>
+              <input
+                className={input}
+                placeholder="e.g., What services do you offer?"
+                value={faqDraft.question}
+                onChange={(e) =>
+                  setFaqDraft((f) => ({ ...f, question: e.target.value }))
+                }
+                maxLength={500}
+              />
+            </div>
+            <div className="grid gap-2">
+              <label className={label}>Answer</label>
+              <textarea
+                className={input}
+                rows={3}
+                placeholder="Provide a clear, helpful answer."
+                value={faqDraft.answer}
+                onChange={(e) =>
+                  setFaqDraft((f) => ({ ...f, answer: e.target.value }))
+                }
+                maxLength={4000}
+              />
+            </div>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                className="px-3 py-2 border rounded-lg"
+                onClick={() => {
+                  const q = faqDraft.question.trim();
+                  const a = faqDraft.answer.trim();
+                  if (!q || !a) return;
+                  setFaqs((prev) => [
+                    ...prev,
+                    {
+                      question: q,
+                      answer: a,
+                      position: prev.length + 1,
+                    },
+                  ]);
+                  setFaqDraft({ question: "", answer: "" });
+                }}
+              >
+                + Add FAQ
+              </button>
+              {faqs.length > 0 && (
+                <button
+                  type="button"
+                  className="px-3 py-2 border rounded-lg"
+                  onClick={() => setFaqs([])}
+                >
+                  Clear FAQs
+                </button>
+              )}
+            </div>
+
+            {/* FAQ list */}
+            {faqs.length > 0 && (
+              <ul className="mt-2 space-y-3 text-sm">
+                {faqs.map((f, idx) => (
+                  <li
+                    key={idx}
+                    className="rounded-lg border bg-gray-50 px-3 py-2 flex gap-3"
+                  >
+                    <div className="mt-1 text-xs font-semibold text-gray-500">
+                      {idx + 1}.
+                    </div>
+                    <div className="flex-1">
+                      <div className="font-medium">{f.question}</div>
+                      <div className="mt-1 text-gray-700 whitespace-pre-wrap">
+                        {f.answer}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      className="text-xs text-red-600 hover:underline ml-2"
+                      onClick={() =>
+                        setFaqs((prev) => prev.filter((_, i) => i !== idx))
+                      }
+                    >
+                      Remove
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        ) : (
+          <div className="rounded-2xl border border-dashed bg-gray-50 p-4 text-sm text-gray-600">
+            FAQs are stored as structured JSON-LD for AI and search engines.
+            Upgrade to <span className="font-medium">Pro</span> or{" "}
+            <span className="font-medium">Business</span> to unlock the FAQ
+            editor here.
+          </div>
+        )}
+      </section>
+
+      {/* Phase 2: Services Builder (Pro/Business gating) */}
+      <section className="grid gap-4">
+        <div className="flex items-center justify-between">
+          <h3 className="text-lg font-semibold">Services (Pro / Business)</h3>
+          {!isProPlan && (
+            <span className="text-xs rounded-full bg-yellow-50 px-2.5 py-1 text-yellow-800 border border-yellow-200">
+              Upgrade to Pro or Business to edit Services
+            </span>
+          )}
+        </div>
+
+        {isProPlan ? (
+          <div className="grid gap-3 rounded-2xl border bg-white p-4 shadow-sm">
+            <p className="text-sm text-gray-600">
+              List your services or offers. AEOBRO exposes these as{" "}
+              <code className="text-xs bg-gray-100 px-1 py-0.5 rounded">
+                Service
+              </code>{" "}
+              entities in JSON-LD, with optional price ranges.
+            </p>
+
+            {/* Service draft inputs */}
+            <div className="grid gap-2">
+              <label className={label}>Service name</label>
+              <input
+                className={input}
+                placeholder="e.g., Website design package"
+                value={serviceDraft.name || ""}
+                onChange={(e) =>
+                  setServiceDraft((s) => ({ ...s, name: e.target.value }))
+                }
+                maxLength={200}
+              />
+            </div>
+            <div className="grid gap-2">
+              <label className={label}>Description</label>
+              <textarea
+                className={input}
+                rows={3}
+                placeholder="Short description of this service."
+                value={serviceDraft.description || ""}
+                onChange={(e) =>
+                  setServiceDraft((s) => ({
+                    ...s,
+                    description: e.target.value,
+                  }))
+                }
+                maxLength={2000}
+              />
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className={row}>
+                <label className={label}>Service URL (optional)</label>
+                <input
+                  className={input}
+                  placeholder="https://your-service-page.com"
+                  value={serviceDraft.url || ""}
+                  onChange={(e) =>
+                    setServiceDraft((s) => ({ ...s, url: e.target.value }))
+                  }
+                  maxLength={300}
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className={row}>
+                  <label className={label}>Min price</label>
+                  <input
+                    className={input}
+                    placeholder="e.g., 500"
+                    value={serviceDraft.priceMin || ""}
+                    onChange={(e) =>
+                      setServiceDraft((s) => ({
+                        ...s,
+                        priceMin: e.target.value,
+                      }))
+                    }
+                    maxLength={40}
+                  />
+                </div>
+                <div className={row}>
+                  <label className={label}>Max price</label>
+                  <input
+                    className={input}
+                    placeholder="e.g., 2000"
+                    value={serviceDraft.priceMax || ""}
+                    onChange={(e) =>
+                      setServiceDraft((s) => ({
+                        ...s,
+                        priceMax: e.target.value,
+                      }))
+                    }
+                    maxLength={40}
+                  />
+                </div>
+              </div>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className={row}>
+                <label className={label}>Currency</label>
+                <input
+                  className={input}
+                  placeholder="e.g., USD"
+                  value={serviceDraft.currency || ""}
+                  onChange={(e) =>
+                    setServiceDraft((s) => ({
+                      ...s,
+                      currency: e.target.value,
+                    }))
+                  }
+                  maxLength={10}
+                />
+              </div>
+              <div className={row}>
+                <label className={label}>Unit (per…)</label>
+                <input
+                  className={input}
+                  placeholder="e.g., project, hour, month"
+                  value={serviceDraft.priceUnit || ""}
+                  onChange={(e) =>
+                    setServiceDraft((s) => ({
+                      ...s,
+                      priceUnit: e.target.value,
+                    }))
+                  }
+                  maxLength={40}
+                />
+              </div>
+            </div>
+
+            <div className="flex gap-2">
+              <button
+                type="button"
+                className="px-3 py-2 border rounded-lg"
+                onClick={() => {
+                  const name = (serviceDraft.name || "").trim();
+                  if (!name) return;
+                  const newItem: ServiceItem = {
+                    name,
+                    description: (serviceDraft.description || "").trim() || "",
+                    url: serviceDraft.url || "",
+                    priceMin: serviceDraft.priceMin || "",
+                    priceMax: serviceDraft.priceMax || "",
+                    priceUnit: serviceDraft.priceUnit || "",
+                    currency: serviceDraft.currency || "",
+                    position: services.length + 1,
+                  };
+                  setServices((prev) => [...prev, newItem]);
+                  setServiceDraft({
+                    name: "",
+                    description: "",
+                    url: "",
+                    priceMin: "",
+                    priceMax: "",
+                    priceUnit: "",
+                    currency: "",
+                  });
+                }}
+              >
+                + Add service
+              </button>
+              {services.length > 0 && (
+                <button
+                  type="button"
+                  className="px-3 py-2 border rounded-lg"
+                  onClick={() => setServices([])}
+                >
+                  Clear services
+                </button>
+              )}
+            </div>
+
+            {/* Services list */}
+            {services.length > 0 && (
+              <ul className="mt-2 grid gap-3 text-sm">
+                {services.map((s, idx) => (
+                  <li
+                    key={idx}
+                    className="rounded-lg border bg-gray-50 px-3 py-2 flex flex-col gap-1"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="font-medium">
+                        {idx + 1}. {s.name}
+                      </div>
+                      <button
+                        type="button"
+                        className="text-xs text-red-600 hover:underline"
+                        onClick={() =>
+                          setServices((prev) => prev.filter((_, i) => i !== idx))
+                        }
+                      >
+                        Remove
+                      </button>
+                    </div>
+                    {s.description && (
+                      <div className="text-gray-700 whitespace-pre-wrap">
+                        {s.description}
+                      </div>
+                    )}
+                    {(s.priceMin || s.priceMax || s.currency || s.priceUnit) && (
+                      <div className="text-xs text-gray-700 mt-1">
+                        {s.currency ? `${s.currency} ` : ""}
+                        {s.priceMin && s.priceMax
+                          ? `${s.priceMin}–${s.priceMax}`
+                          : s.priceMin
+                          ? s.priceMin
+                          : s.priceMax
+                          ? `Up to ${s.priceMax}`
+                          : ""}
+                        {s.priceUnit ? ` per ${s.priceUnit}` : ""}
+                      </div>
+                    )}
+                    {s.url && (
+                      <a
+                        href={normalizeUrl(s.url)}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-xs text-blue-600 underline mt-1"
+                      >
+                        View service page
+                      </a>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        ) : (
+          <div className="rounded-2xl border border-dashed bg-gray-50 p-4 text-sm text-gray-600">
+            Services are exported as structured{" "}
+            <code className="text-xs bg-gray-100 px-1 py-0.5 rounded">
+              Service
+            </code>{" "}
+            entities in JSON-LD, including price ranges when available. Upgrade
+            to <span className="font-medium">Pro</span> or{" "}
+            <span className="font-medium">Business</span> to unlock the Services
+            editor here.
+          </div>
+        )}
       </section>
 
       {/* Save / Publish */}
