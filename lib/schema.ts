@@ -47,17 +47,27 @@ function handleToCanonicalUrl(key: string, raw: any): string | null {
 
   const k = (key || "").toLowerCase();
   switch (k) {
-    case "youtube": return `https://www.youtube.com/@${noAt}`;
-    case "tiktok": return `https://www.tiktok.com/@${noAt}`;
-    case "instagram": return `https://www.instagram.com/${noAt}`;
+    case "youtube":
+      return `https://www.youtube.com/@${noAt}`;
+    case "tiktok":
+      return `https://www.tiktok.com/@${noAt}`;
+    case "instagram":
+      return `https://www.instagram.com/${noAt}`;
     case "x":
-    case "twitter": return `https://twitter.com/${noAt}`;
-    case "linkedin": return `https://www.linkedin.com/in/${noAt}`;
-    case "facebook": return `https://www.facebook.com/${noAt}`;
-    case "github": return `https://github.com/${noAt}`;
-    case "substack": return `https://${noAt}.substack.com/`;
-    case "etsy": return `https://www.etsy.com/shop/${noAt}`;
-    default: return null;
+    case "twitter":
+      return `https://twitter.com/${noAt}`;
+    case "linkedin":
+      return `https://www.linkedin.com/in/${noAt}`;
+    case "facebook":
+      return `https://www.facebook.com/${noAt}`;
+    case "github":
+      return `https://github.com/${noAt}`;
+    case "substack":
+      return `https://${noAt}.substack.com/`;
+    case "etsy":
+      return `https://www.etsy.com/shop/${noAt}`;
+    default:
+      return null;
   }
 }
 
@@ -126,7 +136,8 @@ function normalizeServiceArea(profile: any): string[] | string | undefined {
 
 /** Helper: ensure additionalProperty exists and push */
 function pushAdditional(base: any, name: string, value: string | number) {
-  if (value === undefined || value === null || (typeof value === "string" && !value.trim())) return;
+  if (value === undefined || value === null || (typeof value === "string" && !value.trim()))
+    return;
   const pv = { "@type": "PropertyValue", name, value };
   if (!base.additionalProperty) base.additionalProperty = [pv];
   else base.additionalProperty.push(pv);
@@ -158,9 +169,7 @@ export function buildProfileSchema(
 
   // 🔹 Latest update (updateMessage) — from argument or from profile
   const updateMessageSource =
-    latestUpdateRaw ??
-    ((profile as any)?.updateMessage as string | null) ??
-    null;
+    latestUpdateRaw ?? ((profile as any)?.updateMessage as string | null) ?? null;
   const latestUpdate = updateMessageSource
     ? sanitizeText(updateMessageSource, 500)
     : null;
@@ -173,7 +182,9 @@ export function buildProfileSchema(
   if (logoUrl) imagesSet.add(logoUrl);
   if (avatarUrl) imagesSet.add(avatarUrl);
   if (imageUrl) imagesSet.add(imageUrl);
-  const imageUrls = Array.isArray((profile as any)?.imageUrls) ? (profile as any).imageUrls : [];
+  const imageUrls = Array.isArray((profile as any)?.imageUrls)
+    ? (profile as any).imageUrls
+    : [];
   for (const u of imageUrls) {
     const s = sanitizeUrl(u);
     if (s) imagesSet.add(s);
@@ -184,10 +195,12 @@ export function buildProfileSchema(
   // Contact
   const emailRaw =
     ((profile as any)?.publicEmail as string | null) ??
-    ((profile as any)?.email as string | null) ?? null;
+    ((profile as any)?.email as string | null) ??
+    null;
   const telephoneRaw =
     ((profile as any)?.publicPhone as string | null) ??
-    ((profile as any)?.phone as string | null) ?? null;
+    ((profile as any)?.phone as string | null) ??
+    null;
   const email = emailRaw ? sanitizeText(emailRaw, 200) : undefined;
   const telephone = telephoneRaw ? sanitizeText(telephoneRaw, 50) : undefined;
 
@@ -281,10 +294,13 @@ export function buildProfileSchema(
     .map((p: any) => {
       const url = sanitizeUrl(p?.url);
       const title =
-        p?.title ? sanitizeText(p.title, 200)
-        : p?.name ? sanitizeText(p.name, 200)
-        : p?.label ? sanitizeText(p.label, 200)
-        : undefined;
+        p?.title
+          ? sanitizeText(p.title, 200)
+          : p?.name
+          ? sanitizeText(p.name, 200)
+          : p?.label
+          ? sanitizeText(p.label, 200)
+          : undefined;
 
       if (!url && !title) return null; // need at least one
       const cw: any = { "@type": "CreativeWork" };
@@ -357,7 +373,8 @@ export function buildProfileSchema(
     const worksForRaw =
       ((profile as any)?.organizationName as string | null) ??
       ((profile as any)?.company as string | null) ??
-      legalName ?? null;
+      legalName ??
+      null;
     const worksFor = worksForRaw ? sanitizeText(worksForRaw, 200) : null;
     if (worksFor) base.worksFor = { "@type": "Organization", name: worksFor };
 
@@ -461,29 +478,34 @@ export function buildServiceJsonLd(
       const currency = svc.currency ? sanitizeText(svc.currency, 10) : undefined;
       const priceUnit = svc.priceUnit ? sanitizeText(svc.priceUnit, 40) : undefined;
 
-      const offers =
-        hasAnyPrice
-          ? {
-              "@type": "Offer",
-              ...(currency ? { priceCurrency: currency } : {}),
-              ...(svc.priceMin !== undefined && svc.priceMin !== null ? { price: String(svc.priceMin) } : {}),
-              ...(svc.priceMax !== undefined && svc.priceMax !== null ? { highPrice: String(svc.priceMax) } : {}),
-              ...(svc.priceMin !== undefined && svc.priceMin !== null &&
-                svc.priceMax !== undefined && svc.priceMax !== null
-                ? {
-                    priceSpecification: {
-                      "@type": "PriceSpecification",
-                      minPrice: String(svc.priceMin),
-                      maxPrice: String(svc.priceMax),
-                    },
-                  }
-                : {}),
-              ...(url ? { url } : {}),
-              ...(priceUnit
-                ? { eligibleQuantity: { "@type": "QuantitativeValue", unitText: priceUnit } }
-                : {}),
-            }
-          : undefined;
+      const offers = hasAnyPrice
+        ? {
+            "@type": "Offer",
+            ...(currency ? { priceCurrency: currency } : {}),
+            ...(svc.priceMin !== undefined && svc.priceMin !== null
+              ? { price: String(svc.priceMin) }
+              : {}),
+            ...(svc.priceMax !== undefined && svc.priceMax !== null
+              ? { highPrice: String(svc.priceMax) }
+              : {}),
+            ...(svc.priceMin !== undefined &&
+            svc.priceMin !== null &&
+            svc.priceMax !== undefined &&
+            svc.priceMax !== null
+              ? {
+                  priceSpecification: {
+                    "@type": "PriceSpecification",
+                    minPrice: String(svc.priceMin),
+                    maxPrice: String(svc.priceMax),
+                  },
+                }
+              : {}),
+            ...(url ? { url } : {}),
+            ...(priceUnit
+              ? { eligibleQuantity: { "@type": "QuantitativeValue", unitText: priceUnit } }
+              : {}),
+          }
+        : undefined;
 
       const obj: any = {
         "@context": "https://schema.org",
