@@ -8,11 +8,11 @@ import { toKebab, isSlugAllowed, RESERVED_SLUGS } from "@/lib/slug";
 import { revalidatePath, revalidateTag } from "next/cache";
 import { sanitizeProfilePayload } from "@/lib/sanitize";
 
-export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
+export const runtime = "nodejs";          // Prisma requires Node runtime
+export const dynamic = "force-dynamic";   // don't cache API responses
 
 /* --------------------------------------------------- */
-/*                         HELPERS                      */
+/*                         HELPERS                     */
 /* --------------------------------------------------- */
 
 function jsonError(status: number, errorCode: string, message: string, extra?: any) {
@@ -22,8 +22,9 @@ function jsonError(status: number, errorCode: string, message: string, extra?: a
 async function requireUserId() {
   try {
     const session = await getServerSession(authOptions);
-    if (!session?.user?.email)
+    if (!session?.user?.email) {
       return { err: jsonError(401, "UNAUTHORIZED", "Unauthorized") };
+    }
 
     const user = await prisma.user.findUnique({
       where: { email: session.user.email },
@@ -37,6 +38,7 @@ async function requireUserId() {
   }
 }
 
+// URL schema that allows empty, normalizes protocol, and enforces MAX length
 const urlMaybeEmptyMax = (maxLen: number) =>
   z
     .string()
@@ -46,7 +48,7 @@ const urlMaybeEmptyMax = (maxLen: number) =>
     .nullable()
     .transform((v) => (v ?? "").trim())
     .refine((v) => {
-      if (!v) return true;
+      if (!v) return true; // allow empty
       try {
         const s = /^https?:\/\//i.test(v) ? v : `https://${v}`;
         new URL(s);
@@ -68,7 +70,7 @@ const csvOrArray = z
   .optional()
   .nullable()
   .transform((v) => {
-    if (!v) return [];
+    if (!v) return [] as string[];
     if (Array.isArray(v)) return v.map(String).map((s) => s.trim()).filter(Boolean);
     return String(v).split(",").map((s) => s.trim()).filter(Boolean);
   });
@@ -86,6 +88,7 @@ const intNullable = z
 /* --------------------------------------------------- */
 
 const REGION_MAP: Record<string, string> = {
+  // US states
   alabama: "al", alaska: "ak", arizona: "az", arkansas: "ar", california: "ca", colorado: "co",
   connecticut: "ct", delaware: "de", florida: "fl", georgia: "ga", hawaii: "hi", idaho: "id",
   illinois: "il", indiana: "in", iowa: "ia", kansas: "ks", kentucky: "ky", louisiana: "la",
@@ -96,6 +99,7 @@ const REGION_MAP: Record<string, string> = {
   pennsylvania: "pa", "rhode island": "ri", "south carolina": "sc", "south dakota": "sd",
   tennessee: "tn", texas: "tx", utah: "ut", vermont: "vt", virginia: "va", washington: "wa",
   "west virginia": "wv", wisconsin: "wi", wyoming: "wy",
+  // Canadian provinces (subset)
   ontario: "on", quebec: "qc", "british columbia": "bc", alberta: "ab",
 };
 
@@ -103,16 +107,22 @@ function geoSuffixFromLocation(location?: string | null): string | null {
   if (!location) return null;
   const raw = String(location).toLowerCase();
 
+  // try last 2–3 character token first
   const abbrev = raw.match(/\b([a-z]{2,3})\b/gi)?.at(-1);
-  if (abbrev) return toKebab(abbrev);
+  if (abbrev && /^[a-z]{2,3}$/i.test(abbrev)) return toKebab(abbrev);
 
+  // look for full state/province name
   for (const key of Object.keys(REGION_MAP)) {
     if (raw.includes(key)) return REGION_MAP[key];
   }
 
+  // fallback to last token from kebab-case
   const tokens = toKebab(raw).split("-").filter(Boolean);
-  const last = tokens.at(-1);
-  return last && last.length <= 6 ? last : null;
+  if (tokens.length) {
+    const last = tokens.at(-1)!;
+    if (last.length <= 6) return last;
+  }
+  return null;
 }
 
 async function ensureUniqueSlug(
@@ -126,23 +136,32 @@ async function ensureUniqueSlug(
   const root = base;
   if (opts.current && opts.current === root) return root;
 
-  const existsRoot = await prisma.profile.findUnique({ where: { slug: root } });
-  if (!existsRoot) return root;
+  const existingRoot = await prisma.profile.findUnique({
+    where: { slug: root },
+    select: { slug: true },
+  });
+  if (!existingRoot) return root;
 
   const geo = geoSuffixFromLocation(opts.location);
   if (geo) {
-    const candidate = `${root}-${geo}`;
-    if (!RESERVED_SLUGS.has(candidate) && candidate.length <= 80) {
-      const existsGeo = await prisma.profile.findUnique({ where: { slug: candidate } });
-      if (!existsGeo) return candidate;
+    const candidateGeo = `${root}-${geo}`;
+    if (candidateGeo.length <= 80 && !RESERVED_SLUGS.has(candidateGeo)) {
+      const hitGeo = await prisma.profile.findUnique({
+        where: { slug: candidateGeo },
+        select: { slug: true },
+      });
+      if (!hitGeo) return candidateGeo;
     }
   }
 
   for (let i = 2; i <= 500; i++) {
-    const cand = `${root}-${i}`;
-    if (cand.length > 80) break;
-    const exists = await prisma.profile.findUnique({ where: { slug: cand } });
-    if (!exists) return cand;
+    const candidate = `${root}-${i}`;
+    if (candidate.length > 80) break;
+    const hit = await prisma.profile.findUnique({
+      where: { slug: candidate },
+      select: { slug: true },
+    });
+    if (!hit) return candidate;
   }
 
   return `${root}-${Math.random().toString(36).slice(2, 6)}`;
@@ -181,6 +200,7 @@ const PlatformHandles = z
 const FAQItem = z.object({
   question: z.string().trim().max(500),
   answer: z.string().trim().max(5000),
+  position: z.number().int().min(1).max(500).optional().nullable(),
 });
 
 const ServiceItem = z.object({
@@ -191,6 +211,7 @@ const ServiceItem = z.object({
   priceMax: z.union([z.string(), z.number()]).optional().nullable(),
   priceUnit: z.string().trim().max(40).optional().nullable(),
   currency: z.string().trim().max(10).optional().nullable(),
+  position: z.number().int().min(1).max(500).optional().nullable(),
 });
 
 /** EXTENDED Profile Schema */
@@ -205,7 +226,7 @@ const ProfileSchema = z.object({
 
   legalName: z.string().trim().max(160).optional().nullable(),
   entityType: z
-    .enum(["Business", "Local Service", "Organization", "Creator / Person"])
+    .enum(["Business", "Local Service", "Organization", "Creator / Person", "Product"])
     .optional()
     .nullable(),
 
@@ -224,6 +245,7 @@ const ProfileSchema = z.object({
 
   handles: PlatformHandles,
 
+  // allow client to propose a slug
   slug: z.string().trim().max(80).optional().nullable(),
 
   /** 🔥 NEW FIELDS */
@@ -247,9 +269,8 @@ export async function GET() {
       where: { userId: auth.userId },
     });
 
-    return NextResponse.json({
-      ok: true,
-      profile: profile ?? {
+    const payload =
+      profile ?? {
         userId: auth.userId,
         links: [],
         press: [],
@@ -259,7 +280,13 @@ export async function GET() {
         faqJson: [],
         servicesJson: [],
         handles: {},
-      },
+      };
+
+    // Return both a `profile` object and flattened fields
+    return NextResponse.json({
+      ok: true,
+      profile: payload,
+      ...payload,
     });
   } catch (e: any) {
     console.error("GET /api/profile failed:", e);
@@ -268,7 +295,7 @@ export async function GET() {
 }
 
 /* --------------------------------------------------- */
-/*                       PUT                            */
+/*                       PUT/POST                      */
 /* --------------------------------------------------- */
 
 export async function PUT(req: Request) {
@@ -290,19 +317,23 @@ export async function PUT(req: Request) {
   }
 
   try {
-    const d = sanitizeProfilePayload(parsed.data);
+    // ✅ Sanitize AFTER validation, BEFORE any DB write
+    const d = sanitizeProfilePayload(parsed.data as any);
 
+    // read existing (so we can detect slug changes)
     const existing = await prisma.profile.findUnique({
       where: { userId: auth.userId },
       select: { id: true, slug: true },
     });
 
+    // Prefer displayName, then legalName, then client-proposed slug
     const proposedBase = (d.displayName ?? d.legalName ?? d.slug ?? "").toString();
     const finalSlug = await ensureUniqueSlug(proposedBase, {
       current: existing?.slug ?? null,
       location: d.location ?? null,
     });
 
+    // Normalize empties to null; arrays to [] so UI and public page are stable
     const payload = {
       displayName: emptyToNull(d.displayName),
       legalName: emptyToNull(d.legalName),
@@ -345,7 +376,9 @@ export async function PUT(req: Request) {
       select: { id: true, slug: true },
     });
 
+    /* ---------- Cache invalidation ---------- */
     const oldSlug = existing?.slug;
+
     if (oldSlug && oldSlug !== saved.slug) {
       revalidatePath(`/p/${oldSlug}`);
       revalidatePath(`/api/profile/${oldSlug}/schema`);
@@ -357,6 +390,8 @@ export async function PUT(req: Request) {
     revalidatePath(`/api/profile/${saved.slug}/schema`);
     revalidatePath(`/og/${saved.slug}`);
     revalidateTag(`profile:${saved.slug}`);
+
+    // Optional: if sitemap lists profiles, refresh it too
     revalidatePath(`/sitemap.xml`);
 
     return NextResponse.json({
@@ -382,12 +417,13 @@ export async function PUT(req: Request) {
   }
 }
 
+// Some clients use POST—support both.
 export async function POST(req: Request) {
   return PUT(req);
 }
 
 /* --------------------------------------------------- */
-/*                     UTIL HELPERS                     */
+/*                     UTIL HELPERS                    */
 /* --------------------------------------------------- */
 
 function emptyToNull<T extends string | null | undefined>(v: T): string | null {
