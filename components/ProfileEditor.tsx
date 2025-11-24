@@ -1,5 +1,5 @@
 // components/ProfileEditor.tsx
-// 📅 Updated: 2025-11-23 15:40 ET
+// 📅 Updated: 2025-11-24 09:20 ET
 "use client";
 
 import * as React from "react";
@@ -125,7 +125,13 @@ function toNum(input: string): number | undefined {
 }
 
 /** -------- Component -------- */
-export default function ProfileEditor({ initial }: { initial: Profile | null }) {
+export default function ProfileEditor({
+  initial,
+  plan: planFromServer,
+}: {
+  initial: Profile | null;
+  plan?: string | null;
+}) {
   const { data: session } = useSession();
   const email = session?.user?.email ?? "";
   const toast = useToast();
@@ -242,8 +248,13 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
   const [confirmOpen, setConfirmOpen] = React.useState(false);
 
   // ---- Plan pill (Free/Lite/Plus/Pro/Business)
-  const [plan, setPlan] = React.useState<PlanTitle | null>(null);
+  const [plan, setPlan] = React.useState<PlanTitle | null>(
+    (planFromServer as PlanTitle) ?? null
+  );
   React.useEffect(() => {
+    // If server already told us the plan, trust it and skip the fetch
+    if (planFromServer) return;
+
     let cancelled = false;
     (async () => {
       try {
@@ -268,7 +279,7 @@ export default function ProfileEditor({ initial }: { initial: Profile | null }) 
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [planFromServer]);
 
   const isProPlan = plan === "Pro" || plan === "Business";
 
