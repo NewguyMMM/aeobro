@@ -1,5 +1,5 @@
 // app/(app)/dashboard/page.tsx
-// 📅 Updated: 2025-11-05 06:00 ET
+// 📅 Updated: 2025-11-24 07:24 ET – fetch user.plan from DB and pass to ProfileEditor
 
 export const runtime = "nodejs";          // ensure Prisma-compatible runtime (Prisma needs Node)
 export const dynamic = "force-dynamic";   // always render on server (no static cache)
@@ -23,12 +23,18 @@ function asArray<T = any>(v: unknown, fallback: T[] = []): T[] {
     return fallback;
   }
 }
-function asObject<T extends object = Record<string, any>>(v: unknown, fallback: T = {} as T): T {
+
+function asObject<T extends object = Record<string, any>>(
+  v: unknown,
+  fallback: T = {} as T
+): T {
   if (!v) return fallback;
   if (typeof v === "object" && v !== null && !Array.isArray(v)) return v as T;
   try {
     const parsed = typeof v === "string" ? JSON.parse(v) : v;
-    return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed) ? (parsed as T) : fallback;
+    return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)
+      ? (parsed as T)
+      : fallback;
   } catch {
     return fallback;
   }
@@ -45,17 +51,22 @@ export default async function DashboardPage() {
   const email = session?.user?.email;
   if (!email) redirect("/signin");
 
-  // --- 2) User lookup
+  // --- 2) User lookup (ID + PLAN from DB)
   let userId: string | null = null;
+  let userPlan: string = "LITE";
+
   try {
     const user = await prisma.user.findUnique({
       where: { email },
-      select: { id: true },
+      select: { id: true, plan: true },
     });
+
     userId = user?.id ?? null;
+    userPlan = (user?.plan as string) ?? "LITE";
   } catch {
     redirect("/signin");
   }
+
   if (!userId) redirect("/signin");
 
   // --- 3) Profile lookup
@@ -99,10 +110,13 @@ export default async function DashboardPage() {
   return (
     <div className="mx-auto max-w-4xl space-y-6 p-4 sm:p-6">
       {/* Gentle nudge only (no embedded card) */}
-      <UnverifiedBanner status={(uiProfile?.verificationStatus ?? "UNVERIFIED") as any} />
+      <UnverifiedBanner
+        status={(uiProfile?.verificationStatus ?? "UNVERIFIED") as any}
+      />
 
-      {/* Editor renders everything, including the single Verify section at the bottom */}
-      <ProfileEditor initial={uiProfile as any} />
+      {/* Editor renders everything, including the single Verify section at the bottom.
+          We now pass userPlan so ProfileEditor can gate features correctly. */}
+      <ProfileEditor initial={uiProfile as any} plan={userPlan as any} />
     </div>
   );
 }
