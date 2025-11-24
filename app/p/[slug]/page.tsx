@@ -1,5 +1,5 @@
 // app/p/[slug]/page.tsx
-// ✅ Updated: 2025-11-21 05:25 ET – show Domain/Platform badges, list verified platform accounts, and surface Latest Update block
+// ✅ Updated: 2025-11-24 07:00 ET – safer JSON-LD build (no hard failure), keep badges + Latest Update
 
 import { prisma } from "@/lib/prisma";
 import {
@@ -286,14 +286,37 @@ export default async function PublicProfilePage({ params }: PageProps) {
   const services = servicesRes.value;
   const faqs = faqsRes.value;
 
-  // 3) Build JSON-LD
-  let schema: any, faqJsonLd: any, serviceJsonLd: any[];
+  // 3) Build JSON-LD – now fail-soft (never block page render)
+  let schema: any | null = null;
+  let faqJsonLd: any | null = null;
+  let serviceJsonLd: any[] = [];
+
   try {
     schema = buildProfileSchema(profile, baseUrl);
+  } catch (err: any) {
+    console.error("[/p/[slug]] JSON-LD PROFILE SCHEMA ERROR", {
+      slug,
+      profileId: profile.id,
+      errName: err?.name,
+      message: err?.message,
+    });
+  }
+
+  try {
     faqJsonLd = buildFAQJsonLd(
       slug,
       faqs.map((f) => ({ question: f.question, answer: f.answer }))
     );
+  } catch (err: any) {
+    console.error("[/p/[slug]] JSON-LD FAQ SCHEMA ERROR", {
+      slug,
+      profileId: profile.id,
+      errName: err?.name,
+      message: err?.message,
+    });
+  }
+
+  try {
     serviceJsonLd = buildServiceJsonLd(
       `${baseUrl}/p/${slug}#profile`,
       services.map((s) => ({
@@ -307,19 +330,13 @@ export default async function PublicProfilePage({ params }: PageProps) {
       }))
     );
   } catch (err: any) {
-    console.error("[/p/[slug]] JSON-LD BUILD ERROR", {
+    console.error("[/p/[slug]] JSON-LD SERVICE SCHEMA ERROR", {
       slug,
       profileId: profile.id,
       errName: err?.name,
       message: err?.message,
     });
-    return (
-      <ErrorBlock
-        title="Template Error while building JSON-LD"
-        err={err}
-        hint="Check buildProfileSchema/buildFAQJsonLd/buildServiceJsonLd inputs."
-      />
-    );
+    // Leave serviceJsonLd as [] so render logic still works.
   }
 
   const displayName = profile.displayName ?? slug;
@@ -416,13 +433,14 @@ export default async function PublicProfilePage({ params }: PageProps) {
           dangerouslySetInnerHTML={{ __html: escapeForJsonLd(faqJsonLd) }}
         />
       ) : null}
-      {serviceJsonLd.map((obj, i) => (
-        <script
-          key={`service-jsonld-${i}`}
-          type="application/ld+json"
-          dangerouslySetInnerHTML={{ __html: escapeForJsonLd(obj) }}
-        />
-      ))}
+      {serviceJsonLd.length > 0 &&
+        serviceJsonLd.map((obj, i) => (
+          <script
+            key={`service-jsonld-${i}`}
+            type="application/ld+json"
+            dangerouslySetInnerHTML={{ __html: escapeForJsonLd(obj) }}
+          />
+        ))}
 
       {/* Header */}
       <header className="mb-6">
@@ -450,7 +468,7 @@ export default async function PublicProfilePage({ params }: PageProps) {
         {headline ? <p className="mt-2 text-muted-foreground">{headline}</p> : null}
       </header>
 
-      {/* 🔔 Latest update block (Option C) */}
+      {/* 🔔 Latest update block */}
       {latestUpdate && (
         <section className="mb-8">
           <div className="flex gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
@@ -528,14 +546,20 @@ export default async function PublicProfilePage({ params }: PageProps) {
       ) : null}
 
       {/* Website, Location & Reach */}
-      {(safeUrl(profile.website) || profile.location || (profile.serviceArea?.length ?? 0) > 0) && (
+      {(safeUrl(profile.website) ||
+        profile.location ||
+        (profile.serviceArea?.length ?? 0) > 0) && (
         <section className="mb-8">
           <h3 className="mb-2 text-lg font-medium">Website, Location &amp; Reach</h3>
           <ul className="space-y-1 text-sm">
             {safeUrl(profile.website) && (
               <li>
                 <span className="font-medium">Website:</span>{" "}
-                <a className="underline" href={safeUrl(profile.website)!} rel="noopener noreferrer">
+                <a
+                  className="underline"
+                  href={safeUrl(profile.website)!}
+                  rel="noopener noreferrer"
+                >
                   {safeUrl(profile.website)}
                 </a>
               </li>
@@ -620,7 +644,11 @@ export default async function PublicProfilePage({ params }: PageProps) {
                   )}
                 </div>
                 {s.url ? (
-                  <a href={s.url} className="inline-block mt-2 text-sky-600 hover:underline" rel="noopener noreferrer">
+                  <a
+                    href={s.url}
+                    className="inline-block mt-2 text-sky-600 hover:underline"
+                    rel="noopener noreferrer"
+                  >
                     Learn more
                   </a>
                 ) : null}
