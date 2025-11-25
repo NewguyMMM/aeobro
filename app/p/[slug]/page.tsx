@@ -1,5 +1,5 @@
 // app/p/[slug]/page.tsx
-// 📅 Updated: 2025-11-25 16:45 ET
+// 📅 Updated: 2025-11-25 16:40 ET
 // Hardened profile page: deterministic server render, safe JSON-LD, badges, Latest Update, FAQ & Services.
 
 import { prisma } from "@/lib/prisma";
@@ -116,7 +116,7 @@ export async function generateMetadata({
     };
   }
 
-  const baseUrl = getRuntimeBaseUrl();
+  const baseUrl = await getRuntimeBaseUrl();
   const url = `${baseUrl}/p/${slug}`;
   const title = `${meta.displayName} | AEOBRO`;
   const description =
@@ -152,7 +152,7 @@ export default async function Page({ params }: PageProps) {
     notFound();
   }
 
-  const baseUrl = getRuntimeBaseUrl();
+  const baseUrl = await getRuntimeBaseUrl();
 
   const displayName = profile.displayName ?? slug;
   const tagline = profile.tagline ?? null;
