@@ -1,6 +1,6 @@
 // components/SchemaPreviewButton.tsx
-// ✅ Updated: 2025-11-02 08:49 ET
-// Reconciled: cache-busting fetch, precise 403 messaging, same UI/UX you had.
+// 📅 Updated: 2025-11-25 16:10 ET
+// Fully hardened: no auto-fetch, no hydration failures, safe modal-only loading.
 
 "use client";
 
@@ -8,12 +8,9 @@ import * as React from "react";
 
 type Props = {
   slug: string;
-  /** default: true → include Services + FAQ JSON-LD */
   includeAll?: boolean;
-  /** Pretty-print the preview/copy/download (always true for preview). */
   pretty?: boolean;
   className?: string;
-  /** Visible label on the trigger button */
   label?: string;
 };
 
@@ -29,79 +26,87 @@ export default function SchemaPreviewButton({
   const [error, setError] = React.useState<string | null>(null);
   const [formattedText, setFormattedText] = React.useState<string>("");
 
-  // Canonical raw endpoint used by crawlers; we will fetch this and pretty-print locally.
+  /**
+   * Canonical raw endpoint — always used for crawlers.
+   * We do not pass "pretty", because we always pretty-print in the UI.
+   */
   const rawEndpoint = React.useMemo(() => {
     const p = new URLSearchParams();
     if (includeAll) p.set("all", "1");
-    // NOTE: do NOT pass pretty here; we want the raw canonical JSON and we will pretty-print in the UI.
-    return `/api/profile/${encodeURIComponent(slug)}/schema${p.toString() ? "?" + p.toString() : ""}`;
+    return `/api/profile/${encodeURIComponent(slug)}/schema${
+      p.toString() ? "?" + p.toString() : ""
+    }`;
   }, [slug, includeAll]);
 
+  /**
+   * Open modal → fetch schema only when needed.
+   * This avoids hydration-triggered fetches entirely.
+   */
   async function openModal() {
     setOpen(true);
     setError(null);
-    if (!formattedText) {
-      setLoading(true);
-      try {
-        // 👇 cache-buster + no-store ensures live fetch (no stale edge/browser)
-        const url = `${rawEndpoint}${rawEndpoint.includes("?") ? "&" : "?"}t=${Date.now()}`;
-        const res = await fetch(url, { cache: "no-store", method: "GET" });
 
-        if (!res.ok) {
-          // Try to parse server-provided details for helpful messaging
-          let friendly = `HTTP ${res.status}`;
-          try {
-            const data = await res.json();
-            const ver = data?.verificationStatus ?? "UNKNOWN";
-            if (res.status === 403) {
-              if (ver === "UNVERIFIED") {
-                friendly = "Export blocked: verify your domain or connect a platform.";
-              } else if (ver === "PLATFORM_VERIFIED") {
-                friendly = "You’re platform-verified. Export should be allowed—please retry.";
-              } else if (data?.error) {
-                friendly = data.error;
-              } else {
-                friendly = "Export blocked.";
-              }
-            } else if (data?.error) {
-              friendly = data.error;
-            }
-          } catch {
-            // ignore JSON parse failure
-          }
-          throw new Error(friendly);
-        }
+    // If already loaded once, do not fetch again unless user closes and reopens modal.
+    if (formattedText) return;
 
-        // Try to parse as JSON, then pretty-print. Fallback to text if needed.
-        let prettyText = "";
+    setLoading(true);
+
+    try {
+      const url = `${rawEndpoint}${rawEndpoint.includes("?") ? "&" : "?"}t=${Date.now()}`;
+
+      const res = await fetch(url, {
+        cache: "no-store",
+        method: "GET",
+      });
+
+      const raw = await res.text();
+
+      if (!res.ok) {
+        let message = `HTTP ${res.status}`;
         try {
-          const json = await res.json();
-          prettyText = JSON.stringify(json, null, 2);
-        } catch {
-          const txt = await res.text();
-          try {
-            const parsed = JSON.parse(txt);
-            prettyText = JSON.stringify(parsed, null, 2);
-          } catch {
-            prettyText = txt;
+          const maybeJson = JSON.parse(raw);
+          if (maybeJson?.error) {
+            message = maybeJson.error;
+          } else if (maybeJson?.verificationStatus === "UNVERIFIED") {
+            message = "Export blocked: verify your domain or connect a platform.";
           }
+        } catch {
+          // ignore parse failure — keep generic message
         }
-
-        setFormattedText(prettyText);
-      } catch (e: any) {
-        setError(e?.message || "Failed to fetch schema");
-      } finally {
-        setLoading(false);
+        setError(message);
+        return;
       }
+
+      /**
+       * Try to parse JSON — but do NOT let parse errors throw.
+       */
+      let prettyText = raw;
+      try {
+        const json = JSON.parse(raw);
+        prettyText = JSON.stringify(json, null, 2);
+      } catch {
+        // If raw is not JSON, we leave it as-is.
+      }
+
+      setFormattedText(prettyText);
+    } catch (err: any) {
+      console.error("Schema preview error:", err);
+      setError("Failed to load JSON-LD. Please try again.");
+    } finally {
+      setLoading(false);
     }
   }
 
+  /**
+   * Clipboard-safe copy function.
+   */
   async function copy() {
     if (!formattedText) return;
+
     try {
       await navigator.clipboard.writeText(formattedText);
     } catch {
-      // Fallback
+      // Fallback for older browsers
       const ta = document.createElement("textarea");
       ta.value = formattedText;
       document.body.appendChild(ta);
@@ -113,7 +118,11 @@ export default function SchemaPreviewButton({
 
   function download() {
     if (!formattedText) return;
-    const blob = new Blob([formattedText], { type: "application/json;charset=utf-8" });
+
+    const blob = new Blob([formattedText], {
+      type: "application/json;charset=utf-8",
+    });
+
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
@@ -129,8 +138,10 @@ export default function SchemaPreviewButton({
       <button
         type="button"
         onClick={openModal}
-        className={className || "rounded-md bg-black text-white px-3 py-2 text-sm"}
-        title="Copies the same JSON-LD AI systems read, formatted for readability."
+        className={
+          className ||
+          "rounded-md bg-black text-white px-3 py-2 text-sm hover:bg-gray-900 transition"
+        }
       >
         {label}
       </button>
@@ -143,10 +154,11 @@ export default function SchemaPreviewButton({
         >
           <div
             className="absolute left-1/2 top-16 w-[min(900px,92vw)] -translate-x-1/2 rounded-xl bg-white p-4 shadow-xl"
-            onClick={(e) => e.stopPropagation()}
             role="dialog"
             aria-modal="true"
+            onClick={(e) => e.stopPropagation()}
           >
+            {/* Header */}
             <div className="flex items-center justify-between">
               <h3 className="text-lg font-medium">JSON-LD Preview</h3>
               <button
@@ -158,19 +170,20 @@ export default function SchemaPreviewButton({
               </button>
             </div>
 
+            {/* Actions */}
             <div className="mt-3 flex flex-wrap gap-2">
               <button
                 onClick={copy}
-                className="rounded bg-emerald-600 px-3 py-1.5 text-sm text-white"
-                title="Copy the formatted JSON-LD to clipboard"
+                disabled={!formattedText}
+                className="rounded bg-emerald-600 px-3 py-1.5 text-sm text-white disabled:opacity-50"
               >
                 Copy
               </button>
 
               <button
                 onClick={download}
-                className="rounded border px-3 py-1.5 text-sm"
-                title="Download the formatted JSON-LD as a .json file"
+                disabled={!formattedText}
+                className="rounded border px-3 py-1.5 text-sm disabled:opacity-50"
               >
                 Download .json
               </button>
@@ -180,19 +193,19 @@ export default function SchemaPreviewButton({
                 target="_blank"
                 rel="noopener noreferrer"
                 className="rounded border px-3 py-1.5 text-sm"
-                title="Open the canonical machine-readable endpoint used by crawlers"
               >
-                Open raw endpoint (/schema)
+                Open raw endpoint
               </a>
             </div>
 
-            <div className="mt-3">
+            {/* Content */}
+            <div className="mt-4">
               {loading ? (
                 <div className="text-sm text-gray-600">Loading…</div>
               ) : error ? (
-                <div className="text-sm text-red-600">Error: {error}</div>
+                <div className="text-sm text-red-600">{error}</div>
               ) : (
-                <pre className="max-h-[60vh] overflow-auto rounded-lg bg-gray-950 p-3 text-[12px] leading-relaxed text-gray-100">
+                <pre className="max-h-[60vh] overflow-auto rounded-lg bg-gray-950 p-3 text-xs leading-relaxed text-gray-100 whitespace-pre-wrap">
                   {formattedText}
                 </pre>
               )}
