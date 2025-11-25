@@ -1,5 +1,5 @@
 // app/p/[slug]/page.tsx
-// 📅 Updated: 2025-11-25 16:40 ET
+// 📅 Updated: 2025-11-25 16:38 ET
 // Hardened profile page: deterministic server render, safe JSON-LD, badges, Latest Update, FAQ & Services.
 
 import { prisma } from "@/lib/prisma";
@@ -78,13 +78,11 @@ const getProfileFullCached = (slug: string) =>
           updatedAt: true,
           faqJson: true,
           servicesJson: true,
-          // For gating schema tools:
           user: {
             select: {
               plan: true,
             },
           },
-          // Verified platform accounts (OAuth)
           platformAccounts: {
             where: { status: "VERIFIED" },
             orderBy: { createdAt: "desc" },
@@ -231,13 +229,40 @@ export default async function Page({ params }: PageProps) {
 
   try {
     const main = buildProfileSchema(profile as any, baseUrl);
-    const faq = buildFAQJsonLd(profile as any, baseUrl);
-    const services = buildServiceJsonLd(profile as any, baseUrl);
+
+    const faq =
+      faqJson.length > 0
+        ? buildFAQJsonLd(
+            slug,
+            faqJson.map((f) => ({
+              question: f.question,
+              answer: f.answer,
+            }))
+          )
+        : null;
+
+    const services =
+      servicesJson.length > 0
+        ? buildServiceJsonLd(
+            `${baseUrl}/p/${slug}#profile`,
+            servicesJson.map((s) => ({
+              name: s.name,
+              description: s.description ?? undefined,
+              url: s.url ?? undefined,
+              priceMin: s.priceMin ?? undefined,
+              priceMax: s.priceMax ?? undefined,
+              priceUnit: s.priceUnit ?? undefined,
+              currency: s.currency ?? undefined,
+            }))
+          )
+        : null;
 
     const parts: any[] = [];
     if (main) parts.push(main);
     if (faq) parts.push(faq);
-    if (services) parts.push(services);
+    if (services && Array.isArray(services)) {
+      parts.push(...services);
+    }
 
     jsonLdPayload = parts;
   } catch (err) {
