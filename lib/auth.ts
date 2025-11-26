@@ -1,5 +1,5 @@
 // lib/auth.ts
-// ✅ Updated: 2025-10-31 07:52 ET
+// ✅ Updated: 2025-11-26 07:35 ET – add plan/planStatus to JWT + session
 import type { NextAuthOptions } from "next-auth";
 import { PrismaAdapter } from "@auth/prisma-adapter";
 import { prisma } from "@/lib/prisma";
@@ -188,14 +188,16 @@ If you did not request this, you can safely ignore this email.`;
   ],
 
   callbacks: {
+    // 🔑 JWT: also store billing plan on the token (fetched from Prisma on sign-in)
     async jwt({ token, user, account }) {
-      if (user?.id) token.sub = user.id;
+      if (user?.id) token.sub = (user as any).id ?? user.id;
 
       // Persist provider-specific tokens on first OAuth sign-in
       if (account?.provider === "google") {
         if (account.access_token) (token as any).googleAccessToken = account.access_token;
         if (account.refresh_token) (token as any).googleRefreshToken = account.refresh_token;
-        if (typeof account.expires_at === "number") (token as any).googleExpiresAt = account.expires_at;
+        if (typeof account.expires_at === "number")
+          (token as any).googleExpiresAt = account.expires_at;
       }
       if (account?.provider === "facebook") {
         if (account.access_token) (token as any).facebookAccessToken = account.access_token;
@@ -204,19 +206,45 @@ If you did not request this, you can safely ignore this email.`;
         if (account.access_token) (token as any).twitterAccessToken = account.access_token;
       }
 
+      // 🆕 When a user object is present (i.e., on sign-in), sync plan from DB into the token
+      if (user) {
+        try {
+          const dbUser = await prisma.user.findUnique({
+            where: { id: (user as any).id ?? (token.sub as string) },
+            select: { plan: true, planStatus: true },
+          });
+          if (dbUser) {
+            (token as any).plan = dbUser.plan;
+            (token as any).planStatus = dbUser.planStatus;
+          }
+        } catch (err) {
+          console.error("JWT plan sync error:", err);
+        }
+      }
+
       return token;
     },
 
+    // 🔑 Session: expose plan + planStatus on session.user
     async session({ session, token }) {
       if (token?.sub) (session.user as any).id = token.sub;
 
-      // Expose minimal tokens if you need client-side fetches (you probably won't)
-      if ((token as any).googleAccessToken) (session as any).googleAccessToken = (token as any).googleAccessToken;
-      if ((token as any).googleRefreshToken) (session as any).googleRefreshToken = (token as any).googleRefreshToken;
-      if ((token as any).googleExpiresAt) (session as any).googleExpiresAt = (token as any).googleExpiresAt;
+      // 🆕 Make billing info available on the client/session
+      (session.user as any).plan = (token as any).plan ?? "FREE";
+      (session.user as any).planStatus = (token as any).planStatus ?? "inactive";
 
-      if ((token as any).facebookAccessToken) (session as any).facebookAccessToken = (token as any).facebookAccessToken;
-      if ((token as any).twitterAccessToken) (session as any).twitterAccessToken = (token as any).twitterAccessToken;
+      // Expose minimal tokens if you need client-side fetches (you probably won't)
+      if ((token as any).googleAccessToken)
+        (session as any).googleAccessToken = (token as any).googleAccessToken;
+      if ((token as any).googleRefreshToken)
+        (session as any).googleRefreshToken = (token as any).googleRefreshToken;
+      if ((token as any).googleExpiresAt)
+        (session as any).googleExpiresAt = (token as any).googleExpiresAt;
+
+      if ((token as any).facebookAccessToken)
+        (session as any).facebookAccessToken = (token as any).facebookAccessToken;
+      if ((token as any).twitterAccessToken)
+        (session as any).twitterAccessToken = (token as any).twitterAccessToken;
 
       return session;
     },
