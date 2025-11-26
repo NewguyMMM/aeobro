@@ -62,7 +62,7 @@ async function upsertUserFromCustomerId(
     plan?: DbPlan;
     planStatus?: string;
     currentPeriodEnd?: Date | null;
-  },
+  }
 ) {
   if (!customerId) return null;
 
@@ -140,14 +140,19 @@ export async function POST(req: Request) {
       case "customer.subscription.updated": {
         const sub = event.data.object as Stripe.Subscription;
 
-        const priceId = sub.items?.data?.[0]?.price?.id || undefined;
+        let priceId: string | undefined;
+        if (sub.items?.data?.length) {
+          priceId = sub.items.data[0].price?.id ?? undefined;
+        }
+
         const mappedPlan = mapPriceToPlan(priceId);
 
         const activeStatuses = ["trialing", "active", "past_due"] as const;
         const isActive = activeStatuses.includes(sub.status as any);
 
-        const plan: DbPlan =
-          mappedPlan && isActive ? mappedPlan : "FREE";
+        // Keep semantics close to original: if we know the plan AND it's active-ish, use it,
+        // otherwise fall back to FREE.
+        const plan: DbPlan = mappedPlan && isActive ? mappedPlan : "FREE";
 
         await upsertUserFromCustomerId(sub.customer as string, {
           stripeSubscriptionId: sub.id,
@@ -167,8 +172,12 @@ export async function POST(req: Request) {
         const customerId = invoice.customer as string | null;
         if (!customerId) break;
 
+        let priceId: string | undefined;
         const firstLine = invoice.lines?.data?.[0];
-        const priceId = firstLine?.price?.id || undefined;
+        if (firstLine) {
+          priceId = firstLine.price?.id ?? undefined;
+        }
+
         const mappedPlan = mapPriceToPlan(priceId);
 
         const subscriptionId =
@@ -183,7 +192,8 @@ export async function POST(req: Request) {
 
         await upsertUserFromCustomerId(customerId, {
           stripeSubscriptionId: subscriptionId ?? undefined,
-          plan: mappedPlan ?? undefined, // only set if we can map cleanly
+          // Only set if we can map cleanly; otherwise leave existing plan alone.
+          plan: mappedPlan ?? undefined,
           planStatus: "active",
           currentPeriodEnd,
         });
