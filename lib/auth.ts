@@ -1,5 +1,5 @@
 // lib/auth.ts
-// ✅ Updated: 2025-11-26 07:35 ET – add plan/planStatus to JWT + session
+// ✅ Updated: 2025-11-26 07:45 ET – sync plan/planStatus/currentPeriodEnd into JWT + session
 import type { NextAuthOptions } from "next-auth";
 import { PrismaAdapter } from "@auth/prisma-adapter";
 import { prisma } from "@/lib/prisma";
@@ -188,9 +188,32 @@ If you did not request this, you can safely ignore this email.`;
   ],
 
   callbacks: {
-    // 🔑 JWT: also store billing plan on the token (fetched from Prisma on sign-in)
+    // 🔑 JWT: store billing plan on the token (fetched from Prisma when user is present)
     async jwt({ token, user, account }) {
-      if (user?.id) token.sub = (user as any).id ?? user.id;
+      if (user?.id) {
+        token.sub = (user as any).id ?? user.id;
+
+        // 🆕 When user is present (sign-in / first JWT), sync billing data from DB
+        try {
+          const dbUser = await prisma.user.findUnique({
+            where: { id: (user as any).id ?? (token.sub as string) },
+            select: {
+              plan: true,
+              planStatus: true,
+              currentPeriodEnd: true,
+            },
+          });
+
+          if (dbUser) {
+            (token as any).plan = dbUser.plan;
+            (token as any).planStatus = dbUser.planStatus;
+            (token as any).currentPeriodEnd =
+              dbUser.currentPeriodEnd?.toISOString() ?? null;
+          }
+        } catch (err) {
+          console.error("JWT plan sync error:", err);
+        }
+      }
 
       // Persist provider-specific tokens on first OAuth sign-in
       if (account?.provider === "google") {
@@ -206,32 +229,20 @@ If you did not request this, you can safely ignore this email.`;
         if (account.access_token) (token as any).twitterAccessToken = account.access_token;
       }
 
-      // 🆕 When a user object is present (i.e., on sign-in), sync plan from DB into the token
-      if (user) {
-        try {
-          const dbUser = await prisma.user.findUnique({
-            where: { id: (user as any).id ?? (token.sub as string) },
-            select: { plan: true, planStatus: true },
-          });
-          if (dbUser) {
-            (token as any).plan = dbUser.plan;
-            (token as any).planStatus = dbUser.planStatus;
-          }
-        } catch (err) {
-          console.error("JWT plan sync error:", err);
-        }
-      }
-
       return token;
     },
 
-    // 🔑 Session: expose plan + planStatus on session.user
+    // 🔑 Session: expose plan + planStatus + currentPeriodEnd on session.user
     async session({ session, token }) {
       if (token?.sub) (session.user as any).id = token.sub;
 
       // 🆕 Make billing info available on the client/session
       (session.user as any).plan = (token as any).plan ?? "FREE";
       (session.user as any).planStatus = (token as any).planStatus ?? "inactive";
+      (session.user as any).currentPeriodEnd =
+        (token as any).currentPeriodEnd
+          ? new Date((token as any).currentPeriodEnd)
+          : null;
 
       // Expose minimal tokens if you need client-side fetches (you probably won't)
       if ((token as any).googleAccessToken)
