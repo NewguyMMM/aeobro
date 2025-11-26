@@ -150,15 +150,21 @@ export async function POST(req: Request) {
         const activeStatuses = ["trialing", "active", "past_due"] as const;
         const isActive = activeStatuses.includes(sub.status as any);
 
-        // Keep semantics close to original: if we know the plan AND it's active-ish, use it,
-        // otherwise fall back to FREE.
+        // If we know the plan AND it's in an active-ish status, use it.
+        // Otherwise fall back to FREE.
         const plan: DbPlan = mappedPlan && isActive ? mappedPlan : "FREE";
+
+        // ✅ SAFELY derive currentPeriodEnd (may be missing on some events)
+        let currentPeriodEnd: Date | null = null;
+        if (sub.current_period_end) {
+          currentPeriodEnd = new Date(sub.current_period_end * 1000);
+        }
 
         await upsertUserFromCustomerId(sub.customer as string, {
           stripeSubscriptionId: sub.id,
           plan,
           planStatus: sub.status,
-          currentPeriodEnd: new Date(sub.current_period_end * 1000),
+          currentPeriodEnd,
         });
         break;
       }
