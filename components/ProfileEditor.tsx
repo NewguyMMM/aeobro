@@ -1,5 +1,5 @@
 // components/ProfileEditor.tsx
-// 📅 Updated: 2025-11-26 09:45 ET
+// 📅 Updated: 2025-11-27 05:49 ET
 "use client";
 
 import * as React from "react";
@@ -320,7 +320,7 @@ export default function ProfileEditor({
       updateMessage: (updateMessage || "").trim() || null,
     };
 
-    // 🔹 Phase 2 JSON editors — only send when Pro / Business so
+    // 🔹 Phase 2 JSON editors — only send when Pro/Business so
     // Lite users don’t accidentally wipe existing structured data.
     if (isProPlan) {
       const faqJson = (faqs ?? [])
@@ -833,11 +833,9 @@ export default function ProfileEditor({
                   i
                 </span>
                 <span className="pointer-events-none absolute left-1/2 top-full z-10 mt-1 hidden w-72 -translate-x-1/2 rounded-md bg-black px-2 py-1 text-xs leading-snug text-white group-hover:block">
-                  Your main website or landing page. Include
-                  {" "}
-                  https://{" "}
-                  so AI tools and search engines can reliably confirm your
-                  brand.
+                  Your main website or landing page. Include{" "}
+                  https:// so AI tools and search engines can reliably confirm
+                  your brand.
                 </span>
               </span>
             </label>
@@ -1221,11 +1219,11 @@ export default function ProfileEditor({
         </div>
       </section>
 
-      {/* Phase 2: FAQ Builder (Pro/Business gating) */}
+      {/* Phase 2: FAQ Builder (Pro gating) */}
       <section className="grid gap-4">
         <div className="flex items-center justify-between">
           <h3 className="text-lg font-semibold flex items-center gap-2">
-            FAQs (Pro / Business)
+            FAQs (Pro)
             <span className="relative group cursor-help align-middle">
               <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-gray-200 text-[10px] font-semibold text-gray-700">
                 i
@@ -1239,7 +1237,7 @@ export default function ProfileEditor({
           </h3>
           {!isProPlan && (
             <span className="text-xs rounded-full bg-yellow-50 px-2.5 py-1 text-yellow-800 border border-yellow-200">
-              Upgrade to Pro or Business to edit FAQs
+              Upgrade to Pro to edit FAQs
             </span>
           )}
         </div>
@@ -1343,18 +1341,20 @@ export default function ProfileEditor({
         ) : (
           <div className="rounded-2xl border border-dashed bg-gray-50 p-4 text-sm text-gray-600">
             FAQs are stored as structured JSON-LD for AI and search engines.
-            Upgrade to <span className="font-medium">Pro</span> or{" "}
-            <span className="font-medium">Business</span> to unlock the FAQ
-            editor here.
+            Upgrade to{" "}
+            <span className="font-medium">
+              Pro
+            </span>{" "}
+            to unlock the FAQ editor here.
           </div>
         )}
       </section>
 
-      {/* Phase 2: Services Builder (Pro/Business gating) */}
+      {/* Phase 2: Services Builder (Pro gating) */}
       <section className="grid gap-4">
         <div className="flex items-center justify-between">
           <h3 className="text-lg font-semibold flex items-center gap-2">
-            Services (Pro / Business)
+            Services (Pro)
             <span className="relative group cursor-help align-middle">
               <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-gray-200 text-[10px] font-semibold text-gray-700">
                 i
@@ -1368,7 +1368,7 @@ export default function ProfileEditor({
           </h3>
           {!isProPlan && (
             <span className="text-xs rounded-full bg-yellow-50 px-2.5 py-1 text-yellow-800 border border-yellow-200">
-              Upgrade to Pro or Business to edit Services
+              Upgrade to Pro to edit Services
             </span>
           )}
         </div>
@@ -1597,9 +1597,11 @@ export default function ProfileEditor({
               Service
             </code>{" "}
             entities in JSON-LD, including price ranges when available. Upgrade
-            to <span className="font-medium">Pro</span> or{" "}
-            <span className="font-medium">Business</span> to unlock the Services
-            editor here.
+            to{" "}
+            <span className="font-medium">
+              Pro
+            </span>{" "}
+            to unlock the Services editor here.
           </div>
         )}
       </section>
