@@ -42,7 +42,7 @@ async function fetchTextWithTimeout(
       cache: "no-store",
       redirect: "follow",
     });
-    if (!res.ok) return { text: null, headers: res.headers };
+      if (!res.ok) return { text: null, headers: res.headers };
     const text = await res.text();
     return { text: text.slice(0, 1_500_000), headers: res.headers };
   } catch {
@@ -509,8 +509,7 @@ export default async function Page({ searchParams }: PageProps) {
 
       {/* Social link helper (always visible) */}
       <p id="audit-help-links" className="mt-1 text-xs text-gray-500">
-        You can enter any website URL or public social media link
-        <span className="italic"> (partial results for Instagram / Facebook)</span>.
+        You can enter any website URL.
       </p>
 
       {!q && (
