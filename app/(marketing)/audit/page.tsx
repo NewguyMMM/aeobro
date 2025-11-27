@@ -1,6 +1,8 @@
 // app/(marketing)/audit/page.tsx
 import Script from "next/script";
 import React from "react";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
 
 export const dynamic = "force-dynamic" as const;
 
@@ -42,7 +44,7 @@ async function fetchTextWithTimeout(
       cache: "no-store",
       redirect: "follow",
     });
-      if (!res.ok) return { text: null, headers: res.headers };
+    if (!res.ok) return { text: null, headers: res.headers };
     const text = await res.text();
     return { text: text.slice(0, 1_500_000), headers: res.headers };
   } catch {
@@ -378,6 +380,9 @@ function scoreAll(baseOrigin: string, p: Parsed): { checks: Check[]; total: numb
 
 // ---------- Page ----------
 export default async function Page({ searchParams }: PageProps) {
+  const session = await getServerSession(authOptions);
+  const isLoggedIn = !!session?.user;
+
   const rawQ = searchParams?.q;
   const q = Array.isArray(rawQ) ? rawQ[0]?.trim() ?? "" : rawQ?.trim() ?? "";
 
@@ -419,7 +424,10 @@ export default async function Page({ searchParams }: PageProps) {
         c
       );
 
-      const clamped = Math.min(100, checks.reduce((s, c) => s + (c.passed ? c.points : 0), 0));
+      const clamped = Math.min(
+        100,
+        checks.reduce((s, c) => s + (c.passed ? c.points : 0), 0)
+      );
 
       const payload = {
         url: asUrl,
@@ -488,7 +496,9 @@ export default async function Page({ searchParams }: PageProps) {
 
       {/* Form */}
       <form className="mt-6 flex items-center gap-3" action="/audit" method="get">
-        <label className="sr-only" htmlFor="q">Domain address</label>
+        <label className="sr-only" htmlFor="q">
+          Domain address
+        </label>
         <input
           id="q"
           name="q"
@@ -507,7 +517,7 @@ export default async function Page({ searchParams }: PageProps) {
         </button>
       </form>
 
-      {/* Social link helper (always visible) */}
+      {/* Helper text */}
       <p id="audit-help-links" className="mt-1 text-xs text-gray-500">
         You can enter any website URL.
       </p>
@@ -576,6 +586,22 @@ export default async function Page({ searchParams }: PageProps) {
           </>
         )}
       </div>
+
+      {/* CTA: Create/Edit AI-Ready Profile */}
+      {(view.mode === "url" || view.mode === "brand") && (
+        <div className="mt-8">
+          <a
+            href={isLoggedIn ? "/dashboard" : "/login"}
+            className="inline-flex items-center justify-center px-6 py-3 rounded-lg bg-blue-600 text-white font-semibold hover:bg-blue-700 transition"
+          >
+            {isLoggedIn ? "Edit your AI-Ready Profile" : "Create your AI-Ready Profile"}
+          </a>
+          <p className="mt-2 text-xs text-gray-500 max-w-xl">
+            Your AEOBRO profile stores verified, AI-ready data about your brand or organization so AI
+            systems can discover, trust, and represent you more accurately.
+          </p>
+        </div>
+      )}
 
       <hr className="my-10" />
 
