@@ -588,19 +588,23 @@ export default async function Page({ searchParams }: PageProps) {
       </div>
 
       {/* CTA: Create/Edit AI-Ready Profile */}
-      {(view.mode === "url" || view.mode === "brand") && (
-        <div className="mt-8">
-          <a
-            href={isLoggedIn ? "/dashboard" : "/login"}
-            className="inline-flex items-center justify-center px-6 py-3 rounded-lg bg-blue-600 text-white font-semibold hover:bg-blue-700 transition"
-          >
-            {isLoggedIn ? "Edit your AI-Ready Profile" : "Create your AI-Ready Profile"}
-          </a>
-          <p className="mt-2 text-xs text-gray-500 max-w-xl">
-            Your AEOBRO profile stores verified, AI-ready data about your brand or organization so AI
-            systems can discover, trust, and represent you more accurately.
-          </p>
-        </div>
+{(view.mode === "url" || view.mode === "brand") && (
+  <div className="mt-8">
+    <h3 className="text-lg font-semibold mb-1">
+      Boost your score with an AI-Ready Profile.
+    </h3>
+    <p className="text-sm text-gray-500 max-w-xl mb-4">
+      Your AEOBRO profile stores verified, AI-ready data about your brand or organization
+      so AI systems can discover, trust, and represent you more accurately.
+    </p>
+
+    <a
+      href={isLoggedIn ? "/dashboard" : "/login"}
+      className="inline-flex items-center justify-center px-6 py-3 rounded-lg bg-blue-600 text-white font-semibold hover:bg-blue-700 transition"
+    >
+      {isLoggedIn ? "Edit your AI-Ready Profile" : "Create your AI-Ready Profile"}
+    </a>
+  </div>
       )}
 
       <hr className="my-10" />
