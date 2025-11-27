@@ -156,8 +156,8 @@ export default function PricingPage() {
   }, []);
 
   const showConfigHint = useMemo(() => {
-    // ✅ Include PLUS in dev hint so you see if its env is missing
-    const missing = !PRICES.LITE || !PRICES.PLUS || !PRICES.PRO || !PRICES.BUSINESS;
+    // ✅ Only require Lite, Plus, Pro for dev hint (Business is hidden from UI)
+    const missing = !PRICES.LITE || !PRICES.PLUS || !PRICES.PRO;
     return process.env.NODE_ENV !== "production" && missing;
   }, []);
 
@@ -314,8 +314,8 @@ export default function PricingPage() {
         </div>
       )}
 
-      {/* Four cards now – include Plus */}
-      <div className="grid gap-6 md:grid-cols-4 mt-2">
+      {/* Three cards (Lite, Plus, Pro) */}
+      <div className="grid gap-6 md:grid-cols-3 mt-2">
         {/* Lite */}
         <PlanCard
           title="Lite"
@@ -326,7 +326,7 @@ export default function PricingPage() {
           priceId={PRICES.LITE}
         />
 
-        {/* Plus (now active, not coming soon) */}
+        {/* Plus (Most Popular) */}
         <PlanCard
           title="Plus"
           price="$19.99/mo"
@@ -337,9 +337,10 @@ export default function PricingPage() {
           ]}
           btnText="Get Plus"
           priceId={PRICES.PLUS}
+          featured
         />
 
-        {/* Pro (Most Popular) */}
+        {/* Pro */}
         <PlanCard
           title="Pro"
           price="$49/mo"
@@ -353,10 +354,17 @@ export default function PricingPage() {
           soon={[]}
           btnText="Get Pro"
           priceId={PRICES.PRO}
-          featured
         />
 
-        {/* Business (Coming soon) */}
+        {/*
+        ─────────────────────────────────────────────────────────────
+        Business tier UI (intentionally hidden for now)
+
+        To re-enable later, move this block above, switch grid back to
+        md:grid-cols-4, and optionally update showConfigHint to include
+        PRICES.BUSINESS again.
+        ─────────────────────────────────────────────────────────────
+
         <PlanCard
           title="Business"
           price="$199/mo"
@@ -372,12 +380,14 @@ export default function PricingPage() {
           priceId="" // intentionally blank; tier disabled
           comingSoon
         />
+        */}
       </div>
 
       {showConfigHint && (
         <p className="mt-4 text-sm text-gray-500">
-          If a plan button is disabled due to configuration, add the corresponding Stripe Price ID to your environment variables.
-          (Note: some tiers are intentionally marked “Coming soon.”)
+          If a plan button is disabled due to configuration, add the corresponding Stripe
+          Price ID to your environment variables. (Note: some tiers may be intentionally
+          disabled or hidden.)
         </p>
       )}
     </div>
