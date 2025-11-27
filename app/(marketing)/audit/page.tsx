@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic" as const;
 export const metadata = {
   title: "AI-Visibility Audit | AEOBRO",
   description:
-    "Quick, provisional AI-visibility score for your brand or domain. Enter a site or brand name to see a rough baseline.",
+    "Quick, provisional AI-visibility score for your domain. Enter your domain address to see a rough baseline of your current AI visibility optimization.",
   alternates: { canonical: "/audit" },
 } as const;
 
@@ -259,7 +259,9 @@ function hasLogoOrImage(blocks: any[]): boolean {
 function hasServices(blocks: any[]): boolean {
   const types = getAllTypes(blocks).map((s) => s.toLowerCase());
   return (
-    types.includes("service") || types.includes("product") || types.includes("offer")
+    types.includes("service") ||
+    types.includes("product") ||
+    types.includes("offer")
   );
 }
 
@@ -453,7 +455,7 @@ export default async function Page({ searchParams }: PageProps) {
     name: "AI-Visibility Audit",
     url: "https://aeobro.com/audit",
     description:
-      "Quick, provisional AI-visibility score for your brand or domain.",
+      "Quick, provisional AI-visibility score for your domain. Enter your domain address to see a rough baseline of your current AI visibility optimization.",
     isPartOf: { "@type": "WebSite", name: "AEOBRO", url: "https://aeobro.com" },
   };
 
@@ -481,17 +483,17 @@ export default async function Page({ searchParams }: PageProps) {
         className="mt-3 text-gray-600"
         title="A fast, single-page analysis with short timeouts."
       >
-        Enter a domain or brand name to get a quick snapshot score.
+        Enter your domain address to get a quick snapshot score of your current AI visibility optimization.
       </p>
 
       {/* Form */}
       <form className="mt-6 flex items-center gap-3" action="/audit" method="get">
-        <label className="sr-only" htmlFor="q">Domain or brand</label>
+        <label className="sr-only" htmlFor="q">Domain address</label>
         <input
           id="q"
           name="q"
           defaultValue={q}
-          placeholder="example.com or Brand Inc."
+          placeholder="example.com"
           className="px-3 py-2 border rounded-lg w-full max-w-md"
           autoComplete="off"
           inputMode="url"
