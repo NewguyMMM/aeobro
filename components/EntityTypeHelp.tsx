@@ -1,48 +1,87 @@
 // components/EntityTypeHelp.tsx
+// 📅 Updated: 2025-11-26 09:45 ET
 "use client";
 
-import { useState } from "react";
+import * as React from "react";
 
 export default function EntityTypeHelp() {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = React.useState(false);
+  const containerRef = React.useRef<HTMLDivElement | null>(null);
+
+  React.useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (!containerRef.current) return;
+      if (!containerRef.current.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setOpen(false);
+      }
+    }
+
+    document.addEventListener("mousedown", handleClickOutside);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, []);
 
   return (
-    <span className="relative inline-flex">
+    <div
+      ref={containerRef}
+      className="relative inline-block align-middle ml-1"
+    >
       <button
         type="button"
-        aria-label="What does each option mean?"
-        title="What does each option mean?"
-        onClick={() => setOpen((v) => !v)}
-        onBlur={() => setOpen(false)}
-        className="ml-2 inline-flex h-5 w-5 items-center justify-center rounded-full border text-xs leading-none text-gray-600 hover:bg-gray-50"
+        onClick={() => setOpen((prev) => !prev)}
+        className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-gray-200 text-[10px] font-semibold text-gray-700 hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
+        aria-label="Help choosing an entity type"
+        aria-expanded={open}
+        aria-haspopup="true"
       >
-        ?
+        i
       </button>
 
       {open && (
-        <div
-          role="dialog"
-          className="absolute z-20 mt-2 w-[24rem] max-w-sm rounded-xl border bg-white p-3 text-sm text-gray-700 shadow-lg"
-        >
-          <p className="mb-2 font-medium">Choosing an entity type</p>
-          <ul className="list-disc space-y-1 pl-5 leading-5">
+        <div className="absolute right-0 mt-1 w-80 rounded-md border border-gray-200 bg-white p-3 text-xs text-gray-700 shadow-lg z-20">
+          <p className="font-semibold mb-2">Choosing an entity type</p>
+          <ul className="list-disc pl-4 space-y-1">
             <li>
-              <strong>Business</strong> — general company; <em>i.e.</em> Organization or
-              LocalBusiness.
+              <span className="font-semibold">Business</span> — general company;
+              e.g., <code className="bg-gray-100 px-0.5 rounded">Organization</code>{" "}
+              or <code className="bg-gray-100 px-0.5 rounded">LocalBusiness</code>.
             </li>
             <li>
-              <strong>Local Service</strong> — local providers (clinics, plumbers, salons);
-              <em> i.e.</em> LocalBusiness subtypes such as MedicalBusiness or ProfessionalService.
+              <span className="font-semibold">Local Service</span> — local
+              providers (clinics, plumbers, salons); includes medical practices
+              and other service businesses with a physical service area.
             </li>
             <li>
-              <strong>Organization</strong> — non-profits, associations, schools, hospitals.
+              <span className="font-semibold">Organization</span> — non-profits,
+              associations, schools, hospitals, and other institutions.
             </li>
             <li>
-              <strong>Creator / Person</strong> — an individual; <em>i.e.</em> Person.
+              <span className="font-semibold">Creator / Person</span> — an
+              individual; e.g., consultant, influencer, author, or solo
+              professional.
+            </li>
+            <li>
+              <span className="font-semibold">Product</span> — a single product
+              or software app where the product itself is the main thing AI
+              should recognize (e.g., a SaaS tool, mobile app, or flagship
+              physical product).
             </li>
           </ul>
+          <p className="mt-2 text-[11px] text-gray-500">
+            You can change this later. AEOBRO maps your choice to the closest
+            matching schema.org type for AI and search engines.
+          </p>
         </div>
       )}
-    </span>
+    </div>
   );
 }
