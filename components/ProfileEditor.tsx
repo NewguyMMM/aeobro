@@ -1,5 +1,5 @@
 // components/ProfileEditor.tsx
-// 📅 Updated: 2025-11-24 09:20 ET
+// 📅 Updated: 2025-11-26 09:45 ET
 "use client";
 
 import * as React from "react";
@@ -596,9 +596,22 @@ export default function ProfileEditor({
       {/* Top note + plan pill */}
       <div className="flex items-start justify-between">
         <p className="text-sm text-gray-600">
-          Only <span className="font-medium">Display name</span> is required to
-          publish. Add more when you’re ready — the more details you include,
-          the better your AI visibility.
+          <span className="block">
+            To build your AI Ready profile, fill out as much of the form below
+            as you can, and click{" "}
+            <span className="font-medium">Save &amp; Publish</span>.
+          </span>
+          <span className="block">
+            <span className="font-semibold">
+              Only Display Name is required to publish.
+            </span>{" "}
+            Add more when you’re ready — the more details you include, the
+            better your AI visibility.
+          </span>
+          <span className="block">
+            To have your AI Ready profile verified, complete one of the options
+            at the bottom of this page.
+          </span>
         </p>
         {plan && (
           <span
@@ -629,13 +642,6 @@ export default function ProfileEditor({
                 <path d="m3 7 9 6 9-6" />
               </svg>
               <span className="font-medium">{email}</span>
-              <span
-                className="ml-1 inline-flex h-4 w-4 items-center justify-center rounded-full bg-gray-200 text-[10px] font-semibold text-gray-700"
-                title="This email is private and is NOT shown on your public profile. Only information you enter below appears publicly."
-                aria-label="This email is private and not shown on your public profile."
-              >
-                i
-              </span>
             </span>
           </div>
         ) : (
@@ -673,8 +679,20 @@ export default function ProfileEditor({
       <section className="grid gap-4">
         <h3 className="text-lg font-semibold">Identity</h3>
         <div className={row}>
-          <label className={label} htmlFor="displayName">
-            Display name *
+          <label
+            className={label + " overflow-visible"}
+            htmlFor="displayName"
+          >
+            Display Name *
+            <span className="relative group ml-1 cursor-help align-middle">
+              <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-gray-200 text-[10px] font-semibold text-gray-700">
+                i
+              </span>
+              <span className="pointer-events-none absolute left-1/2 top-full z-10 mt-1 hidden w-64 -translate-x-1/2 rounded-md bg-black px-2 py-1 text-xs leading-snug text-white group-hover:block">
+                Your public name for this profile. It appears in your URL and is
+                the first thing AI tools and people will see.
+              </span>
+            </span>
           </label>
           <input
             id="displayName"
@@ -752,8 +770,18 @@ export default function ProfileEditor({
           />
         </div>
         <div className={row}>
-          <label className={label} htmlFor="bio">
+          <label className={label + " overflow-visible"} htmlFor="bio">
             Bio / About
+            <span className="relative group ml-1 cursor-help align-middle">
+              <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-gray-200 text-[10px] font-semibold text-gray-700">
+                i
+              </span>
+              <span className="pointer-events-none absolute left-1/2 top-full z-10 mt-1 hidden w-72 -translate-x-1/2 rounded-md bg-black px-2 py-1 text-xs leading-snug text-white group-hover:block">
+                A fuller description of what you do, who you help, and why you
+                are credible. AI systems use this to understand your expertise
+                and context.
+              </span>
+            </span>
           </label>
           <textarea
             id="bio"
@@ -795,8 +823,23 @@ export default function ProfileEditor({
         <h3 className="text-lg font-semibold">Website, Location & Reach</h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className={row}>
-            <label className={label} htmlFor="website">
+            <label
+              className={label + " overflow-visible"}
+              htmlFor="website"
+            >
               Website
+              <span className="relative group ml-1 cursor-help align-middle">
+                <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-gray-200 text-[10px] font-semibold text-gray-700">
+                  i
+                </span>
+                <span className="pointer-events-none absolute left-1/2 top-full z-10 mt-1 hidden w-72 -translate-x-1/2 rounded-md bg-black px-2 py-1 text-xs leading-snug text-white group-hover:block">
+                  Your main website or landing page. Include
+                  {" "}
+                  https://{" "}
+                  so AI tools and search engines can reliably confirm your
+                  brand.
+                </span>
+              </span>
             </label>
             <input
               id="website"
@@ -811,8 +854,20 @@ export default function ProfileEditor({
             </small>
           </div>
           <div className={row}>
-            <label className={label} htmlFor="location">
+            <label
+              className={label + " overflow-visible"}
+              htmlFor="location"
+            >
               Location (address or city/state)
+              <span className="relative group ml-1 cursor-help align-middle">
+                <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-gray-200 text-[10px] font-semibold text-gray-700">
+                  i
+                </span>
+                <span className="pointer-events-none absolute left-1/2 top-full z-10 mt-1 hidden w-72 -translate-x-1/2 rounded-md bg-black px-2 py-1 text-xs leading-snug text-white group-hover:block">
+                  Where you’re based or operate from. City/state is enough for
+                  many brands; full address is optional.
+                </span>
+              </span>
             </label>
             <input
               id="location"
@@ -825,8 +880,20 @@ export default function ProfileEditor({
           </div>
         </div>
         <div className={row}>
-          <label className={label} htmlFor="serviceArea">
+          <label
+            className={label + " overflow-visible"}
+            htmlFor="serviceArea"
+          >
             Service area (comma-separated regions)
+            <span className="relative group ml-1 cursor-help align-middle">
+              <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-gray-200 text-[10px] font-semibold text-gray-700">
+                i
+              </span>
+              <span className="pointer-events-none absolute left-1/2 top-full z-10 mt-1 hidden w-72 -translate-x-1/2 rounded-md bg-black px-2 py-1 text-xs leading-snug text-white group-hover:block">
+                Geographic regions you serve. Example: “New York, New Jersey,
+                Remote (US-wide)”.
+              </span>
+            </span>
           </label>
           <input
             id="serviceArea"
@@ -1069,7 +1136,19 @@ export default function ProfileEditor({
 
       {/* Links */}
       <section className="grid gap-4">
-        <h3 className="text-lg font-semibold">Links</h3>
+        <h3 className="text-lg font-semibold flex items-center gap-2">
+          Links
+          <span className="relative group cursor-help align-middle">
+            <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-gray-200 text-[10px] font-semibold text-gray-700">
+              i
+            </span>
+            <span className="pointer-events-none absolute left-1/2 top-full z-10 mt-1 hidden w-72 -translate-x-1/2 rounded-md bg-black px-2 py-1 text-xs leading-snug text-white group-hover:block">
+              Add important extra URLs such as review pages, booking links, app
+              store listings, docs, or other destinations that matter for your
+              brand.
+            </span>
+          </span>
+        </h3>
         <div className="grid gap-3">
           <div className="grid grid-cols-1 sm:grid-cols-[1fr,1fr,auto] gap-3 items-start">
             <div className="grid gap-2">
@@ -1145,7 +1224,19 @@ export default function ProfileEditor({
       {/* Phase 2: FAQ Builder (Pro/Business gating) */}
       <section className="grid gap-4">
         <div className="flex items-center justify-between">
-          <h3 className="text-lg font-semibold">FAQs (Pro / Business)</h3>
+          <h3 className="text-lg font-semibold flex items-center gap-2">
+            FAQs (Pro / Business)
+            <span className="relative group cursor-help align-middle">
+              <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-gray-200 text-[10px] font-semibold text-gray-700">
+                i
+              </span>
+              <span className="pointer-events-none absolute left-1/2 top-full z-10 mt-1 hidden w-72 -translate-x-1/2 rounded-md bg-black px-2 py-1 text-xs leading-snug text-white group-hover:block">
+                Question-and-answer pairs about your brand, policies, and
+                services. AEOBRO turns these into FAQ JSON-LD so AI tools can
+                quote you accurately.
+              </span>
+            </span>
+          </h3>
           {!isProPlan && (
             <span className="text-xs rounded-full bg-yellow-50 px-2.5 py-1 text-yellow-800 border border-yellow-200">
               Upgrade to Pro or Business to edit FAQs
@@ -1262,7 +1353,19 @@ export default function ProfileEditor({
       {/* Phase 2: Services Builder (Pro/Business gating) */}
       <section className="grid gap-4">
         <div className="flex items-center justify-between">
-          <h3 className="text-lg font-semibold">Services (Pro / Business)</h3>
+          <h3 className="text-lg font-semibold flex items-center gap-2">
+            Services (Pro / Business)
+            <span className="relative group cursor-help align-middle">
+              <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-gray-200 text-[10px] font-semibold text-gray-700">
+                i
+              </span>
+              <span className="pointer-events-none absolute left-1/2 top-full z-10 mt-1 hidden w-72 -translate-x-1/2 rounded-md bg-black px-2 py-1 text-xs leading-snug text-white group-hover:block">
+                List the services or offers you provide, with optional price
+                ranges. AEOBRO exposes these as structured Service entities so
+                AI can describe and recommend your offers.
+              </span>
+            </span>
+          </h3>
           {!isProPlan && (
             <span className="text-xs rounded-full bg-yellow-50 px-2.5 py-1 text-yellow-800 border border-yellow-200">
               Upgrade to Pro or Business to edit Services
