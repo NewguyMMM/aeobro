@@ -1,5 +1,5 @@
 // prisma/schema.prisma
-// 📅 Updated: 2025-11-21 09:44 ET
+// 📅 Updated: 2025-11-29 05:20 ET
 
 generator client {
   provider = "prisma-client-js"
@@ -71,7 +71,7 @@ model User {
   welcomeSentAt       DateTime?
 
   // Billing / Paywall
-  plan                 Plan     @default(FREE)
+  plan                 Plan     @default(LITE)
   planStatus           String   @default("inactive") // active | trialing | past_due | canceled
   stripeCustomerId     String?  @unique
   stripeSubscriptionId String?  @unique
