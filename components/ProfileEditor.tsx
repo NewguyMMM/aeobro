@@ -1,5 +1,5 @@
 // components/ProfileEditor.tsx
-// 📅 Updated: 2025-11-27 05:49 ET
+// 📅 Updated: 2025-11-29 05:37 ET
 "use client";
 
 import * as React from "react";
@@ -44,7 +44,7 @@ type PressItem = { title: string; url: string };
 
 type VerificationStatus = "UNVERIFIED" | "PLATFORM_VERIFIED" | "DOMAIN_VERIFIED";
 
-type PlanTitle = "Free" | "Lite" | "Plus" | "Pro" | "Business";
+type PlanTitle = "Lite" | "Plus" | "Pro" | "Business" | "Enterprise";
 
 type FAQItem = {
   question: string;
@@ -247,7 +247,7 @@ export default function ProfileEditor({
   // ---- Modal for viewing with unsaved changes
   const [confirmOpen, setConfirmOpen] = React.useState(false);
 
-  // ---- Plan pill (Free/Lite/Plus/Pro/Business)
+  // ---- Plan pill (Lite/Plus/Pro/Business/Enterprise)
   const [plan, setPlan] = React.useState<PlanTitle | null>(
     (planFromServer as PlanTitle) ?? null
   );
@@ -264,11 +264,11 @@ export default function ProfileEditor({
         const p = j?.plan as PlanTitle | undefined;
         if (
           !cancelled &&
-          (p === "Free" ||
-            p === "Lite" ||
+          (p === "Lite" ||
             p === "Plus" ||
             p === "Pro" ||
-            p === "Business")
+            p === "Business" ||
+            p === "Enterprise")
         ) {
           setPlan(p);
         }
