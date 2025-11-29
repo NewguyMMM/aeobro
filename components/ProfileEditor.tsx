@@ -1,5 +1,5 @@
 // components/ProfileEditor.tsx
-// 📅 Updated: 2025-11-29 05:37 ET
+// 📅 Updated: 2025-11-29 10:05 ET
 "use client";
 
 import * as React from "react";
@@ -122,6 +122,30 @@ function toNum(input: string): number | undefined {
   if (!input) return undefined;
   const n = parseInt(input, 10);
   return Number.isFinite(n) ? n : undefined;
+}
+
+/**
+ * Map any raw plan string (DB enum like "FREE", "LITE", "PRO", etc.)
+ * to a clean UI PlanTitle.
+ */
+function normalizePlanForUi(p?: string | null): PlanTitle {
+  const v = (p ?? "").toString().toUpperCase();
+
+  switch (v) {
+    case "PLUS":
+      return "Plus";
+    case "PRO":
+      return "Pro";
+    case "BUSINESS":
+      return "Business";
+    case "ENTERPRISE":
+      return "Enterprise";
+    // Treat FREE, LITE, and anything unknown as Lite baseline
+    case "LITE":
+    case "FREE":
+    default:
+      return "Lite";
+  }
 }
 
 /** -------- Component -------- */
@@ -249,8 +273,9 @@ export default function ProfileEditor({
 
   // ---- Plan pill (Lite/Plus/Pro/Business/Enterprise)
   const [plan, setPlan] = React.useState<PlanTitle | null>(
-    (planFromServer as PlanTitle) ?? null
+    planFromServer ? normalizePlanForUi(planFromServer) : null
   );
+
   React.useEffect(() => {
     // If server already told us the plan, trust it and skip the fetch
     if (planFromServer) return;
@@ -261,16 +286,9 @@ export default function ProfileEditor({
         const r = await fetch("/api/account", { cache: "no-store" });
         if (!r.ok) return;
         const j = await r.json();
-        const p = j?.plan as PlanTitle | undefined;
-        if (
-          !cancelled &&
-          (p === "Lite" ||
-            p === "Plus" ||
-            p === "Pro" ||
-            p === "Business" ||
-            p === "Enterprise")
-        ) {
-          setPlan(p);
+        const raw = j?.plan as string | undefined;
+        if (!cancelled && raw) {
+          setPlan(normalizePlanForUi(raw));
         }
       } catch {
         /* ignore */
@@ -281,7 +299,12 @@ export default function ProfileEditor({
     };
   }, [planFromServer]);
 
-  const isProPlan = plan === "Pro" || plan === "Business";
+  // Upper-case key for gating logic; default Lite if unknown
+  const planKey = (plan ?? "Lite").toUpperCase();
+
+  // Treat PRO/BUSINESS/ENTERPRISE as Pro-level for JSON editors
+  const isProPlan =
+    planKey === "PRO" || planKey === "BUSINESS" || planKey === "ENTERPRISE";
 
   /** ---- Build a normalized payload ---- */
   const buildPayload = React.useCallback((): Profile => {
@@ -320,7 +343,7 @@ export default function ProfileEditor({
       updateMessage: (updateMessage || "").trim() || null,
     };
 
-    // 🔹 Phase 2 JSON editors — only send when Pro/Business so
+    // 🔹 Phase 2 JSON editors — only send when Pro/Business/Enterprise so
     // Lite users don’t accidentally wipe existing structured data.
     if (isProPlan) {
       const faqJson = (faqs ?? [])
@@ -486,7 +509,7 @@ export default function ProfileEditor({
       }
 
       // Services validation (URLs only; other fields are free-form),
-      // and only for Pro/Business where the editor is unlocked.
+      // and only for Pro/Business/Enterprise where the editor is unlocked.
       if (isProPlan) {
         for (const s of services) {
           if (s.url && !isValidUrl(normalizeUrl(s.url))) {
@@ -1366,7 +1389,7 @@ export default function ProfileEditor({
               </span>
             </span>
           </h3>
-          {!isProPlan && (
+        {!isProPlan && (
             <span className="text-xs rounded-full bg-yellow-50 px-2.5 py-1 text-yellow-800 border border-yellow-200">
               Upgrade to Pro to edit Services
             </span>
