@@ -1,5 +1,5 @@
 // lib/plan.ts
-// 📅 Updated: 2025-11-09 19:10 ET
+// 📅 Updated: 2025-11-29 05:50 ET
 
 import type { Plan as DbPlan } from "@prisma/client";
 
@@ -7,12 +7,16 @@ import type { Plan as DbPlan } from "@prisma/client";
  * Define all plans in one place.
  * - Each plan has a label, a rank (for comparisons), caps, and features.
  * - Keep the caps/features keys consistent across plans so typings stay simple.
+ *
+ * Note: FREE is now a legacy alias of LITE. All fallbacks and UI should
+ * treat “no plan” / “FREE” as LITE-level access.
  */
 export const PLANS = {
+  // 🔸 Legacy alias of LITE (same label, rank, caps, and features)
   FREE: {
-    label: "Free",
-    rank: 0,
-    caps: { links: 3, images: 1, faqItems: 0, services: 0, revisions: 0, locations: 0 },
+    label: "Lite",
+    rank: 1,
+    caps: { links: 5, images: 2, faqItems: 0, services: 0, revisions: 0, locations: 0 },
     features: {
       jsonLdPerson: true,
       jsonLdOrgLocal: false,
@@ -50,7 +54,7 @@ export const PLANS = {
     caps: { links: 7, images: 4, faqItems: 5, services: 5, revisions: 10, locations: 0 },
     features: {
       jsonLdPerson: true,
-      jsonLdOrgLocal: false,   // keep org/local for PRO+ (per your gating strategy)
+      jsonLdOrgLocal: false, // keep org/local for PRO+ (per your gating strategy)
       faqMarkup: true,
       serviceMarkup: true,
       changeHistory: true,
@@ -120,8 +124,14 @@ export type PlanKey = keyof typeof PLANS;
 /** Normalize any incoming plan (Prisma enum or string) to a valid PlanKey. */
 function normalizePlan(p: DbPlan | PlanKey | string | null | undefined): PlanKey {
   const v = String(p ?? "").toUpperCase();
+
+  // 🔸 Treat FREE as LITE in all logic
+  if (v === "FREE") return "LITE";
+
   if (v in PLANS) return v as PlanKey;
-  return "FREE";
+
+  // Default baseline is now LITE (no exposed “Free tier”)
+  return "LITE";
 }
 
 /** Returns true if `userPlan` rank >= `needed` rank. */
@@ -134,7 +144,7 @@ export function requirePlan(userPlan: DbPlan | PlanKey, needed: PlanKey) {
 /** Read a capability value from the plan’s caps map. */
 export function getCap(
   plan: DbPlan | PlanKey,
-  key: keyof typeof PLANS.FREE.caps
+  key: keyof typeof PLANS.LITE.caps
 ) {
   const pk = normalizePlan(plan);
   return PLANS[pk].caps[key];
@@ -143,7 +153,7 @@ export function getCap(
 /** Check whether a boolean/numbered feature is available on the plan. */
 export function hasFeature(
   plan: DbPlan | PlanKey,
-  key: keyof typeof PLANS.FREE.features
+  key: keyof typeof PLANS.LITE.features
 ) {
   const pk = normalizePlan(plan);
   return Boolean(PLANS[pk].features[key]);
