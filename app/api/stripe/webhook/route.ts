@@ -1,4 +1,5 @@
 // app/api/stripe/webhook/route.ts
+// ✅ Updated: 2025-11-29 05:30 ET – use LITE instead of FREE as fallback/downgrade plan
 import { NextResponse } from "next/server";
 import Stripe from "stripe";
 import { prisma } from "@/lib/prisma";
@@ -151,8 +152,8 @@ export async function POST(req: Request) {
         const isActive = activeStatuses.includes(sub.status as any);
 
         // If we know the plan AND it's in an active-ish status, use it.
-        // Otherwise fall back to FREE.
-        const plan: DbPlan = mappedPlan && isActive ? mappedPlan : "FREE";
+        // Otherwise fall back to LITE (baseline plan).
+        const plan: DbPlan = mappedPlan && isActive ? mappedPlan : "LITE";
 
         // ✅ SAFELY derive currentPeriodEnd (may be missing on some events)
         let currentPeriodEnd: Date | null = null;
@@ -209,13 +210,13 @@ export async function POST(req: Request) {
 
       /**
        * Fired when a subscription is canceled or ends.
-       * We downgrade to FREE and clear subscription linkage.
+       * We downgrade to LITE and clear subscription linkage.
        */
       case "customer.subscription.deleted": {
         const sub = event.data.object as Stripe.Subscription;
         await upsertUserFromCustomerId(sub.customer as string, {
           stripeSubscriptionId: null,
-          plan: "FREE",
+          plan: "LITE",
           planStatus: "canceled",
           currentPeriodEnd: null,
         });
