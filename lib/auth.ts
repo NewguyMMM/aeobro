@@ -1,5 +1,5 @@
 // lib/auth.ts
-// ✅ Updated: 2025-11-26 07:45 ET – sync plan/planStatus/currentPeriodEnd into JWT + session
+// ✅ Updated: 2025-11-29 05:08 ET – default plan LITE instead of FREE when missing
 import type { NextAuthOptions } from "next-auth";
 import { PrismaAdapter } from "@auth/prisma-adapter";
 import { prisma } from "@/lib/prisma";
@@ -205,10 +205,15 @@ If you did not request this, you can safely ignore this email.`;
           });
 
           if (dbUser) {
-            (token as any).plan = dbUser.plan;
-            (token as any).planStatus = dbUser.planStatus;
+            // 🆕 Default missing plan to LITE instead of FREE
+            (token as any).plan = dbUser.plan ?? "LITE";
+            (token as any).planStatus = dbUser.planStatus ?? "inactive";
             (token as any).currentPeriodEnd =
               dbUser.currentPeriodEnd?.toISOString() ?? null;
+          } else {
+            // Safety: ensure a plan is always present when we have a user
+            (token as any).plan = (token as any).plan ?? "LITE";
+            (token as any).planStatus = (token as any).planStatus ?? "inactive";
           }
         } catch (err) {
           console.error("JWT plan sync error:", err);
@@ -237,7 +242,8 @@ If you did not request this, you can safely ignore this email.`;
       if (token?.sub) (session.user as any).id = token.sub;
 
       // 🆕 Make billing info available on the client/session
-      (session.user as any).plan = (token as any).plan ?? "FREE";
+      // Default plan is now LITE instead of FREE
+      (session.user as any).plan = (token as any).plan ?? "LITE";
       (session.user as any).planStatus = (token as any).planStatus ?? "inactive";
       (session.user as any).currentPeriodEnd =
         (token as any).currentPeriodEnd
