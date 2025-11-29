@@ -1,5 +1,5 @@
 // lib/auth.ts
-// ✅ Updated: 2025-11-29 05:08 ET – default plan LITE instead of FREE when missing
+// ✅ Updated: 2025-11-29 06:45 ET – always sync plan/planStatus from Prisma; default plan LITE when missing
 import type { NextAuthOptions } from "next-auth";
 import { PrismaAdapter } from "@auth/prisma-adapter";
 import { prisma } from "@/lib/prisma";
@@ -148,7 +148,8 @@ If you did not request this, you can safely ignore this email.`;
             clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
             authorization: {
               params: {
-                scope: "openid email profile https://www.googleapis.com/auth/youtube.readonly",
+                scope:
+                  "openid email profile https://www.googleapis.com/auth/youtube.readonly",
                 prompt: "consent",
                 access_type: "offline",
               },
@@ -165,7 +166,8 @@ If you did not request this, you can safely ignore this email.`;
             clientSecret: process.env.FACEBOOK_CLIENT_SECRET!,
             authorization: {
               params: {
-                scope: "public_profile pages_show_list pages_read_engagement", // add instagram_basic later if needed
+                scope:
+                  "public_profile pages_show_list pages_read_engagement", // add instagram_basic later if needed
               },
             },
           }),
@@ -188,15 +190,36 @@ If you did not request this, you can safely ignore this email.`;
   ],
 
   callbacks: {
-    // 🔑 JWT: store billing plan on the token (fetched from Prisma when user is present)
+    // 🔑 JWT: always sync billing plan from Prisma into the token
     async jwt({ token, user, account }) {
       if (user?.id) {
         token.sub = (user as any).id ?? user.id;
+      }
 
-        // 🆕 When user is present (sign-in / first JWT), sync billing data from DB
+      // Persist provider-specific tokens on first OAuth sign-in
+      if (account?.provider === "google") {
+        if (account.access_token)
+          (token as any).googleAccessToken = account.access_token;
+        if (account.refresh_token)
+          (token as any).googleRefreshToken = account.refresh_token;
+        if (typeof account.expires_at === "number")
+          (token as any).googleExpiresAt = account.expires_at;
+      }
+      if (account?.provider === "facebook") {
+        if (account.access_token)
+          (token as any).facebookAccessToken = account.access_token;
+      }
+      if (account?.provider === "twitter") {
+        if (account.access_token)
+          (token as any).twitterAccessToken = account.access_token;
+      }
+
+      // 🆕 Always load the latest plan from Prisma using userId (from user or token.sub)
+      const userId = (user as any)?.id ?? (token.sub as string | undefined);
+      if (userId) {
         try {
           const dbUser = await prisma.user.findUnique({
-            where: { id: (user as any).id ?? (token.sub as string) },
+            where: { id: userId },
             select: {
               plan: true,
               planStatus: true,
@@ -205,33 +228,20 @@ If you did not request this, you can safely ignore this email.`;
           });
 
           if (dbUser) {
-            // 🆕 Default missing plan to LITE instead of FREE
+            // Default missing plan to LITE instead of FREE
             (token as any).plan = dbUser.plan ?? "LITE";
             (token as any).planStatus = dbUser.planStatus ?? "inactive";
             (token as any).currentPeriodEnd =
               dbUser.currentPeriodEnd?.toISOString() ?? null;
           } else {
-            // Safety: ensure a plan is always present when we have a user
+            // Safety: ensure a plan is always present when we have a userId
             (token as any).plan = (token as any).plan ?? "LITE";
-            (token as any).planStatus = (token as any).planStatus ?? "inactive";
+            (token as any).planStatus =
+              (token as any).planStatus ?? "inactive";
           }
         } catch (err) {
           console.error("JWT plan sync error:", err);
         }
-      }
-
-      // Persist provider-specific tokens on first OAuth sign-in
-      if (account?.provider === "google") {
-        if (account.access_token) (token as any).googleAccessToken = account.access_token;
-        if (account.refresh_token) (token as any).googleRefreshToken = account.refresh_token;
-        if (typeof account.expires_at === "number")
-          (token as any).googleExpiresAt = account.expires_at;
-      }
-      if (account?.provider === "facebook") {
-        if (account.access_token) (token as any).facebookAccessToken = account.access_token;
-      }
-      if (account?.provider === "twitter") {
-        if (account.access_token) (token as any).twitterAccessToken = account.access_token;
       }
 
       return token;
@@ -241,10 +251,10 @@ If you did not request this, you can safely ignore this email.`;
     async session({ session, token }) {
       if (token?.sub) (session.user as any).id = token.sub;
 
-      // 🆕 Make billing info available on the client/session
-      // Default plan is now LITE instead of FREE
+      // Default plan is LITE instead of FREE
       (session.user as any).plan = (token as any).plan ?? "LITE";
-      (session.user as any).planStatus = (token as any).planStatus ?? "inactive";
+      (session.user as any).planStatus =
+        (token as any).planStatus ?? "inactive";
       (session.user as any).currentPeriodEnd =
         (token as any).currentPeriodEnd
           ? new Date((token as any).currentPeriodEnd)
@@ -296,7 +306,9 @@ If you did not request this, you can safely ignore this email.`;
     async linkAccount({ user, account }) {
       try {
         if (!user?.id || !account?.provider) return;
-        const accessToken = (account as any).access_token as string | undefined;
+        const accessToken = (account as any).access_token as
+          | string
+          | undefined;
         const scope = (account as any).scope as string | undefined;
         await finalizePlatformVerification({
           userId: user.id,
