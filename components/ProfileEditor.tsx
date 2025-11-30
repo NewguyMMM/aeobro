@@ -1,5 +1,5 @@
 // components/ProfileEditor.tsx
-// 📅 Updated: 2025-11-29 10:05 ET
+// 📅 Updated: 2025-11-30 05:32 ET – gate Updates by plan (Plus & Pro+ only)
 "use client";
 
 import * as React from "react";
@@ -305,6 +305,9 @@ export default function ProfileEditor({
   // Treat PRO/BUSINESS/ENTERPRISE as Pro-level for JSON editors
   const isProPlan =
     planKey === "PRO" || planKey === "BUSINESS" || planKey === "ENTERPRISE";
+
+  // Updates editor should be available on Plus and Pro+ plans only
+  const canEditUpdates = planKey === "PLUS" || isProPlan;
 
   /** ---- Build a normalized payload ---- */
   const buildPayload = React.useCallback((): Profile => {
@@ -818,26 +821,56 @@ export default function ProfileEditor({
         </div>
       </section>
 
-      {/* Updates */}
+      {/* Updates – Plus & Pro+ only */}
       <section className="grid gap-4">
         <div className="rounded-2xl border bg-white p-6 shadow-sm space-y-3">
-          <h3 className="text-lg font-semibold">Updates</h3>
-          <p className="text-sm text-gray-600">
-            Post your latest offer, launch, or announcement. This becomes a
-            machine-readable “Latest update” that AEOBRO exposes to AI systems.
-          </p>
-          <textarea
-            className={input}
-            rows={3}
-            placeholder="Getting ready for launch."
-            value={updateMessage}
-            onChange={(e) => setUpdateMessage(e.target.value)}
-            maxLength={500}
-          />
-          <p className="text-xs text-gray-500">
-            Updates are saved when you click{" "}
-            <span className="font-medium">Save &amp; Publish</span>.
-          </p>
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h3 className="text-lg font-semibold">Updates</h3>
+              <p className="text-sm text-gray-600">
+                Post your latest offer, launch, or announcement. This becomes a
+                machine-readable “Latest update” that AEOBRO exposes to AI
+                systems.
+              </p>
+            </div>
+            {!canEditUpdates && (
+              <span className="text-xs rounded-full bg-yellow-50 px-2.5 py-1 text-yellow-800 border border-yellow-200 whitespace-nowrap">
+                Upgrade to Plus to unlock Updates
+              </span>
+            )}
+          </div>
+
+          {canEditUpdates ? (
+            <>
+              <textarea
+                className={input}
+                rows={3}
+                placeholder="Getting ready for launch."
+                value={updateMessage}
+                onChange={(e) => setUpdateMessage(e.target.value)}
+                maxLength={500}
+              />
+              <p className="text-xs text-gray-500">
+                Updates are saved when you click{" "}
+                <span className="font-medium">Save &amp; Publish</span>.
+              </p>
+            </>
+          ) : (
+            <div className="rounded-md border border-dashed bg-gray-50 p-3 text-sm text-gray-600">
+              Latest Updates are available on{" "}
+              <span className="font-medium">Plus</span> and{" "}
+              <span className="font-medium">Pro</span> plans. Upgrade to keep
+              AI tools in sync with your newest offers and announcements.
+              <div className="mt-3">
+                <a
+                  href="/pricing"
+                  className="inline-flex items-center rounded-md border border-blue-600 bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700"
+                >
+                  Upgrade on Pricing page
+                </a>
+              </div>
+            </div>
+          )}
         </div>
       </section>
 
@@ -856,9 +889,8 @@ export default function ProfileEditor({
                   i
                 </span>
                 <span className="pointer-events-none absolute left-1/2 top-full z-10 mt-1 hidden w-72 -translate-x-1/2 rounded-md bg-black px-2 py-1 text-xs leading-snug text-white group-hover:block">
-                  Your main website or landing page. Include{" "}
-                  https:// so AI tools and search engines can reliably confirm
-                  your brand.
+                  Your main website or landing page. Include https:// so AI
+                  tools and search engines can reliably confirm your brand.
                 </span>
               </span>
             </label>
@@ -1364,11 +1396,8 @@ export default function ProfileEditor({
         ) : (
           <div className="rounded-2xl border border-dashed bg-gray-50 p-4 text-sm text-gray-600">
             FAQs are stored as structured JSON-LD for AI and search engines.
-            Upgrade to{" "}
-            <span className="font-medium">
-              Pro
-            </span>{" "}
-            to unlock the FAQ editor here.
+            Upgrade to <span className="font-medium">Pro</span> to unlock the
+            FAQ editor here.
           </div>
         )}
       </section>
@@ -1389,7 +1418,7 @@ export default function ProfileEditor({
               </span>
             </span>
           </h3>
-        {!isProPlan && (
+          {!isProPlan && (
             <span className="text-xs rounded-full bg-yellow-50 px-2.5 py-1 text-yellow-800 border border-yellow-200">
               Upgrade to Pro to edit Services
             </span>
@@ -1620,11 +1649,8 @@ export default function ProfileEditor({
               Service
             </code>{" "}
             entities in JSON-LD, including price ranges when available. Upgrade
-            to{" "}
-            <span className="font-medium">
-              Pro
-            </span>{" "}
-            to unlock the Services editor here.
+            to <span className="font-medium">Pro</span> to unlock the Services
+            editor here.
           </div>
         )}
       </section>
