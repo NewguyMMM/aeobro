@@ -1,4 +1,10 @@
 // app/api/stripe/create-checkout-session/route.ts
+// ✅ Updated: 2025-11-30
+// - Works with webhook PRICE_TO_PLAN mapping via metadata.plan_price_id
+// - Reuses & stores stripeCustomerId on the User
+// - Adds useful metadata (user_id, user_email) and client_reference_id
+// - Keeps existing external API: expects { priceId } in POST body
+
 import Stripe from "stripe";
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
@@ -8,7 +14,12 @@ import { prisma } from "@/lib/prisma";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
+const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY as string;
+if (!STRIPE_SECRET_KEY) {
+  throw new Error("Missing STRIPE_SECRET_KEY in environment");
+}
+
+const stripe = new Stripe(STRIPE_SECRET_KEY, {
   apiVersion: "2024-06-20",
 });
 
@@ -18,7 +29,7 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
  */
 const RAW_ALLOWED = [
   process.env.NEXT_PUBLIC_STRIPE_PRICE_LITE,
-  process.env.NEXT_PUBLIC_STRIPE_PRICE_PLUS,       // Plus tier
+  process.env.NEXT_PUBLIC_STRIPE_PRICE_PLUS, // Plus tier
   process.env.NEXT_PUBLIC_STRIPE_PRICE_PRO,
   process.env.NEXT_PUBLIC_STRIPE_PRICE_BUSINESS,
   process.env.NEXT_PUBLIC_STRIPE_PRICE_ENTERPRISE,
@@ -47,16 +58,19 @@ export async function POST(req: Request) {
     if (!session?.user?.email) {
       return NextResponse.json(
         { ok: false, message: "Unauthorized" },
-        { status: 401 },
+        { status: 401 }
       );
     }
 
-    const { priceId } = (await req.json()) as { priceId?: string };
+    const body = (await req.json().catch(() => ({}))) as {
+      priceId?: string;
+    };
 
+    const priceId = body.priceId;
     if (!priceId) {
       return NextResponse.json(
         { ok: false, message: "Missing priceId" },
-        { status: 400 },
+        { status: 400 }
       );
     }
 
@@ -67,20 +81,22 @@ export async function POST(req: Request) {
       ALLOWED_PRICE_IDS.length > 0 &&
       !ALLOWED_PRICE_IDS.includes(normalizedPriceId)
     ) {
-      console.warn(
-        "[checkout] priceId not in ALLOWED_PRICE_IDS",
-        {
-          received: normalizedPriceId,
-          allowed: ALLOWED_PRICE_IDS,
-        },
-      );
+      console.warn("[checkout] priceId not in ALLOWED_PRICE_IDS", {
+        received: normalizedPriceId,
+        allowed: ALLOWED_PRICE_IDS,
+      });
       // We still proceed and let Stripe validate the ID.
     }
 
     // Ensure a User row exists (covers DB resets)
     let user = await prisma.user.findUnique({
       where: { email: session.user.email },
-      select: { id: true, email: true, name: true },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        stripeCustomerId: true,
+      },
     });
 
     if (!user) {
@@ -89,35 +105,75 @@ export async function POST(req: Request) {
           email: session.user.email,
           name: session.user.name ?? null,
         },
-        select: { id: true, email: true, name: true },
+        select: {
+          id: true,
+          email: true,
+          name: true,
+          stripeCustomerId: true,
+        },
       });
     }
 
     const email: string = user.email ?? session.user.email;
+    let stripeCustomerId = user.stripeCustomerId ?? undefined;
 
-    // Reuse existing Stripe customer by email if present
-    const existing = await stripe.customers.list({ email, limit: 1 });
-    const customerId =
-      existing.data[0]?.id || (await stripe.customers.create({ email })).id;
+    // Prefer the stored customerId; if missing, fall back to Stripe lookup by email,
+    // and finally create a new customer if needed.
+    if (!stripeCustomerId) {
+      if (email) {
+        const existing = await stripe.customers.list({ email, limit: 1 });
+        if (existing.data[0]?.id) {
+          stripeCustomerId = existing.data[0].id;
+        }
+      }
+
+      if (!stripeCustomerId) {
+        const customer = await stripe.customers.create({
+          email,
+          name: user.name ?? undefined,
+        });
+        stripeCustomerId = customer.id;
+      }
+
+      // Persist the customerId so future flows/webhooks can match quickly.
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { stripeCustomerId },
+      });
+    }
 
     const base = appBaseUrl();
 
     const checkout = await stripe.checkout.sessions.create({
       mode: "subscription",
-      customer: customerId, // don't include customer_email simultaneously
+      customer: stripeCustomerId,
       line_items: [{ price: normalizedPriceId, quantity: 1 }],
       allow_promotion_codes: true,
       billing_address_collection: "auto",
       automatic_tax: { enabled: false },
       success_url: `${base}/dashboard?checkout=success`,
       cancel_url: `${base}/pricing?checkout=cancel`,
-      metadata: { plan_price_id: normalizedPriceId, user_email: email },
+      client_reference_id: user.id,
+      // 🔴 Critical: webhook reads metadata.plan_price_id
+      metadata: {
+        plan_price_id: normalizedPriceId,
+        user_email: email,
+        user_id: user.id,
+      },
+      // Optional but nice: mirror metadata onto the subscription itself
+      subscription_data: {
+        metadata: {
+          plan_price_id: normalizedPriceId,
+          user_email: email,
+          user_id: user.id,
+        },
+      },
     });
 
     if (!checkout.url) {
       return NextResponse.json(
         { ok: false, message: "Stripe did not return a Checkout URL" },
-        { status: 500 },
+        { status: 500 }
       );
     }
 
@@ -127,7 +183,7 @@ export async function POST(req: Request) {
     console.error("checkout error:", err);
     return NextResponse.json(
       { ok: false, message: err?.message || "Checkout error" },
-      { status: 500 },
+      { status: 500 }
     );
   }
 }
