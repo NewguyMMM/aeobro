@@ -1,5 +1,7 @@
 // app/api/stripe/webhook/route.ts
-// ✅ Updated: 2025-11-30 05:52 ET – trim price IDs + set plan on checkout.session.completed
+// ✅ Updated: 2025-11-30 06:05 ET
+// - Use LITE instead of FREE as fallback/downgrade plan
+// - ALSO map plan on checkout.session.completed via metadata.plan_price_id
 
 import { NextResponse } from "next/server";
 import Stripe from "stripe";
@@ -26,7 +28,7 @@ const stripe = new Stripe(STRIPE_SECRET_KEY, {
 
 /**
  * Build a safe mapping: Stripe Price ID → Prisma Plan enum.
- * We TRIM env values so stray spaces don’t break equality.
+ * Only envs that are actually set get added (no empty-string keys).
  */
 const PRICE_TO_PLAN: Record<string, DbPlan> = {};
 const pricePlanPairs: Array<[string | undefined | null, DbPlan]> = [
@@ -34,22 +36,19 @@ const pricePlanPairs: Array<[string | undefined | null, DbPlan]> = [
   [process.env.NEXT_PUBLIC_STRIPE_PRICE_PLUS, "PLUS"],
   [process.env.NEXT_PUBLIC_STRIPE_PRICE_PRO, "PRO"],
   [process.env.NEXT_PUBLIC_STRIPE_PRICE_BUSINESS, "BUSINESS"],
+  // If/when you wire a distinct Enterprise price:
   [process.env.NEXT_PUBLIC_STRIPE_PRICE_ENTERPRISE, "ENTERPRISE"],
 ];
 
 for (const [priceId, plan] of pricePlanPairs) {
-  if (typeof priceId === "string") {
-    const trimmed = priceId.trim();
-    if (trimmed) {
-      PRICE_TO_PLAN[trimmed] = plan;
-    }
+  if (priceId) {
+    PRICE_TO_PLAN[priceId] = plan;
   }
 }
 
 function mapPriceToPlan(priceId?: string | null): DbPlan | undefined {
   if (!priceId) return undefined;
-  const key = priceId.trim();
-  return PRICE_TO_PLAN[key];
+  return PRICE_TO_PLAN[priceId];
 }
 
 // Type guard: true when it's a live (non-deleted) Customer
@@ -121,49 +120,35 @@ export async function POST(req: Request) {
     switch (event.type) {
       /**
        * Fired when Checkout completes successfully.
-       * We link the user ↔ customer ↔ subscription, and now ALSO
-       * try to set the plan immediately using metadata from Checkout.
-       *
-       * create-checkout-session/route.ts is already setting:
-       *   metadata: { plan_price_id, user_email }
+       * We link the user ↔ customer ↔ subscription, and ALSO
+       * try to set the plan using metadata.plan_price_id.
        */
       case "checkout.session.completed": {
         const session = event.data.object as Stripe.Checkout.Session;
         const customerId = session.customer as string | undefined;
         const subscriptionId = session.subscription as string | undefined;
 
-        const meta = session.metadata || {};
-        const emailFromMeta = (meta.user_email as string | undefined)?.trim();
-        const priceFromMeta = (meta.plan_price_id as string | undefined)?.trim();
-        const mappedPlan = mapPriceToPlan(priceFromMeta);
+        let mappedPlan: DbPlan | undefined;
 
-        // Preferred path: update by customerId so we also capture stripeCustomerId
-        if (customerId) {
-          await upsertUserFromCustomerId(customerId, {
-            stripeSubscriptionId: subscriptionId ?? null,
-            ...(mappedPlan
-              ? { plan: mappedPlan, planStatus: "active" }
-              : {}),
-          });
-        } else if (emailFromMeta && mappedPlan) {
-          // Fallback: if for some reason customerId is missing but we have metadata,
-          // update by email directly.
-          await prisma.user
-            .update({
-              where: { email: emailFromMeta },
-              data: {
-                stripeSubscriptionId: subscriptionId ?? null,
-                plan: mappedPlan,
-                planStatus: "active",
-              },
-            })
-            .catch((err) => {
-              console.warn(
-                "⚠️ checkout.session.completed: failed email-based update",
-                err?.message
-              );
-            });
+        // We stored the priceId in Checkout metadata from the /checkout route.
+        const metaPriceId =
+          typeof session.metadata?.plan_price_id === "string"
+            ? session.metadata.plan_price_id.trim()
+            : undefined;
+
+        if (metaPriceId) {
+          mappedPlan = mapPriceToPlan(metaPriceId);
         }
+
+        // Only set plan if we can map cleanly; otherwise just link subscription.
+        await upsertUserFromCustomerId(customerId ?? "", {
+          stripeSubscriptionId: subscriptionId ?? undefined,
+          plan: mappedPlan, // may be undefined; in that case we leave existing plan alone
+          // status here is always "complete"/"paid" from Checkout POV;
+          // subscription events below will refine planStatus & period end.
+          planStatus: mappedPlan ? "active" : undefined,
+          currentPeriodEnd: undefined,
+        });
 
         break;
       }
