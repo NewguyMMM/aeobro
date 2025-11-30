@@ -1,7 +1,8 @@
 // app/api/stripe/webhook/route.ts
-// ✅ Updated: 2025-11-30 06:05 ET
-// - Use LITE instead of FREE as fallback/downgrade plan
-// - ALSO map plan on checkout.session.completed via metadata.plan_price_id
+// ✅ Updated: 2025-11-30 07:20 ET
+// - LITE is baseline fallback plan
+// - Map plan from Stripe price IDs (Lite/Plus/Pro/Business/Enterprise)
+// - Extra logging so we can debug price → plan mapping in Vercel logs
 
 import { NextResponse } from "next/server";
 import Stripe from "stripe";
@@ -11,7 +12,8 @@ import type { Plan as DbPlan } from "@prisma/client";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-// Assert as string for TypeScript, then still runtime-check.
+/* ---------------------------- Env + Stripe client --------------------------- */
+
 const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY as string;
 const WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET as string;
 
@@ -26,17 +28,14 @@ const stripe = new Stripe(STRIPE_SECRET_KEY, {
   apiVersion: "2024-06-20",
 });
 
-/**
- * Build a safe mapping: Stripe Price ID → Prisma Plan enum.
- * Only envs that are actually set get added (no empty-string keys).
- */
+/* -------------------- Price ID → Plan mapping (from env) ------------------- */
+
 const PRICE_TO_PLAN: Record<string, DbPlan> = {};
 const pricePlanPairs: Array<[string | undefined | null, DbPlan]> = [
   [process.env.NEXT_PUBLIC_STRIPE_PRICE_LITE, "LITE"],
   [process.env.NEXT_PUBLIC_STRIPE_PRICE_PLUS, "PLUS"],
   [process.env.NEXT_PUBLIC_STRIPE_PRICE_PRO, "PRO"],
   [process.env.NEXT_PUBLIC_STRIPE_PRICE_BUSINESS, "BUSINESS"],
-  // If/when you wire a distinct Enterprise price:
   [process.env.NEXT_PUBLIC_STRIPE_PRICE_ENTERPRISE, "ENTERPRISE"],
 ];
 
@@ -48,16 +47,27 @@ for (const [priceId, plan] of pricePlanPairs) {
 
 function mapPriceToPlan(priceId?: string | null): DbPlan | undefined {
   if (!priceId) return undefined;
-  return PRICE_TO_PLAN[priceId];
+  const plan = PRICE_TO_PLAN[priceId];
+  if (!plan) {
+    console.warn(
+      "[stripe webhook] Unknown priceId, cannot map to plan:",
+      priceId
+    );
+  } else {
+    console.log("[stripe webhook] Mapped priceId → plan:", priceId, "→", plan);
+  }
+  return plan;
 }
 
-// Type guard: true when it's a live (non-deleted) Customer
+/* --------------------------- Helper: live customer -------------------------- */
+
 function isLiveCustomer(
   c: Stripe.Customer | Stripe.DeletedCustomer
 ): c is Stripe.Customer {
-  // DeletedCustomer has { deleted: true }; Customer has no 'deleted' key
   return !("deleted" in (c as any) && (c as any).deleted === true);
 }
+
+/* ------------------------- Helper: upsert user record ---------------------- */
 
 async function upsertUserFromCustomerId(
   customerId: string,
@@ -70,39 +80,64 @@ async function upsertUserFromCustomerId(
 ) {
   if (!customerId) return null;
 
-  // 1) Try by customerId
+  // 1) Try by stripeCustomerId
   const byCustomer = await prisma.user.findFirst({
     where: { stripeCustomerId: customerId },
-    select: { id: true },
+    select: { id: true, email: true },
   });
   if (byCustomer) {
-    return prisma.user.update({ where: { id: byCustomer.id }, data: fields });
+    console.log(
+      "[stripe webhook] Updating user by stripeCustomerId:",
+      customerId,
+      "fields:",
+      fields
+    );
+    return prisma.user.update({
+      where: { id: byCustomer.id },
+      data: fields,
+    });
   }
 
-  // 2) Fallback: fetch customer and try by email
-  const retrieved = await stripe.customers.retrieve(customerId);
-  const cust = retrieved as Stripe.Customer | Stripe.DeletedCustomer;
+  // 2) Fallback: retrieve from Stripe and match by email
+  const retrieved = (await stripe.customers.retrieve(
+    customerId
+  )) as Stripe.Customer | Stripe.DeletedCustomer;
 
-  if (isLiveCustomer(cust) && cust.email) {
+  if (isLiveCustomer(retrieved) && retrieved.email) {
     const byEmail = await prisma.user.findUnique({
-      where: { email: cust.email },
-      select: { id: true },
+      where: { email: retrieved.email },
+      select: { id: true, email: true },
     });
     if (byEmail) {
+      console.log(
+        "[stripe webhook] Updating user by email from Stripe customer:",
+        retrieved.email,
+        "fields:",
+        fields
+      );
       return prisma.user.update({
         where: { id: byEmail.id },
-        data: { stripeCustomerId: customerId, ...fields },
+        data: {
+          stripeCustomerId: customerId,
+          ...fields,
+        },
       });
     }
   }
 
+  console.warn(
+    "[stripe webhook] No matching user for customerId, skipping update:",
+    customerId
+  );
   return null;
 }
+
+/* --------------------------------- Handler --------------------------------- */
 
 export async function POST(req: Request) {
   let event: Stripe.Event;
 
-  // Verify signature
+  // Verify signature first
   try {
     const signature = req.headers.get("stripe-signature");
     if (!signature) {
@@ -116,13 +151,11 @@ export async function POST(req: Request) {
     return new NextResponse("Invalid signature", { status: 400 });
   }
 
+  console.log("[stripe webhook] Received event:", event.type);
+
   try {
     switch (event.type) {
-      /**
-       * Fired when Checkout completes successfully.
-       * We link the user ↔ customer ↔ subscription, and ALSO
-       * try to set the plan using metadata.plan_price_id.
-       */
+      /* -------------------- checkout.session.completed -------------------- */
       case "checkout.session.completed": {
         const session = event.data.object as Stripe.Checkout.Session;
         const customerId = session.customer as string | undefined;
@@ -130,22 +163,27 @@ export async function POST(req: Request) {
 
         let mappedPlan: DbPlan | undefined;
 
-        // We stored the priceId in Checkout metadata from the /checkout route.
+        // We store price id in metadata.plan_price_id from the /checkout endpoint.
         const metaPriceId =
           typeof session.metadata?.plan_price_id === "string"
             ? session.metadata.plan_price_id.trim()
             : undefined;
 
         if (metaPriceId) {
+          console.log(
+            "[stripe webhook] checkout.session.completed metadata.plan_price_id:",
+            metaPriceId
+          );
           mappedPlan = mapPriceToPlan(metaPriceId);
+        } else {
+          console.warn(
+            "[stripe webhook] checkout.session.completed has NO metadata.plan_price_id"
+          );
         }
 
-        // Only set plan if we can map cleanly; otherwise just link subscription.
         await upsertUserFromCustomerId(customerId ?? "", {
           stripeSubscriptionId: subscriptionId ?? undefined,
-          plan: mappedPlan, // may be undefined; in that case we leave existing plan alone
-          // status here is always "complete"/"paid" from Checkout POV;
-          // subscription events below will refine planStatus & period end.
+          plan: mappedPlan, // if undefined, leave existing plan as-is
           planStatus: mappedPlan ? "active" : undefined,
           currentPeriodEnd: undefined,
         });
@@ -153,10 +191,7 @@ export async function POST(req: Request) {
         break;
       }
 
-      /**
-       * Main driver for plan + status.
-       * Handles new subscriptions and changes (upgrades/downgrades, renewals, etc.)
-       */
+      /* --------------- customer.subscription.created/updated --------------- */
       case "customer.subscription.created":
       case "customer.subscription.updated": {
         const sub = event.data.object as Stripe.Subscription;
@@ -166,16 +201,26 @@ export async function POST(req: Request) {
           priceId = sub.items.data[0].price?.id ?? undefined;
         }
 
+        console.log(
+          "[stripe webhook] subscription event:",
+          event.type,
+          "sub.id:",
+          sub.id,
+          "status:",
+          sub.status,
+          "priceId:",
+          priceId
+        );
+
         const mappedPlan = mapPriceToPlan(priceId);
 
         const activeStatuses = ["trialing", "active", "past_due"] as const;
         const isActive = activeStatuses.includes(sub.status as any);
 
-        // If we know the plan AND it's in an active-ish status, use it.
-        // Otherwise fall back to LITE (baseline plan).
+        // If we can map the price and the sub is active-ish, use that plan.
+        // Otherwise fall back to LITE as the baseline.
         const plan: DbPlan = mappedPlan && isActive ? mappedPlan : "LITE";
 
-        // ✅ SAFELY derive currentPeriodEnd (may be missing on some events)
         let currentPeriodEnd: Date | null = null;
         if (sub.current_period_end) {
           currentPeriodEnd = new Date(sub.current_period_end * 1000);
@@ -190,10 +235,7 @@ export async function POST(req: Request) {
         break;
       }
 
-      /**
-       * Safety net: whenever an invoice is paid, make sure subscription + plan
-       * are set correctly (especially first invoice from Checkout).
-       */
+      /* ----------------------- invoice.payment_succeeded ------------------- */
       case "invoice.payment_succeeded": {
         const invoice = event.data.object as Stripe.Invoice;
         const customerId = invoice.customer as string | null;
@@ -204,6 +246,13 @@ export async function POST(req: Request) {
         if (firstLine) {
           priceId = firstLine.price?.id ?? undefined;
         }
+
+        console.log(
+          "[stripe webhook] invoice.payment_succeeded invoice.id:",
+          invoice.id,
+          "priceId:",
+          priceId
+        );
 
         const mappedPlan = mapPriceToPlan(priceId);
 
@@ -219,7 +268,7 @@ export async function POST(req: Request) {
 
         await upsertUserFromCustomerId(customerId, {
           stripeSubscriptionId: subscriptionId ?? undefined,
-          // Only set if we can map cleanly; otherwise leave existing plan alone.
+          // Only set plan if we can map from price ID.
           plan: mappedPlan ?? undefined,
           planStatus: "active",
           currentPeriodEnd,
@@ -228,12 +277,13 @@ export async function POST(req: Request) {
         break;
       }
 
-      /**
-       * Fired when a subscription is canceled or ends.
-       * We downgrade to LITE and clear subscription linkage.
-       */
+      /* ----------------------- customer.subscription.deleted -------------- */
       case "customer.subscription.deleted": {
         const sub = event.data.object as Stripe.Subscription;
+        console.log(
+          "[stripe webhook] subscription deleted, downgrading to LITE. sub.id:",
+          sub.id
+        );
         await upsertUserFromCustomerId(sub.customer as string, {
           stripeSubscriptionId: null,
           plan: "LITE",
@@ -243,9 +293,11 @@ export async function POST(req: Request) {
         break;
       }
 
-      default:
-        // ignore other events
+      default: {
+        // We ignore other events, but log them once in case we need them later.
+        console.log("[stripe webhook] Ignoring event type:", event.type);
         break;
+      }
     }
 
     return NextResponse.json({ received: true });
