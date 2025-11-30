@@ -1,5 +1,6 @@
 // app/api/stripe/webhook/route.ts
-// ✅ Updated: 2025-11-29 05:30 ET – use LITE instead of FREE as fallback/downgrade plan
+// ✅ Updated: 2025-11-30 05:52 ET – trim price IDs + set plan on checkout.session.completed
+
 import { NextResponse } from "next/server";
 import Stripe from "stripe";
 import { prisma } from "@/lib/prisma";
@@ -25,7 +26,7 @@ const stripe = new Stripe(STRIPE_SECRET_KEY, {
 
 /**
  * Build a safe mapping: Stripe Price ID → Prisma Plan enum.
- * Only envs that are actually set get added (no empty-string keys).
+ * We TRIM env values so stray spaces don’t break equality.
  */
 const PRICE_TO_PLAN: Record<string, DbPlan> = {};
 const pricePlanPairs: Array<[string | undefined | null, DbPlan]> = [
@@ -33,19 +34,22 @@ const pricePlanPairs: Array<[string | undefined | null, DbPlan]> = [
   [process.env.NEXT_PUBLIC_STRIPE_PRICE_PLUS, "PLUS"],
   [process.env.NEXT_PUBLIC_STRIPE_PRICE_PRO, "PRO"],
   [process.env.NEXT_PUBLIC_STRIPE_PRICE_BUSINESS, "BUSINESS"],
-  // If/when you wire a distinct Enterprise price:
   [process.env.NEXT_PUBLIC_STRIPE_PRICE_ENTERPRISE, "ENTERPRISE"],
 ];
 
 for (const [priceId, plan] of pricePlanPairs) {
-  if (priceId) {
-    PRICE_TO_PLAN[priceId] = plan;
+  if (typeof priceId === "string") {
+    const trimmed = priceId.trim();
+    if (trimmed) {
+      PRICE_TO_PLAN[trimmed] = plan;
+    }
   }
 }
 
 function mapPriceToPlan(priceId?: string | null): DbPlan | undefined {
   if (!priceId) return undefined;
-  return PRICE_TO_PLAN[priceId];
+  const key = priceId.trim();
+  return PRICE_TO_PLAN[key];
 }
 
 // Type guard: true when it's a live (non-deleted) Customer
@@ -117,19 +121,50 @@ export async function POST(req: Request) {
     switch (event.type) {
       /**
        * Fired when Checkout completes successfully.
-       * We link the user ↔ customer ↔ subscription, but plan status is driven
-       * by the subscription + invoice events below.
+       * We link the user ↔ customer ↔ subscription, and now ALSO
+       * try to set the plan immediately using metadata from Checkout.
+       *
+       * create-checkout-session/route.ts is already setting:
+       *   metadata: { plan_price_id, user_email }
        */
       case "checkout.session.completed": {
         const session = event.data.object as Stripe.Checkout.Session;
         const customerId = session.customer as string | undefined;
         const subscriptionId = session.subscription as string | undefined;
 
-        if (customerId && subscriptionId) {
+        const meta = session.metadata || {};
+        const emailFromMeta = (meta.user_email as string | undefined)?.trim();
+        const priceFromMeta = (meta.plan_price_id as string | undefined)?.trim();
+        const mappedPlan = mapPriceToPlan(priceFromMeta);
+
+        // Preferred path: update by customerId so we also capture stripeCustomerId
+        if (customerId) {
           await upsertUserFromCustomerId(customerId, {
-            stripeSubscriptionId: subscriptionId,
+            stripeSubscriptionId: subscriptionId ?? null,
+            ...(mappedPlan
+              ? { plan: mappedPlan, planStatus: "active" }
+              : {}),
           });
+        } else if (emailFromMeta && mappedPlan) {
+          // Fallback: if for some reason customerId is missing but we have metadata,
+          // update by email directly.
+          await prisma.user
+            .update({
+              where: { email: emailFromMeta },
+              data: {
+                stripeSubscriptionId: subscriptionId ?? null,
+                plan: mappedPlan,
+                planStatus: "active",
+              },
+            })
+            .catch((err) => {
+              console.warn(
+                "⚠️ checkout.session.completed: failed email-based update",
+                err?.message
+              );
+            });
         }
+
         break;
       }
 
