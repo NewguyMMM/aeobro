@@ -1,5 +1,5 @@
 // app/settings/page.tsx
-// 📅 Updated: 2025-11-30 13:08 ET – New Settings page (account, plan, billing, profile shortcuts)
+// 📅 Updated: 2025-11-30 13:18 ET – New Settings page (account, plan, billing, profile shortcuts)
 
 import { redirect } from "next/navigation";
 import { getServerSession } from "next-auth";
@@ -34,22 +34,15 @@ function normalizePlanForUi(raw?: string | null): string {
   }
 }
 
-function formatStatusLabel(status?: string | null, endsAt?: Date | null) {
+function formatStatusLabel(status?: string | null) {
   const v = (status ?? "").toUpperCase();
-
-  if (v === "CANCELED" && endsAt) {
-    return `Canceled · access until ${endsAt.toLocaleDateString("en-US", {
-      month: "short",
-      day: "numeric",
-      year: "numeric",
-    })}`;
-  }
 
   if (v === "TRIALING") return "Trialing";
   if (v === "PAST_DUE") return "Past due";
   if (v === "INCOMPLETE" || v === "INCOMPLETE_EXPIRED")
     return "Payment incomplete";
   if (v === "UNPAID") return "Unpaid";
+  if (v === "CANCELED") return "Canceled";
   if (v === "ACTIVE" || !v) return "Active";
 
   return v.charAt(0) + v.slice(1).toLowerCase();
@@ -71,12 +64,13 @@ export default async function SettingsPage() {
       email: true,
       plan: true,
       planStatus: true,
-      planEndsAt: true, // if your schema uses a different field, adjust this name
+      // If later you add an end-date field (e.g. subscriptionEndsAt),
+      // you can include it here and enhance formatStatusLabel.
     },
   });
 
   const uiPlan = normalizePlanForUi(user?.plan);
-  const statusLabel = formatStatusLabel(user?.planStatus, user?.planEndsAt ?? null);
+  const statusLabel = formatStatusLabel(user?.planStatus);
 
   return (
     <section className="container py-12">
