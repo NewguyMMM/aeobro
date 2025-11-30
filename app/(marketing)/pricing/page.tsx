@@ -2,6 +2,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, useCallback } from "react";
+import ManageBillingButton from "@/components/stripe/ManageBillingButton";
 
 // ✅ Belt-and-suspenders: if env is missing, still use the known Plus price ID
 const PLUS_PRICE_ID =
@@ -19,6 +20,39 @@ type PlanTitle = "Lite" | "Plus" | "Pro" | "Business";
 
 function cx(...parts: Array<string | false | null | undefined>) {
   return parts.filter(Boolean).join(" ");
+}
+
+/* ------------------------ Plan helpers ------------------------ */
+
+function normalizePlanForUi(raw?: string | null): PlanTitle {
+  const v = (raw ?? "").toString().toUpperCase();
+  switch (v) {
+    case "PLUS":
+      return "Plus";
+    case "PRO":
+      return "Pro";
+    case "BUSINESS":
+      return "Business";
+    // Treat FREE, LITE, and unknown as Lite
+    case "LITE":
+    case "FREE":
+    default:
+      return "Lite";
+  }
+}
+
+function formatStatusLabel(status?: string | null) {
+  const v = (status ?? "").toUpperCase();
+
+  if (v === "TRIALING") return "Trialing";
+  if (v === "PAST_DUE") return "Past due";
+  if (v === "INCOMPLETE" || v === "INCOMPLETE_EXPIRED")
+    return "Payment incomplete";
+  if (v === "UNPAID") return "Unpaid";
+  if (v === "CANCELED") return "Canceled";
+  if (v === "ACTIVE" || !v) return "Active";
+
+  return v.charAt(0) + v.slice(1).toLowerCase();
 }
 
 /* ------------------------ UI helpers ------------------------ */
@@ -90,6 +124,44 @@ function FeatureLine({
 export default function PricingPage() {
   const [loading, setLoading] = useState<PlanTitle | null>(null);
   const [err, setErr] = useState<string | null>(null);
+
+  // Current user plan (for logged-in users)
+  const [currentPlan, setCurrentPlan] = useState<PlanTitle | null>(null);
+  const [planStatus, setPlanStatus] = useState<string | null>(null);
+  const [planLoading, setPlanLoading] = useState(true);
+
+  // Fetch plan for logged-in users
+  useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const res = await fetch("/api/account", { cache: "no-store" });
+        if (!res.ok) {
+          // 401 when logged out, or other errors – silently ignore
+          return;
+        }
+        const data = await res.json();
+        const rawPlan = data?.plan as string | undefined;
+        const rawStatus = data?.planStatus as string | undefined;
+
+        if (!cancelled && rawPlan) {
+          setCurrentPlan(normalizePlanForUi(rawPlan));
+        }
+        if (!cancelled && rawStatus) {
+          setPlanStatus(rawStatus);
+        }
+      } catch {
+        // ignore; pricing still works fine without this
+      } finally {
+        if (!cancelled) setPlanLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Auto-resume checkout after sign-in if URL has ?start=<priceId>&plan=<PlanTitle>
   useEffect(() => {
@@ -308,6 +380,26 @@ export default function PricingPage() {
 
   return (
     <div className="container pt-24 pb-16">
+      {/* Current plan & Manage subscription bar (logged-in users only) */}
+      {!planLoading && currentPlan && (
+        <section className="mb-6 rounded-2xl border border-sky-100 bg-sky-50 px-4 py-3 flex flex-col gap-2 md:flex-row md:items-center md:justify-between md:gap-4">
+          <div>
+            <p className="text-sm text-sky-900">
+              You&apos;re currently on the{" "}
+              <span className="font-semibold">{currentPlan}</span> plan.
+            </p>
+            {planStatus && (
+              <p className="mt-0.5 text-xs text-sky-800/80">
+                Status: {formatStatusLabel(planStatus)}
+              </p>
+            )}
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <ManageBillingButton />
+          </div>
+        </section>
+      )}
+
       {err && (
         <div className="mb-6 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
           {err}
