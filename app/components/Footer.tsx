@@ -11,8 +11,8 @@ export default function Footer() {
         <div>
           <p className="mb-1">&copy; {year} AEOBRO</p>
           <p className="text-xs text-gray-500">
-            AEOBRO is not affiliated with OpenAI, Google, or Perplexity. Names are used
-            for identification only.
+            AEOBRO is not affiliated with OpenAI, Google, or Perplexity. Names
+            are used for identification only.
           </p>
         </div>
 
@@ -29,8 +29,9 @@ export default function Footer() {
           <Link href="/disputes" className="hover:text-gray-800">
             Disputes
           </Link>
-          <Link href="/cancel" className="hover:text-gray-800">
-            Cancel subscription
+          {/* 🔁 updated: /cancel → /billing & label */}
+          <Link href="/billing" className="hover:text-gray-800">
+            Manage subscription
           </Link>
         </nav>
       </div>
