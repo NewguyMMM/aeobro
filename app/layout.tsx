@@ -14,7 +14,11 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           <ToastProvider>
             <header className="border-b">
               <div className="container flex items-center justify-between py-4">
-                <a href="/" className="font-bold text-xl" aria-label="AEOBRO home">
+                <a
+                  href="/"
+                  className="font-bold text-xl"
+                  aria-label="AEOBRO home"
+                >
                   AEO<span className="text-sky-500">BRO</span>
                 </a>
 
@@ -34,7 +38,10 @@ export default function RootLayout({ children }: { children: ReactNode }) {
                   >
                     FAQ
                   </a>
-                  <a className="btn transition-colors duration-200" href="/audit">
+                  <a
+                    className="btn transition-colors duration-200"
+                    href="/audit"
+                  >
                     Check AI Visibility
                   </a>
                   <AuthButton />
@@ -51,7 +58,8 @@ export default function RootLayout({ children }: { children: ReactNode }) {
                 <a href="/terms">Terms</a>
                 <a href="/aup">AUP</a>
                 <a href="/disputes">Disputes</a>
-                <a href="/cancel">Cancel subscription</a>
+                {/* 🔁 updated: /cancel → /billing & label */}
+                <a href="/billing">Manage subscription</a>
               </div>
             </footer>
           </ToastProvider>
