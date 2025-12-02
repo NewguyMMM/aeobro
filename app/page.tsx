@@ -38,28 +38,28 @@ export default async function Home() {
     <main className="container pt-16 md:pt-20 pb-16">
       <section className="grid grid-cols-1 md:grid-cols-2 gap-10 items-start">
         <div>
-          <h1 className="text-5xl font-extrabold tracking-tight mb-4">
+          <h1 className="text-5xl md:text-6xl font-extrabold tracking-tight mb-3">
             Help <span className="text-sky-500">AI</span> find you.
           </h1>
 
-          {/* NEW AI IDENTITY LAYER TAGLINE */}
-          <p className="mt-2 max-w-2xl text-lg leading-snug text-gray-700 font-medium">
-            AEOBRO is the creator of the AI Identity Layer™ and the leader in AI Identity™
-            for brands and businesses.
+          {/* AI IDENTITY LAYER TAGLINE */}
+          <p className="mt-1 max-w-2xl text-lg leading-snug text-gray-700 font-medium">
+            AEOBRO is the creator of the AI Identity Layer™ and the leader in AI
+            Identity™ for brands and businesses.
           </p>
 
-          {/* ORIGINAL PARAGRAPHS — NOW SMALLER (text-base) */}
-          <p className="mt-4 text-gray-700 max-w-xl mb-2 text-base">
+          {/* SUPPORTING COPY */}
+          <p className="mt-4 max-w-2xl text-base leading-relaxed text-gray-700">
             Your brand&rsquo;s information is out there.
           </p>
 
-          <p className="text-gray-700 max-w-xl mb-2 text-base">
+          <p className="mt-2 max-w-2xl text-base leading-relaxed text-gray-700">
             AEOBRO organizes and optimizes your brand&rsquo;s information so
             it&rsquo;s picked up and displayed by AI systems like ChatGPT,
             Gemini, and Perplexity.
           </p>
 
-          <p className="text-gray-700 max-w-xl mb-6 text-base">
+          <p className="mt-2 max-w-2xl text-base leading-relaxed text-gray-700 mb-6">
             Verified{" "}
             <span
               className="relative inline-block group align-baseline"
