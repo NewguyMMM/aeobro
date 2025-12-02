@@ -1,5 +1,5 @@
 // components/ProfileEditor.tsx
-// 📅 Updated: 2025-11-30 12:45 ET – gate Updates by plan & add Billing card
+// 📅 Updated: 2025-12-01 06:20 ET – move Billing card under Verify
 "use client";
 
 import * as React from "react";
@@ -702,24 +702,6 @@ export default function ProfileEditor({
         </div>
       </div>
 
-      {/* Billing / subscription helper */}
-      <div className="rounded-xl border bg-neutral-50 px-4 py-3 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-        <div>
-          <h2 className="text-sm font-semibold text-neutral-900">
-            Manage your subscription
-          </h2>
-          <p className="mt-1 text-xs text-neutral-600 max-w-md">
-            Need to change plans, update your card, or cancel? Use the button to
-            open the secure Stripe Billing Portal. Your subscription stays
-            active until the end of your current billing period.
-          </p>
-        </div>
-        <ManageBillingButton
-          label="Open billing portal"
-          className="text-xs md:text-sm px-4 py-2"
-        />
-      </div>
-
       {/* Identity */}
       <section className="grid gap-4">
         <h3 className="text-lg font-semibold">Identity</h3>
@@ -878,7 +860,7 @@ export default function ProfileEditor({
             <div className="rounded-md border border-dashed bg-gray-50 p-3 text-sm text-gray-600">
               Latest Updates are available on{" "}
               <span className="font-medium">Plus</span> and{" "}
-                <span className="font-medium">Pro</span> plans. Upgrade to keep
+              <span className="font-medium">Pro</span> plans. Upgrade to keep
               AI tools in sync with your newest offers and announcements.
               <div className="mt-3">
                 <a
@@ -1781,13 +1763,33 @@ export default function ProfileEditor({
         </div>
       )}
 
-      {/* ---- SINGLE VERIFY SECTION (always at bottom) ---- */}
+      {/* ---- SINGLE VERIFY SECTION (always near bottom) ---- */}
       <section id="verify" className="scroll-mt-24">
         <VerificationCard
           profileId={profileId ?? undefined}
           initialDomain={website ?? ""}
           initialStatus={verificationStatus as any}
         />
+      </section>
+
+      {/* Billing / subscription helper – moved under Verify */}
+      <section className="mt-6">
+        <div className="rounded-xl border bg-neutral-50 px-4 py-3 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+          <div>
+            <h2 className="text-sm font-semibold text-neutral-900">
+              Manage your subscription
+            </h2>
+            <p className="mt-1 text-xs text-neutral-600 max-w-md">
+              Need to change plans, update your card, or cancel? Use the button
+              to open the secure Stripe Billing Portal. Your subscription stays
+              active until the end of your current billing period.
+            </p>
+          </div>
+          <ManageBillingButton
+            label="Open billing portal"
+            className="text-xs md:text-sm px-4 py-2"
+          />
+        </div>
       </section>
     </div>
   );
