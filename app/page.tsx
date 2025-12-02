@@ -42,25 +42,25 @@ export default async function Home() {
             Help <span className="text-sky-500">AI</span> find you.
           </h1>
 
-          {/* NEW: AI Identity Layer tagline */}
+          {/* NEW AI IDENTITY LAYER TAGLINE */}
           <p className="mt-2 max-w-2xl text-lg leading-snug text-gray-700 font-medium">
             AEOBRO is the creator of the AI Identity Layer™ and the leader in AI Identity™
             for brands and businesses.
           </p>
 
-          <p className="mt-4 text-gray-700 max-w-xl mb-2 text-xl">
+          {/* ORIGINAL PARAGRAPHS — NOW SMALLER (text-base) */}
+          <p className="mt-4 text-gray-700 max-w-xl mb-2 text-base">
             Your brand&rsquo;s information is out there.
           </p>
 
-          <p className="text-gray-700 max-w-xl mb-2 text-xl">
+          <p className="text-gray-700 max-w-xl mb-2 text-base">
             AEOBRO organizes and optimizes your brand&rsquo;s information so
             it&rsquo;s picked up and displayed by AI systems like ChatGPT,
             Gemini, and Perplexity.
           </p>
 
-          <p className="text-gray-700 max-w-xl mb-6 text-xl">
+          <p className="text-gray-700 max-w-xl mb-6 text-base">
             Verified{" "}
-            {/* BEGIN: Fixed tooltip (removed native title attr) */}
             <span
               className="relative inline-block group align-baseline"
               tabIndex={0}
@@ -83,13 +83,13 @@ export default async function Home() {
                 knowledge machines use.
                 <span className="block mt-2 italic">See FAQ for more.</span>
               </span>
-            </span>
-            {/* END: Fixed tooltip */}{" "}
+            </span>{" "}
             profiles — structured data that machines can trust — keeping your
             presence accurate, current, and AI-ready. No technical skills
             required.
           </p>
 
+          {/* CTA BUTTONS */}
           <div className="flex flex-wrap gap-3">
             <a
               href="/dashboard"
