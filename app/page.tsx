@@ -42,17 +42,23 @@ export default async function Home() {
             Help <span className="text-sky-500">AI</span> find you.
           </h1>
 
-          <p className="text-gray-700 max-w-xl mb-2">
+          {/* NEW: AI Identity Layer tagline */}
+          <p className="mt-2 max-w-2xl text-lg leading-snug text-gray-700 font-medium">
+            AEOBRO is the creator of the AI Identity Layer™ and the leader in AI Identity™
+            for brands and businesses.
+          </p>
+
+          <p className="mt-4 text-gray-700 max-w-xl mb-2 text-xl">
             Your brand&rsquo;s information is out there.
           </p>
 
-          <p className="text-gray-700 max-w-xl mb-2">
+          <p className="text-gray-700 max-w-xl mb-2 text-xl">
             AEOBRO organizes and optimizes your brand&rsquo;s information so
             it&rsquo;s picked up and displayed by AI systems like ChatGPT,
             Gemini, and Perplexity.
           </p>
 
-          <p className="text-gray-700 max-w-xl mb-6">
+          <p className="text-gray-700 max-w-xl mb-6 text-xl">
             Verified{" "}
             {/* BEGIN: Fixed tooltip (removed native title attr) */}
             <span
@@ -68,7 +74,9 @@ export default async function Home() {
                 role="tooltip"
                 className="absolute z-10 left-1/2 -translate-x-1/2 mt-2 w-80 max-w-xs rounded-xl border bg-white p-3 text-gray-700 text-sm shadow-xl opacity-0 pointer-events-none transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100"
               >
-                <strong>JSON-LD (JavaScript Object Notation for Linked Data)</strong>{" "}
+                <strong>
+                  JSON-LD (JavaScript Object Notation for Linked Data)
+                </strong>{" "}
                 is a format that organizes your business information so AI
                 systems and search engines can understand it. It’s like a
                 digital language that connects your brand to the web of
@@ -76,8 +84,7 @@ export default async function Home() {
                 <span className="block mt-2 italic">See FAQ for more.</span>
               </span>
             </span>
-            {/* END: Fixed tooltip */}
-            {" "}
+            {/* END: Fixed tooltip */}{" "}
             profiles — structured data that machines can trust — keeping your
             presence accurate, current, and AI-ready. No technical skills
             required.
