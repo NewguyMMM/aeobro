@@ -73,6 +73,23 @@ export async function POST(req: Request) {
     },
   });
 
+  // 🔥 NEW: propagate DNS verification to the Profile
+  // We treat successful DNS (dnsVerified === true) as sufficient to mark the
+  // profile as DOMAIN_VERIFIED, regardless of whether email is also verified.
+  if (dnsVerified) {
+    const now = new Date();
+    await prisma.profile.updateMany({
+      where: { userId },
+      data: {
+        verificationStatus: "DOMAIN_VERIFIED",
+        domainVerifiedAt: now,
+        verifyMethod: "DNS",
+        verifyDomain: claim.domain,
+        verifyCheckedAt: now,
+      },
+    });
+  }
+
   return NextResponse.json({
     status: updated.status,
     dnsVerified,
