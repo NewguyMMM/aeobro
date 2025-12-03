@@ -42,13 +42,11 @@ export default async function Home() {
             Help <span className="text-sky-500">AI</span> find you.
           </h1>
 
-          {/* AI IDENTITY LAYER TAGLINE */}
           <p className="mt-1 max-w-2xl text-lg leading-snug text-gray-700 font-medium">
             AEOBRO is the creator of the AI Identity Layer™ and the leader in AI
             Identity™ for brands and businesses.
           </p>
 
-          {/* SUPPORTING COPY */}
           <p className="mt-4 max-w-2xl text-base leading-relaxed text-gray-700">
             Your brand&rsquo;s information is out there.
           </p>
@@ -59,7 +57,7 @@ export default async function Home() {
             Gemini, and Perplexity.
           </p>
 
-          <p className="mt-2 max-w-2xl text-base leading-relaxed text-gray-700 mb-6">
+          <p className="mt-2 max-w-2xl text-base leading-relaxed text-gray-700">
             Verified{" "}
             <span
               className="relative inline-block group align-baseline"
@@ -89,7 +87,11 @@ export default async function Home() {
             required.
           </p>
 
-          {/* CTA BUTTONS */}
+          {/* FINAL CTA SENTENCE */}
+          <p className="text-lg font-semibold text-gray-900 max-w-2xl mt-2 mb-6">
+            Your AI Identity Layer starts here — create your AI Ready Profile now.
+          </p>
+
           <div className="flex flex-wrap gap-3">
             <a
               href="/dashboard"
