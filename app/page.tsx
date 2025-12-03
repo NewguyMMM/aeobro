@@ -29,6 +29,10 @@ export default async function Home() {
     ? "Edit Your AI Ready Profile"
     : "Create Your AI Ready Profile";
 
+  const ctaSentence = hasProfile
+    ? "Your AI Identity Layer lives here."
+    : "Your AI Identity Layer starts here — create your AI Ready Profile now.";
+
   const VIDEO_SRC =
     process.env.NEXT_PUBLIC_HERO_VIDEO_SRC ?? "/aeobro-hero-vid1.mp4";
   const VIDEO_POSTER = process.env.NEXT_PUBLIC_HERO_VIDEO_POSTER ?? "";
@@ -87,9 +91,9 @@ export default async function Home() {
             required.
           </p>
 
-          {/* FINAL CTA SENTENCE */}
+          {/* CONDITIONAL CTA SENTENCE */}
           <p className="text-lg font-semibold text-gray-900 max-w-2xl mt-2 mb-6">
-            Your AI Identity Layer starts here — create your AI Ready Profile now.
+            {ctaSentence}
           </p>
 
           <div className="flex flex-wrap gap-3">
