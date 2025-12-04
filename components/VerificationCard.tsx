@@ -1,6 +1,6 @@
 // components/VerificationCard.tsx
 // AEOBRO — Domain + Platform Verification Card (DNS • Code-in-Bio • OAuth Connect)
-// ✅ Updated: 2025-12-03 22:04 ET — Remove YouTube from Code-in-Bio; add tooltip to direct YouTube → OAuth; clarify copy.
+// ✅ Updated: 2025-12-03 23:52 ET — Add explanatory note under "Linked accounts" about disconnecting + verification.
 
 "use client";
 
@@ -71,7 +71,9 @@ export default function VerificationCard({
   const [loading, setLoading] = React.useState(false);
   const [message, setMessage] = React.useState<string>("");
 
-  const [domainInput, setDomainInput] = React.useState<string>(initialDomain || "");
+  const [domainInput, setDomainInput] = React.useState<string>(
+    initialDomain || ""
+  );
   const [normalizedDomain, setNormalizedDomain] = React.useState<string>("");
 
   const [status, setStatus] = React.useState<VerificationStatus>(
@@ -85,7 +87,9 @@ export default function VerificationCard({
   const [dnsRecordValue, setDnsRecordValue] = React.useState<string>("");
 
   // OAuth-linked accounts state
-  const [accounts, setAccounts] = React.useState<PlatformAccount[] | null>(null);
+  const [accounts, setAccounts] = React.useState<PlatformAccount[] | null>(
+    null
+  );
   const [accountsMsg, setAccountsMsg] = React.useState<string>("");
 
   React.useEffect(() => {
@@ -176,7 +180,9 @@ export default function VerificationCard({
         setDnsRecordValue(preferredValue(j.token));
         updateStatus(j?.status || "PENDING");
         setMode("dns");
-        setMessage("TXT record generated. Publish it at your DNS, then click “Check record now”.");
+        setMessage(
+          "TXT record generated. Publish it at your DNS, then click “Check record now”."
+        );
         return;
       }
 
@@ -186,7 +192,9 @@ export default function VerificationCard({
         setDnsRecordValue(j.recordValue || preferredValue());
         updateStatus(j?.status || "PENDING");
         setMode("dns");
-        setMessage("TXT record generated (legacy). Publish it, then click “Check record now”.");
+        setMessage(
+          "TXT record generated (legacy). Publish it, then click “Check record now”."
+        );
         return;
       }
 
@@ -299,13 +307,18 @@ export default function VerificationCard({
   const profileMissing = !profileId;
 
   return (
-    <div className={`w-full max-w-2xl rounded-2xl border bg-white p-5 shadow-sm ${className || ""}`}>
+    <div
+      className={`w-full max-w-2xl rounded-2xl border bg-white p-5 shadow-sm ${
+        className || ""
+      }`}
+    >
       <div className="mb-3 flex items-start justify-between gap-3">
         <div>
           <div className="text-base font-semibold">Verify</div>
           <p className="text-sm text-neutral-600">
-            You have 3 options to verify your profile: 1) DNS TXT, 2) Code-in-Bio, and 3) OAuth. We prefer DNS TXT, and
-            you should use this option if your brand has a domain.
+            You have 3 options to verify your profile: 1) DNS TXT, 2)
+            Code-in-Bio, and 3) OAuth. We prefer DNS TXT, and you should use
+            this option if your brand has a domain.
           </p>
         </div>
         <StatusBadge status={status} />
@@ -313,8 +326,9 @@ export default function VerificationCard({
 
       {profileMissing && (
         <div className="mb-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
-          Save your profile to obtain a <span className="font-semibold">profileId</span>. Verification actions are
-          disabled until then.
+          Save your profile to obtain a{" "}
+          <span className="font-semibold">profileId</span>. Verification actions
+          are disabled until then.
         </div>
       )}
 
@@ -324,8 +338,9 @@ export default function VerificationCard({
           Option 1 for Verification — DNS TXT (preferred)
         </div>
         <p className="mb-3 text-xs text-neutral-600">
-          Use this if you (or your team) can add a TXT record at your domain&apos;s DNS provider. This is the strongest
-          way to prove you control your brand&apos;s website.
+          Use this if you (or your team) can add a TXT record at your domain&apos;s
+          DNS provider. This is the strongest way to prove you control your
+          brand&apos;s website.
         </p>
 
         {/* Domain input */}
@@ -378,36 +393,50 @@ export default function VerificationCard({
             </p>
 
             <div className="grid grid-cols-1 items-center gap-3 text-sm md:grid-cols-12">
-              <div className="text-xs uppercase tracking-wide text-neutral-500 md:col-span-2">Host</div>
+              <div className="text-xs uppercase tracking-wide text-neutral-500 md:col-span-2">
+                Host
+              </div>
               <div className="font-mono break-all md:col-span-9">
                 {dnsRecordHost || preferredHost(normalizedDomain)}
               </div>
               <div className="md:col-span-1">
                 <button
                   type="button"
-                  onClick={() => copy(dnsRecordHost || preferredHost(normalizedDomain))}
+                  onClick={() =>
+                    copy(dnsRecordHost || preferredHost(normalizedDomain))
+                  }
                   className="text-sm underline"
                 >
                   Copy
                 </button>
               </div>
 
-              <div className="text-xs uppercase tracking-wide text-neutral-500 md:col-span-2">Type</div>
+              <div className="text-xs uppercase tracking-wide text-neutral-500 md:col-span-2">
+                Type
+              </div>
               <div className="font-mono md:col-span-9">{dnsRecordType}</div>
               <div className="md:col-span-1">
-                <button type="button" onClick={() => copy("TXT")} className="text-sm underline">
+                <button
+                  type="button"
+                  onClick={() => copy("TXT")}
+                  className="text-sm underline"
+                >
                   Copy
                 </button>
               </div>
 
-              <div className="text-xs uppercase tracking-wide text-neutral-500 md:col-span-2">Value</div>
+              <div className="text-xs uppercase tracking-wide text-neutral-500 md:col-span-2">
+                Value
+              </div>
               <div className="font-mono break-all md:col-span-9">
                 {dnsRecordValue || preferredValue(dnsToken)}
               </div>
               <div className="md:col-span-1">
                 <button
                   type="button"
-                  onClick={() => copy(dnsRecordValue || preferredValue(dnsToken))}
+                  onClick={() =>
+                    copy(dnsRecordValue || preferredValue(dnsToken))
+                  }
                   className="text-sm underline"
                 >
                   Copy
@@ -416,7 +445,8 @@ export default function VerificationCard({
             </div>
 
             <p className="mt-3 text-xs text-neutral-600">
-              DNS propagation can take time (often minutes, sometimes longer). When ready, click{" "}
+              DNS propagation can take time (often minutes, sometimes longer).
+              When ready, click{" "}
               <span className="font-medium">“Check record now”</span>.
             </p>
 
@@ -431,15 +461,24 @@ export default function VerificationCard({
           </div>
         )}
 
-        {!!message && <div className="mt-4 text-sm text-neutral-700">{message}</div>}
+        {!!message && (
+          <div className="mt-4 text-sm text-neutral-700">{message}</div>
+        )}
 
         <details className="mt-4">
           <summary className="cursor-pointer text-sm text-neutral-700">
             Why DNS TXT verification?
           </summary>
           <p className="mt-2 text-sm text-neutral-600">
-            We look up <span className="font-mono">{preferredHost(normalizedDomain)}</span> for a TXT record that equals{" "}
-            <span className="font-mono">aeobro-site-verify=&lt;token&gt;</span>. If it matches, your domain is marked{" "}
+            We look up{" "}
+            <span className="font-mono">
+              {preferredHost(normalizedDomain)}
+            </span>{" "}
+            for a TXT record that equals{" "}
+            <span className="font-mono">
+              aeobro-site-verify=&lt;token&gt;
+            </span>
+            . If it matches, your domain is marked{" "}
             <span className="font-medium">DOMAIN_VERIFIED</span>.
           </p>
         </details>
@@ -457,9 +496,11 @@ export default function VerificationCard({
           </span>
         </div>
         <p className="mb-3 text-xs text-neutral-600">
-          Use this if you can update the bio/about text on a public social profile (Instagram, X, TikTok, Substack,
-          GitHub, etc.). We&apos;ll generate a short code for you to paste, then we&apos;ll check for it. Platforms that
-          don&apos;t expose a public bio (for bots), such as YouTube, should be verified via OAuth instead.
+          Use this if you can update the bio/about text on a public social
+          profile (Instagram, X, TikTok, Substack, GitHub, etc.). We&apos;ll
+          generate a short code for you to paste, then we&apos;ll check for it.
+          Platforms that don&apos;t expose a public bio (for bots), such as
+          YouTube, should be verified via OAuth instead.
         </p>
 
         <div className="grid gap-3">
@@ -482,10 +523,12 @@ export default function VerificationCard({
           Option 3 for Verification — OAuth (Connect a Platform)
         </div>
         <p className="mb-3 text-xs text-neutral-600">
-          Use this if you can sign in with the same Google, Facebook, or X (Twitter) account that owns your channel or
-          page. We&apos;ll fetch your canonical identity (e.g., YouTube Channel ID, Twitter/X User ID) and mark your
-          profile <span className="font-medium">VERIFIED</span>. This is the recommended method for platforms like
-          YouTube.
+          Use this if you can sign in with the same Google, Facebook, or X
+          (Twitter) account that owns your channel or page. We&apos;ll fetch
+          your canonical identity (e.g., YouTube Channel ID, Twitter/X User ID)
+          and mark your profile{" "}
+          <span className="font-medium">VERIFIED</span>. This is the
+          recommended method for platforms like YouTube.
         </p>
 
         <div className="flex flex-wrap gap-2">
@@ -520,7 +563,14 @@ export default function VerificationCard({
 
         {/* Linked accounts list (if API route exists) */}
         <div className="mt-4">
-          <div className="text-xs font-medium text-neutral-700">Linked accounts</div>
+          <div className="text-xs font-medium text-neutral-700">
+            Linked accounts
+          </div>
+          <p className="mt-1 text-[11px] text-neutral-500">
+            Disconnecting an account removes verification for that platform. If
+            no other verified domains or platforms remain, your profile may
+            revert to Unverified.
+          </p>
           {accounts === null ? (
             <p className="mt-1 text-xs text-neutral-500">
               (Linked accounts will appear here once available.)
@@ -528,7 +578,10 @@ export default function VerificationCard({
           ) : accounts?.length ? (
             <ul className="mt-2 divide-y rounded-xl border bg-white">
               {accounts.map((a) => (
-                <li key={a.id} className="flex items-center justify-between gap-3 p-3 text-sm">
+                <li
+                  key={a.id}
+                  className="flex items-center justify-between gap-3 p-3 text-sm"
+                >
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
                       <span className="rounded border px-2 py-0.5 text-xs uppercase text-neutral-700">
@@ -579,9 +632,13 @@ export default function VerificationCard({
               ))}
             </ul>
           ) : (
-            <p className="mt-1 text-xs text-neutral-500">No accounts linked yet.</p>
+            <p className="mt-1 text-xs text-neutral-500">
+              No accounts linked yet.
+            </p>
           )}
-          {!!accountsMsg && <p className="mt-2 text-xs text-neutral-700">{accountsMsg}</p>}
+          {!!accountsMsg && (
+            <p className="mt-2 text-xs text-neutral-700">{accountsMsg}</p>
+          )}
         </div>
       </section>
     </div>
@@ -600,15 +657,47 @@ type PlatformKey =
   | "github"
   | "etsy";
 
-const PLATFORMS: Array<{ key: PlatformKey; label: string; placeholder: string }> = [
-  { key: "instagram", label: "Instagram", placeholder: "https://www.instagram.com/your_handle/" },
-  { key: "x",         label: "X (Twitter)", placeholder: "https://x.com/your_handle" },
-  { key: "tiktok",    label: "TikTok", placeholder: "https://www.tiktok.com/@your_handle" },
-  { key: "substack",  label: "Substack", placeholder: "https://yourname.substack.com/" },
-  { key: "facebook",  label: "Facebook", placeholder: "https://www.facebook.com/your.profile" },
-  { key: "linkedin",  label: "LinkedIn", placeholder: "https://www.linkedin.com/in/your-handle/" },
-  { key: "github",    label: "GitHub", placeholder: "https://github.com/yourname" },
-  { key: "etsy",      label: "Etsy", placeholder: "https://www.etsy.com/shop/yourshop" },
+const PLATFORMS: Array<{
+  key: PlatformKey;
+  label: string;
+  placeholder: string;
+}> = [
+  {
+    key: "instagram",
+    label: "Instagram",
+    placeholder: "https://www.instagram.com/your_handle/",
+  },
+  { key: "x", label: "X (Twitter)", placeholder: "https://x.com/your_handle" },
+  {
+    key: "tiktok",
+    label: "TikTok",
+    placeholder: "https://www.tiktok.com/@your_handle",
+  },
+  {
+    key: "substack",
+    label: "Substack",
+    placeholder: "https://yourname.substack.com/",
+  },
+  {
+    key: "facebook",
+    label: "Facebook",
+    placeholder: "https://www.facebook.com/your.profile",
+  },
+  {
+    key: "linkedin",
+    label: "LinkedIn",
+    placeholder: "https://www.linkedin.com/in/your-handle/",
+  },
+  {
+    key: "github",
+    label: "GitHub",
+    placeholder: "https://github.com/yourname",
+  },
+  {
+    key: "etsy",
+    label: "Etsy",
+    placeholder: "https://www.etsy.com/shop/yourshop",
+  },
 ];
 
 function PlatformBioRow({
@@ -633,14 +722,16 @@ function PlatformBioRow({
 
   async function onGenerate() {
     try {
-      setBusy("gen"); setMsg("");
+      setBusy("gen");
+      setMsg("");
       const r = await fetch("/api/verify/bio-code/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ platform, profileUrl }),
       });
       const j = await r.json();
-      if (!r.ok || j?.ok !== true) throw new Error(j?.error || "Failed to generate code");
+      if (!r.ok || j?.ok !== true)
+        throw new Error(j?.error || "Failed to generate code");
       setCode(j.code);
       setExpiresAt(j.expiresAt);
       setMsg("Code generated. Paste it into your bio, then click Check Now.");
@@ -653,7 +744,8 @@ function PlatformBioRow({
 
   async function onCheck() {
     try {
-      setBusy("check"); setMsg("");
+      setBusy("check");
+      setMsg("");
       const r = await fetch("/api/verify/bio-code/check", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -666,7 +758,9 @@ function PlatformBioRow({
         return;
       }
       setOk(true);
-      setMsg("Verified! This account is now platform-verified via Code-in-Bio.");
+      setMsg(
+        "Verified! This account is now platform-verified via Code-in-Bio."
+      );
       onVerified?.();
     } catch (e: any) {
       setOk(false);
@@ -680,7 +774,11 @@ function PlatformBioRow({
     <div className="rounded-xl bg-white p-3 ring-1 ring-neutral-200">
       <div className="flex items-center justify-between gap-3">
         <div className="text-sm font-medium">{label}</div>
-        {ok && <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs text-emerald-800">Verified</span>}
+        {ok && (
+          <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs text-emerald-800">
+            Verified
+          </span>
+        )}
       </div>
 
       <div className="mt-2 grid gap-2 md:grid-cols-[1fr,auto,auto]">
@@ -727,7 +825,11 @@ function PlatformBioRow({
       )}
 
       {!!msg && (
-        <div className={`mt-2 text-xs ${ok ? "text-emerald-700" : "text-neutral-700"}`}>
+        <div
+          className={`mt-2 text-xs ${
+            ok ? "text-emerald-700" : "text-neutral-700"
+          }`}
+        >
           {msg}
         </div>
       )}
@@ -750,7 +852,9 @@ function StatusBadge({ status }: { status?: VerificationStatus | null }) {
     DOMAIN_VERIFIED: "Domain-verified",
   };
   return (
-    <span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-medium ${styles[s]}`}>
+    <span
+      className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-medium ${styles[s]}`}
+    >
       {labels[s]}
     </span>
   );
