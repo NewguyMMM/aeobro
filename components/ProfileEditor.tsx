@@ -1,5 +1,9 @@
 // components/ProfileEditor.tsx
-// 📅 Updated: 2025-12-01 06:20 ET – move Billing card under Verify
+// 📅 Updated: 2025-12-04 01:40 ET –
+//  - Keep Verify card near bottom
+//  - Insert standalone LinkedAccountsCard tile above Billing card
+//  - Billing card remains last
+
 "use client";
 
 import * as React from "react";
@@ -14,11 +18,17 @@ import PublicUrlReadonly from "@/components/PublicUrlReadonly";
 import SchemaPreviewButton from "@/components/SchemaPreviewButton";
 import ManageBillingButton from "@/components/stripe/ManageBillingButton";
 
-// Load the verification UI purely on the client (single source of truth at bottom)
+// Load client-only cards near the bottom
 import dynamic from "next/dynamic";
 const VerificationCard = dynamic(() => import("@/components/VerificationCard"), {
   ssr: false,
 });
+const LinkedAccountsCard = dynamic(
+  () => import("@/components/LinkedAccountsCard"),
+  {
+    ssr: false,
+  }
+);
 
 /** -------- Types -------- */
 type EntityType =
@@ -1763,16 +1773,22 @@ export default function ProfileEditor({
         </div>
       )}
 
-      {/* ---- SINGLE VERIFY SECTION (always near bottom) ---- */}
+      {/* ---- VERIFY SECTION ---- */}
       <section id="verify" className="scroll-mt-24">
         <VerificationCard
           profileId={profileId ?? undefined}
           initialDomain={website ?? ""}
           initialStatus={verificationStatus as any}
+          onStatusChange={(s) => setVerificationStatus(s)}
         />
       </section>
 
-      {/* Billing / subscription helper – moved under Verify */}
+      {/* ---- LINKED ACCOUNTS TILE (new standalone card) ---- */}
+      <section className="mt-6">
+        <LinkedAccountsCard />
+      </section>
+
+      {/* Billing / subscription helper – now last, under Linked Accounts */}
       <section className="mt-6">
         <div className="rounded-xl border bg-neutral-50 px-4 py-3 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
           <div>
