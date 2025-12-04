@@ -1,6 +1,7 @@
 // app/api/verify/bio-code/check/route.ts
-// ✅ Updated: 2025-11-02 09:28 ET
-// Adds required `externalId` when creating PlatformAccount (derived from profileUrl).
+// ✅ Updated: 2025-12-03
+// - Removes YouTube from Code-in-Bio SUPPORTED_PLATFORMS
+// - Improves error messaging when profileUrl cannot be fetched.
 // Behavior:
 // - fetches profileUrl, finds active code, verifies
 // - update/create PlatformAccount (provider=<platform>, platformContext="BIO_CODE", externalId from URL)
@@ -19,7 +20,6 @@ const SUPPORTED_PLATFORMS = new Set([
   "x",
   "instagram",
   "tiktok",
-  "youtube",
   "substack",
   "etsy",
   "linkedin",
@@ -77,14 +77,22 @@ export async function POST(req: Request) {
       const res = await fetch(profileUrl, { method: "GET" });
       if (!res.ok) {
         return NextResponse.json(
-          { verified: false, message: `Failed to fetch profileUrl (HTTP ${res.status})` },
+          {
+            verified: false,
+            message:
+              "Platform not supported for Code-in-Bio verification (unable to read your public profile page). Please use OAuth instead if available.",
+          },
           { status: 200, headers: nocache() }
         );
       }
       body = await res.text();
     } catch {
       return NextResponse.json(
-        { verified: false, message: "Unable to fetch profileUrl." },
+        {
+          verified: false,
+          message:
+            "Platform not supported for Code-in-Bio verification. Please use OAuth instead if available.",
+        },
         { status: 200, headers: nocache() }
       );
     }
