@@ -1,6 +1,9 @@
 // components/VerificationCard.tsx
 // AEOBRO — Domain + Platform Verification Card (DNS • Code-in-Bio • OAuth Connect)
-// ✅ Updated: 2025-12-03 23:52 ET — Add explanatory note under "Linked accounts" about disconnecting + verification.
+// ✅ Updated: 2025-12-04 01:05 ET —
+//  - Keep Linked accounts explanatory note
+//  - Add confirmation before OAuth connect (“use the account that represents this brand”)
+//  - Add provider-specific guidance under OAuth about common failure reasons
 
 "use client";
 
@@ -262,8 +265,25 @@ export default function VerificationCard({
     }
   }
 
-  /** ------ OAuth Connect buttons ------ */
+  /** ------ OAuth Connect buttons (with intent confirmation) ------ */
   function startOAuth(provider: string) {
+    const nice =
+      provider === "google"
+        ? "Google / YouTube"
+        : provider === "facebook"
+        ? "Facebook"
+        : provider === "twitter"
+        ? "X (Twitter)"
+        : provider;
+
+    const ok = window.confirm(
+      `You’re about to connect your ${nice} account.\n\n` +
+        `Make sure this is the account that represents this brand.\n\n` +
+        `If you choose the wrong account, you can disconnect it later from “Linked accounts”, but verification will reflect whichever account you connect.\n\n` +
+        `Continue?`
+    );
+    if (!ok) return;
+
     const url = `/api/auth/signin/${provider}?callbackUrl=${callbackUrl()}`;
     window.location.href = url;
   }
@@ -528,8 +548,40 @@ export default function VerificationCard({
           your canonical identity (e.g., YouTube Channel ID, Twitter/X User ID)
           and mark your profile{" "}
           <span className="font-medium">VERIFIED</span>. This is the
-          recommended method for platforms like YouTube.
+          recommended method for platforms like YouTube. Always choose the
+          account that represents this brand; if you connect the wrong one, you
+          can disconnect it below.
         </p>
+
+        {/* Provider-specific guidance on failures */}
+        <div className="mb-3 rounded-lg bg-white p-3 text-[11px] text-neutral-600 ring-1 ring-neutral-200">
+          <div className="font-semibold text-neutral-800">
+            Common reasons verification might fail:
+          </div>
+          <ul className="mt-1 list-disc space-y-0.5 pl-4">
+            <li>
+              <span className="font-medium">Google / YouTube:</span> this Google
+              account has no YouTube channel. Create or select a channel, then
+              try again.
+            </li>
+            <li>
+              <span className="font-medium">Facebook / Instagram Business:</span>{" "}
+              this account doesn&apos;t manage any Pages linked to an
+              Instagram Business account, or required scopes (pages_show_list,
+              instagram_basic) weren&apos;t granted.
+            </li>
+            <li>
+              <span className="font-medium">X (Twitter):</span> required
+              permissions (users.read) were not granted, or the app is missing
+              access to your user profile.
+            </li>
+            <li>
+              <span className="font-medium">TikTok:</span> the app has no access
+              to your user info (missing user.info.basic scope), or TikTok
+              returned no open_id.
+            </li>
+          </ul>
+        </div>
 
         <div className="flex flex-wrap gap-2">
           <button
@@ -816,9 +868,12 @@ function PlatformBioRow({
           )}
           <ul className="mt-1 list-disc space-y-0.5 pl-5 text-[11px] text-neutral-700">
             <li>Copy the code exactly as shown.</li>
-            <li>Edit your {label} profile and paste it into the bio/about section.</li>
             <li>
-              Make sure your profile is public, then click <strong>Check Now</strong>.
+              Edit your {label} profile and paste it into the bio/about section.
+            </li>
+            <li>
+              Make sure your profile is public, then click{" "}
+              <strong>Check Now</strong>.
             </li>
           </ul>
         </div>
