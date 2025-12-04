@@ -1779,7 +1779,7 @@ export default function ProfileEditor({
           profileId={profileId ?? undefined}
           initialDomain={website ?? ""}
           initialStatus={verificationStatus as any}
-          onStatusChange={(s) => setVerificationStatus(s)}
+          onStatusChange={setVerificationStatus}
         />
       </section>
 
