@@ -1777,21 +1777,15 @@ export default function ProfileEditor({
         </div>
       )}
 
-      {/* ---- VERIFY SECTION ---- */}
+          {/* ---- VERIFY SECTION ---- */}
       <section id="verify" className="scroll-mt-24">
         <VerificationCard
           profileId={profileId ?? undefined}
           initialDomain={website ?? ""}
           initialStatus={verificationStatus as any}
-          <section id="verify" className="scroll-mt-24">
-  <VerificationCard
-    profileId={profileId ?? undefined}
-    initialDomain={website ?? ""}
-    initialStatus={verificationStatus as any}
-    onStatusChange={(status) => setVerificationStatus(status)}
-  />
-</section>
-
+          onStatusChange={(status: VerificationStatus) =>
+            setVerificationStatus(status)
+          }
         />
       </section>
 
