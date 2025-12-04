@@ -1,6 +1,7 @@
 // app/p/[slug]/page.tsx
-// 📅 Updated: 2025-11-25 16:38 ET
+// 📅 Updated: 2025-12-03 23:04 ET
 // Hardened profile page: deterministic server render, safe JSON-LD, badges, Latest Update, FAQ & Services.
+// Branding & Media / Platforms sections now only render when they have real content.
 
 import { prisma } from "@/lib/prisma";
 import {
@@ -206,8 +207,19 @@ export default async function Page({ params }: PageProps) {
       }>)
     : [];
 
-  // Handles and links for visible sections
+  // Handles, links, press
   const handles = (profile.handles || {}) as Record<string, any>;
+  const rawHandleEntries = Object.entries(handles);
+  const handleEntries = rawHandleEntries
+    .map(([key, raw]) => {
+      const value = String(
+        typeof raw === "string" ? raw : (raw as any)?.handle ?? ""
+      ).trim();
+      if (!value) return null;
+      return { key, value };
+    })
+    .filter(Boolean) as { key: string; value: string }[];
+
   const linksArr = Array.isArray(profile.links)
     ? (profile.links as Array<{ label?: string | null; url?: string | null }>)
     : [];
@@ -222,6 +234,9 @@ export default async function Page({ params }: PageProps) {
     verificationStatus === "DOMAIN_VERIFIED" ||
     verificationStatus === "PLATFORM_VERIFIED" ||
     isPaidPlan;
+
+  // Branding content check – only show section if something exists
+  const hasBrandingContent = !!bio || imageUrls.length > 0;
 
   /* ---------------------------- Build JSON-LD ---------------------------- */
 
@@ -324,37 +339,39 @@ export default async function Page({ params }: PageProps) {
           )}
         </header>
 
-        {/* Branding & Media */}
-        <section className="space-y-3">
-          <h2 className="text-lg font-semibold">Branding &amp; Media</h2>
-          {bio && (
-            <div>
-              <h3 className="text-sm font-semibold mb-1">About</h3>
-              <p className="text-sm text-gray-800 whitespace-pre-wrap">
-                {bio}
-              </p>
-            </div>
-          )}
+        {/* Branding & Media – only when content exists */}
+        {hasBrandingContent && (
+          <section className="space-y-3">
+            <h2 className="text-lg font-semibold">Branding &amp; Media</h2>
+            {bio && (
+              <div>
+                <h3 className="text-sm font-semibold mb-1">About</h3>
+                <p className="text-sm text-gray-800 whitespace-pre-wrap">
+                  {bio}
+                </p>
+              </div>
+            )}
 
-          {imageUrls.length > 0 && (
-            <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
-              {imageUrls.map((url, idx) => (
-                <div
-                  key={`${url}-${idx}`}
-                  className="overflow-hidden rounded-xl border bg-white"
-                >
-                  <OptimizedImg
-                    src={url}
-                    alt={`${displayName} image ${idx + 1}`}
-                    className="h-full w-full object-cover"
-                    width={600}
-                    height={400}
-                  />
-                </div>
-              ))}
-            </div>
-          )}
-        </section>
+            {imageUrls.length > 0 && (
+              <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                {imageUrls.map((url, idx) => (
+                  <div
+                    key={`${url}-${idx}`}
+                    className="overflow-hidden rounded-xl border bg-white"
+                  >
+                    <OptimizedImg
+                      src={url}
+                      alt={`${displayName} image ${idx + 1}`}
+                      className="h-full w-full object-cover"
+                      width={600}
+                      height={400}
+                    />
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+        )}
 
         {/* Website, Location, Reach */}
         {(website || location || serviceArea.length > 0) && (
@@ -501,24 +518,18 @@ export default async function Page({ params }: PageProps) {
         )}
 
         {/* Platform handles (from handles JSON) */}
-        {Object.keys(handles).length > 0 && (
+        {handleEntries.length > 0 && (
           <section className="space-y-2">
             <h2 className="text-lg font-semibold">Platforms</h2>
             <ul className="list-disc space-y-1 pl-6 text-sm">
-              {Object.entries(handles).map(([key, raw]) => {
-                const value = String(
-                  typeof raw === "string" ? raw : (raw as any)?.handle ?? ""
-                ).trim();
-                if (!value) return null;
-                return (
-                  <li key={key}>
-                    <span className="font-medium">
-                      {prettyHandleLabel(key)}:
-                    </span>{" "}
-                    {value}
-                  </li>
-                );
-              })}
+              {handleEntries.map(({ key, value }) => (
+                <li key={key}>
+                  <span className="font-medium">
+                    {prettyHandleLabel(key)}:
+                  </span>{" "}
+                  {value}
+                </li>
+              ))}
             </ul>
           </section>
         )}
