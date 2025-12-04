@@ -53,7 +53,11 @@ type PlatformHandles = {
 type LinkItem = { label: string; url: string };
 type PressItem = { title: string; url: string };
 
-type VerificationStatus = "UNVERIFIED" | "PLATFORM_VERIFIED" | "DOMAIN_VERIFIED";
+type VerificationStatus =
+  | "UNVERIFIED"
+  | "PENDING"
+  | "PLATFORM_VERIFIED"
+  | "DOMAIN_VERIFIED";
 
 type PlanTitle = "Lite" | "Plus" | "Pro" | "Business" | "Enterprise";
 
@@ -1779,7 +1783,15 @@ export default function ProfileEditor({
           profileId={profileId ?? undefined}
           initialDomain={website ?? ""}
           initialStatus={verificationStatus as any}
-          onStatusChange={setVerificationStatus}
+          <section id="verify" className="scroll-mt-24">
+  <VerificationCard
+    profileId={profileId ?? undefined}
+    initialDomain={website ?? ""}
+    initialStatus={verificationStatus as any}
+    onStatusChange={(status) => setVerificationStatus(status)}
+  />
+</section>
+
         />
       </section>
 
