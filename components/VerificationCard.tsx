@@ -1,6 +1,6 @@
 // components/VerificationCard.tsx
 // AEOBRO — Domain + Platform Verification Card (DNS • Code-in-Bio • OAuth Connect)
-// ✅ Updated: 2025-11-21 06:31 ET — Domain/DNS placed first and grouped into "Option 1" card; added Option labels and clearer explainer.
+// ✅ Updated: 2025-12-03 20:55 ET — DNS host UX fixed for common DNS providers (Squarespace, GoDaddy, etc.)
 
 "use client";
 
@@ -58,6 +58,15 @@ type Props = {
   /** Optional: return path after OAuth completes (defaults to /dashboard?verified=1) */
   returnTo?: string;
 };
+
+// 🔁 NEW: canonical DNS label we ask users to put in the HOST/NAME field
+const DNS_LABEL = "_aeobro-verify";
+
+// 🔁 NEW: full host we actually look up in DNS (for explanation only)
+function fullDnsHost(domain: string) {
+  if (!domain) return `${DNS_LABEL}.<yourdomain>`;
+  return `${DNS_LABEL}.${domain}`;
+}
 
 export default function VerificationCard({
   profileId,
@@ -117,8 +126,10 @@ export default function VerificationCard({
     }
   }
 
-  function preferredHost(domain: string) {
-    return domain ? `_aeobro-verify.${domain}` : `_aeobro-verify.<yourdomain>`;
+  // ⬇️ CHANGED: we no longer show the full FQDN as the Host to copy.
+  // Users should paste ONLY the label; DNS will append the domain.
+  function preferredHost() {
+    return DNS_LABEL;
   }
 
   function preferredValue(token?: string) {
@@ -171,7 +182,7 @@ export default function VerificationCard({
 
       if (j?.token) {
         setDnsToken(j.token);
-        setDnsRecordHost(preferredHost(normalizedDomain));
+        setDnsRecordHost(preferredHost());
         setDnsRecordType("TXT");
         setDnsRecordValue(preferredValue(j.token));
         updateStatus(j?.status || "PENDING");
@@ -181,7 +192,8 @@ export default function VerificationCard({
       }
 
       if (j?.recordHost || j?.recordValue) {
-        setDnsRecordHost(j.recordHost || preferredHost(normalizedDomain));
+        // Even if backend returns a host, we still display the generic label
+        setDnsRecordHost(preferredHost());
         setDnsRecordType("TXT");
         setDnsRecordValue(j.recordValue || preferredValue());
         updateStatus(j?.status || "PENDING");
@@ -223,7 +235,7 @@ export default function VerificationCard({
 
       if (j?.token && !dnsToken) {
         setDnsToken(j.token);
-        setDnsRecordHost(preferredHost(normalizedDomain));
+        setDnsRecordHost(preferredHost());
         setDnsRecordType("TXT");
         setDnsRecordValue(preferredValue(j.token));
       }
@@ -374,18 +386,20 @@ export default function VerificationCard({
         {mode === "dns" && (
           <div className="mt-5 rounded-xl border bg-white p-4">
             <p className="mb-2 text-sm font-medium">
-              Create this DNS TXT record, then click “Check record now”:
+              Add this DNS TXT record at your DNS provider, then click “Check record now”:
             </p>
 
             <div className="grid grid-cols-1 items-center gap-3 text-sm md:grid-cols-12">
-              <div className="text-xs uppercase tracking-wide text-neutral-500 md:col-span-2">Host</div>
+              <div className="text-xs uppercase tracking-wide text-neutral-500 md:col-span-2">
+                Host / Name
+              </div>
               <div className="font-mono break-all md:col-span-9">
-                {dnsRecordHost || preferredHost(normalizedDomain)}
+                {dnsRecordHost || preferredHost()}
               </div>
               <div className="md:col-span-1">
                 <button
                   type="button"
-                  onClick={() => copy(dnsRecordHost || preferredHost(normalizedDomain))}
+                  onClick={() => copy(dnsRecordHost || preferredHost(), "Host copied")}
                   className="text-sm underline"
                 >
                   Copy
@@ -395,7 +409,7 @@ export default function VerificationCard({
               <div className="text-xs uppercase tracking-wide text-neutral-500 md:col-span-2">Type</div>
               <div className="font-mono md:col-span-9">{dnsRecordType}</div>
               <div className="md:col-span-1">
-                <button type="button" onClick={() => copy("TXT")} className="text-sm underline">
+                <button type="button" onClick={() => copy("TXT", "Type copied")} className="text-sm underline">
                   Copy
                 </button>
               </div>
@@ -407,7 +421,7 @@ export default function VerificationCard({
               <div className="md:col-span-1">
                 <button
                   type="button"
-                  onClick={() => copy(dnsRecordValue || preferredValue(dnsToken))}
+                  onClick={() => copy(dnsRecordValue || preferredValue(dnsToken), "Value copied")}
                   className="text-sm underline"
                 >
                   Copy
@@ -415,7 +429,13 @@ export default function VerificationCard({
               </div>
             </div>
 
-            <p className="mt-3 text-xs text-neutral-600">
+            <p className="mt-2 text-[11px] text-neutral-600">
+              Most DNS providers (Squarespace, GoDaddy, Cloudflare, etc.) automatically append your domain name. Only
+              enter <span className="font-mono">{DNS_LABEL}</span> in the <span className="font-semibold">Host/Name</span> field —
+              do <span className="font-semibold">not</span> type your full domain there.
+            </p>
+
+            <p className="mt-2 text-xs text-neutral-600">
               DNS propagation can take time (often minutes, sometimes longer). When ready, click{" "}
               <span className="font-medium">“Check record now”</span>.
             </p>
@@ -438,8 +458,13 @@ export default function VerificationCard({
             Why DNS TXT verification?
           </summary>
           <p className="mt-2 text-sm text-neutral-600">
-            We look up <span className="font-mono">{preferredHost(normalizedDomain)}</span> for a TXT record that equals{" "}
-            <span className="font-mono">aeobro-site-verify=&lt;token&gt;</span>. If it matches, your domain is marked{" "}
+            We look up the full host{" "}
+            <span className="font-mono">
+              {fullDnsHost(normalizedDomain)}
+            </span>{" "}
+            for a TXT record that equals{" "}
+            <span className="font-mono">aeobro-site-verify=&lt;token&gt;</span>. Your DNS provider builds that full host
+            from the <span className="font-mono">{DNS_LABEL}</span> label plus your domain. If it matches, your domain is marked{" "}
             <span className="font-medium">DOMAIN_VERIFIED</span>.
           </p>
         </details>
