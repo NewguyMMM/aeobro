@@ -1,6 +1,6 @@
 // components/VerificationCard.tsx
 // AEOBRO — Domain + Platform Verification Card (DNS • Code-in-Bio • OAuth Connect)
-// ✅ Updated: 2025-12-03 20:55 ET — DNS host UX fixed for common DNS providers (Squarespace, GoDaddy, etc.)
+// ✅ Updated: 2025-12-03 22:04 ET — Remove YouTube from Code-in-Bio; add tooltip to direct YouTube → OAuth; clarify copy.
 
 "use client";
 
@@ -58,15 +58,6 @@ type Props = {
   /** Optional: return path after OAuth completes (defaults to /dashboard?verified=1) */
   returnTo?: string;
 };
-
-// 🔁 NEW: canonical DNS label we ask users to put in the HOST/NAME field
-const DNS_LABEL = "_aeobro-verify";
-
-// 🔁 NEW: full host we actually look up in DNS (for explanation only)
-function fullDnsHost(domain: string) {
-  if (!domain) return `${DNS_LABEL}.<yourdomain>`;
-  return `${DNS_LABEL}.${domain}`;
-}
 
 export default function VerificationCard({
   profileId,
@@ -126,10 +117,8 @@ export default function VerificationCard({
     }
   }
 
-  // ⬇️ CHANGED: we no longer show the full FQDN as the Host to copy.
-  // Users should paste ONLY the label; DNS will append the domain.
-  function preferredHost() {
-    return DNS_LABEL;
+  function preferredHost(domain: string) {
+    return domain ? `_aeobro-verify.${domain}` : `_aeobro-verify.<yourdomain>`;
   }
 
   function preferredValue(token?: string) {
@@ -182,7 +171,7 @@ export default function VerificationCard({
 
       if (j?.token) {
         setDnsToken(j.token);
-        setDnsRecordHost(preferredHost());
+        setDnsRecordHost(preferredHost(normalizedDomain));
         setDnsRecordType("TXT");
         setDnsRecordValue(preferredValue(j.token));
         updateStatus(j?.status || "PENDING");
@@ -192,8 +181,7 @@ export default function VerificationCard({
       }
 
       if (j?.recordHost || j?.recordValue) {
-        // Even if backend returns a host, we still display the generic label
-        setDnsRecordHost(preferredHost());
+        setDnsRecordHost(j.recordHost || preferredHost(normalizedDomain));
         setDnsRecordType("TXT");
         setDnsRecordValue(j.recordValue || preferredValue());
         updateStatus(j?.status || "PENDING");
@@ -235,7 +223,7 @@ export default function VerificationCard({
 
       if (j?.token && !dnsToken) {
         setDnsToken(j.token);
-        setDnsRecordHost(preferredHost());
+        setDnsRecordHost(preferredHost(normalizedDomain));
         setDnsRecordType("TXT");
         setDnsRecordValue(preferredValue(j.token));
       }
@@ -386,20 +374,18 @@ export default function VerificationCard({
         {mode === "dns" && (
           <div className="mt-5 rounded-xl border bg-white p-4">
             <p className="mb-2 text-sm font-medium">
-              Add this DNS TXT record at your DNS provider, then click “Check record now”:
+              Create this DNS TXT record, then click “Check record now”:
             </p>
 
             <div className="grid grid-cols-1 items-center gap-3 text-sm md:grid-cols-12">
-              <div className="text-xs uppercase tracking-wide text-neutral-500 md:col-span-2">
-                Host / Name
-              </div>
+              <div className="text-xs uppercase tracking-wide text-neutral-500 md:col-span-2">Host</div>
               <div className="font-mono break-all md:col-span-9">
-                {dnsRecordHost || preferredHost()}
+                {dnsRecordHost || preferredHost(normalizedDomain)}
               </div>
               <div className="md:col-span-1">
                 <button
                   type="button"
-                  onClick={() => copy(dnsRecordHost || preferredHost(), "Host copied")}
+                  onClick={() => copy(dnsRecordHost || preferredHost(normalizedDomain))}
                   className="text-sm underline"
                 >
                   Copy
@@ -409,7 +395,7 @@ export default function VerificationCard({
               <div className="text-xs uppercase tracking-wide text-neutral-500 md:col-span-2">Type</div>
               <div className="font-mono md:col-span-9">{dnsRecordType}</div>
               <div className="md:col-span-1">
-                <button type="button" onClick={() => copy("TXT", "Type copied")} className="text-sm underline">
+                <button type="button" onClick={() => copy("TXT")} className="text-sm underline">
                   Copy
                 </button>
               </div>
@@ -421,7 +407,7 @@ export default function VerificationCard({
               <div className="md:col-span-1">
                 <button
                   type="button"
-                  onClick={() => copy(dnsRecordValue || preferredValue(dnsToken), "Value copied")}
+                  onClick={() => copy(dnsRecordValue || preferredValue(dnsToken))}
                   className="text-sm underline"
                 >
                   Copy
@@ -429,13 +415,7 @@ export default function VerificationCard({
               </div>
             </div>
 
-            <p className="mt-2 text-[11px] text-neutral-600">
-              Most DNS providers (Squarespace, GoDaddy, Cloudflare, etc.) automatically append your domain name. Only
-              enter <span className="font-mono">{DNS_LABEL}</span> in the <span className="font-semibold">Host/Name</span> field —
-              do <span className="font-semibold">not</span> type your full domain there.
-            </p>
-
-            <p className="mt-2 text-xs text-neutral-600">
+            <p className="mt-3 text-xs text-neutral-600">
               DNS propagation can take time (often minutes, sometimes longer). When ready, click{" "}
               <span className="font-medium">“Check record now”</span>.
             </p>
@@ -458,13 +438,8 @@ export default function VerificationCard({
             Why DNS TXT verification?
           </summary>
           <p className="mt-2 text-sm text-neutral-600">
-            We look up the full host{" "}
-            <span className="font-mono">
-              {fullDnsHost(normalizedDomain)}
-            </span>{" "}
-            for a TXT record that equals{" "}
-            <span className="font-mono">aeobro-site-verify=&lt;token&gt;</span>. Your DNS provider builds that full host
-            from the <span className="font-mono">{DNS_LABEL}</span> label plus your domain. If it matches, your domain is marked{" "}
+            We look up <span className="font-mono">{preferredHost(normalizedDomain)}</span> for a TXT record that equals{" "}
+            <span className="font-mono">aeobro-site-verify=&lt;token&gt;</span>. If it matches, your domain is marked{" "}
             <span className="font-medium">DOMAIN_VERIFIED</span>.
           </p>
         </details>
@@ -472,12 +447,19 @@ export default function VerificationCard({
 
       {/* === Option 2: Code-in-Bio === */}
       <section className="mt-6 rounded-xl border bg-neutral-50 p-4">
-        <div className="mb-1 text-sm font-semibold text-neutral-900">
-          Option 2 for Verification — Code-in-Bio
+        <div className="mb-1 flex items-center gap-2 text-sm font-semibold text-neutral-900">
+          <span>Option 2 for Verification — Code-in-Bio</span>
+          <span
+            className="cursor-help text-[11px] text-neutral-500"
+            title="Paste a short AEOBRO code into the bio/about text on a public social profile (Instagram, X, TikTok, Substack, etc.). For YouTube, use OAuth (Connect Google · YouTube) instead."
+          >
+            (Some platforms, like YouTube, require OAuth.)
+          </span>
         </div>
         <p className="mb-3 text-xs text-neutral-600">
-          Use this if you can update the bio/about text on a public social profile (Instagram, X, TikTok, etc.). We&apos;ll
-          generate a short code for you to paste, then we&apos;ll check for it.
+          Use this if you can update the bio/about text on a public social profile (Instagram, X, TikTok, Substack,
+          GitHub, etc.). We&apos;ll generate a short code for you to paste, then we&apos;ll check for it. Platforms that
+          don&apos;t expose a public bio (for bots), such as YouTube, should be verified via OAuth instead.
         </p>
 
         <div className="grid gap-3">
@@ -502,7 +484,8 @@ export default function VerificationCard({
         <p className="mb-3 text-xs text-neutral-600">
           Use this if you can sign in with the same Google, Facebook, or X (Twitter) account that owns your channel or
           page. We&apos;ll fetch your canonical identity (e.g., YouTube Channel ID, Twitter/X User ID) and mark your
-          profile <span className="font-medium">VERIFIED</span>.
+          profile <span className="font-medium">VERIFIED</span>. This is the recommended method for platforms like
+          YouTube.
         </p>
 
         <div className="flex flex-wrap gap-2">
@@ -612,7 +595,6 @@ type PlatformKey =
   | "x"
   | "tiktok"
   | "substack"
-  | "youtube"
   | "facebook"
   | "linkedin"
   | "github"
@@ -623,7 +605,6 @@ const PLATFORMS: Array<{ key: PlatformKey; label: string; placeholder: string }>
   { key: "x",         label: "X (Twitter)", placeholder: "https://x.com/your_handle" },
   { key: "tiktok",    label: "TikTok", placeholder: "https://www.tiktok.com/@your_handle" },
   { key: "substack",  label: "Substack", placeholder: "https://yourname.substack.com/" },
-  { key: "youtube",   label: "YouTube", placeholder: "https://www.youtube.com/@your_handle" },
   { key: "facebook",  label: "Facebook", placeholder: "https://www.facebook.com/your.profile" },
   { key: "linkedin",  label: "LinkedIn", placeholder: "https://www.linkedin.com/in/your-handle/" },
   { key: "github",    label: "GitHub", placeholder: "https://github.com/yourname" },
