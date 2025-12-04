@@ -1,5 +1,5 @@
 // app/api/verify/bio-code/generate/route.ts
-// ✅ Updated: 2025-11-02 09:06 ET
+// ✅ Updated: 2025-12-03
 // Returns { ok: true, platform, code, expiresAt: ISO, profileUrl }, reuses unexpired codes.
 
 export const runtime = "nodejs";
@@ -15,7 +15,6 @@ const SUPPORTED_PLATFORMS = new Set([
   "x",
   "instagram",
   "tiktok",
-  "youtube",
   "substack",
   "etsy",
   "linkedin",
