@@ -1,14 +1,14 @@
 // components/VerificationCard.tsx
 // AEOBRO — Domain + Platform Verification Card (DNS • Code-in-Bio • OAuth Connect)
-// ✅ Updated: 2025-12-04 01:05 ET —
-//  - Keep Linked accounts explanatory note
-//  - Add confirmation before OAuth connect (“use the account that represents this brand”)
-//  - Add provider-specific guidance under OAuth about common failure reasons
+// ✅ Updated: 2025-12-04 01:30 ET —
+//  - Remove Linked Accounts list/UI (moved to standalone LinkedAccountsCard)
+//  - Keep OAuth confirmation (“use the account that represents this brand”)
+//  - Keep provider-specific guidance under OAuth about common failure reasons
+//  - Update copy to reference the separate Linked Accounts tile
 
 "use client";
 
 import * as React from "react";
-import Link from "next/link";
 
 type VerificationStatus =
   | "UNVERIFIED"
@@ -31,22 +31,6 @@ type CheckDnsResponse = {
   token?: string;
   profile?: { verificationStatus?: VerificationStatus };
   message?: string;
-  error?: string;
-};
-
-type PlatformAccount = {
-  id: string;
-  provider: string; // "google" | "facebook" | "twitter" | "tiktok" | ...
-  externalId: string;
-  handle?: string | null;
-  url?: string | null;
-  status: "PENDING" | "VERIFIED" | "FAILED";
-  platformContext?: string | null;
-  verifiedAt?: string | null;
-};
-
-type ListAccountsResponse = {
-  accounts?: PlatformAccount[];
   error?: string;
 };
 
@@ -89,12 +73,6 @@ export default function VerificationCard({
   const [dnsRecordType, setDnsRecordType] = React.useState<"TXT">("TXT");
   const [dnsRecordValue, setDnsRecordValue] = React.useState<string>("");
 
-  // OAuth-linked accounts state
-  const [accounts, setAccounts] = React.useState<PlatformAccount[] | null>(
-    null
-  );
-  const [accountsMsg, setAccountsMsg] = React.useState<string>("");
-
   React.useEffect(() => {
     if (domainInput?.trim()) {
       setNormalizedDomain(normalizeDomain(domainInput));
@@ -102,12 +80,6 @@ export default function VerificationCard({
       setNormalizedDomain("");
     }
   }, [domainInput]);
-
-  React.useEffect(() => {
-    refreshAccounts().catch(() => {
-      /* ignore */
-    });
-  }, []);
 
   function normalizeDomain(input: string): string {
     const raw = (input || "").trim();
@@ -279,49 +251,13 @@ export default function VerificationCard({
     const ok = window.confirm(
       `You’re about to connect your ${nice} account.\n\n` +
         `Make sure this is the account that represents this brand.\n\n` +
-        `If you choose the wrong account, you can disconnect it later from “Linked accounts”, but verification will reflect whichever account you connect.\n\n` +
+        `If you choose the wrong account, you can disconnect it later from the Linked Accounts tile on this page, but verification will reflect whichever account you connect.\n\n` +
         `Continue?`
     );
     if (!ok) return;
 
     const url = `/api/auth/signin/${provider}?callbackUrl=${callbackUrl()}`;
     window.location.href = url;
-  }
-
-  /** ------ Linked Accounts (via API) ------ */
-  async function refreshAccounts() {
-    try {
-      const r = await fetch("/api/verify/platform/list", { method: "GET" });
-      if (!r.ok) {
-        setAccounts(null);
-        return;
-      }
-      const j: ListAccountsResponse = await r.json();
-      setAccounts(j?.accounts || []);
-      setAccountsMsg("");
-    } catch (e: any) {
-      setAccounts(null);
-      setAccountsMsg("Could not load linked accounts.");
-    }
-  }
-
-  async function disconnectAccount(id: string) {
-    if (!id) return;
-    setAccountsMsg("");
-    try {
-      const r = await fetch(`/api/verify/platform/${id}`, {
-        method: "DELETE",
-      });
-      if (!r.ok) {
-        const text = await r.text();
-        setAccountsMsg(text || "Failed to disconnect.");
-      } else {
-        setAccountsMsg("Disconnected.");
-        refreshAccounts();
-      }
-    } catch (e: any) {
-      setAccountsMsg(e?.message || "Error disconnecting.");
-    }
   }
 
   const profileMissing = !profileId;
@@ -550,7 +486,7 @@ export default function VerificationCard({
           <span className="font-medium">VERIFIED</span>. This is the
           recommended method for platforms like YouTube. Always choose the
           account that represents this brand; if you connect the wrong one, you
-          can disconnect it below.
+          can disconnect it later from the Linked Accounts tile on this page.
         </p>
 
         {/* Provider-specific guidance on failures */}
@@ -611,86 +547,6 @@ export default function VerificationCard({
           >
             Connect X (Twitter)
           </button>
-        </div>
-
-        {/* Linked accounts list (if API route exists) */}
-        <div className="mt-4">
-          <div className="text-xs font-medium text-neutral-700">
-            Linked accounts
-          </div>
-          <p className="mt-1 text-[11px] text-neutral-500">
-            Disconnecting an account removes verification for that platform. If
-            no other verified domains or platforms remain, your profile may
-            revert to Unverified.
-          </p>
-          {accounts === null ? (
-            <p className="mt-1 text-xs text-neutral-500">
-              (Linked accounts will appear here once available.)
-            </p>
-          ) : accounts?.length ? (
-            <ul className="mt-2 divide-y rounded-xl border bg-white">
-              {accounts.map((a) => (
-                <li
-                  key={a.id}
-                  className="flex items-center justify-between gap-3 p-3 text-sm"
-                >
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="rounded border px-2 py-0.5 text-xs uppercase text-neutral-700">
-                        {a.provider}
-                      </span>
-                      {a.status === "VERIFIED" ? (
-                        <span className="rounded bg-emerald-100 px-2 py-0.5 text-xs text-emerald-800">
-                          Verified
-                        </span>
-                      ) : a.status === "PENDING" ? (
-                        <span className="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-800">
-                          Pending
-                        </span>
-                      ) : (
-                        <span className="rounded bg-rose-100 px-2 py-0.5 text-xs text-rose-800">
-                          Failed
-                        </span>
-                      )}
-                    </div>
-                    <div className="mt-1 truncate font-mono text-xs text-neutral-700">
-                      {a.externalId}
-                    </div>
-                    {a.handle && (
-                      <div className="truncate text-xs text-neutral-600">
-                        {a.handle}
-                      </div>
-                    )}
-                    {a.url ? (
-                      <Link
-                        href={a.url}
-                        target="_blank"
-                        className="truncate text-xs text-blue-700 underline"
-                      >
-                        {a.url}
-                      </Link>
-                    ) : null}
-                  </div>
-                  <div className="shrink-0">
-                    <button
-                      onClick={() => disconnectAccount(a.id)}
-                      className="rounded-lg border px-3 py-1 text-xs hover:bg-neutral-50"
-                      type="button"
-                    >
-                      Disconnect
-                    </button>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="mt-1 text-xs text-neutral-500">
-              No accounts linked yet.
-            </p>
-          )}
-          {!!accountsMsg && (
-            <p className="mt-2 text-xs text-neutral-700">{accountsMsg}</p>
-          )}
         </div>
       </section>
     </div>
