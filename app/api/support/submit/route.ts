@@ -1,5 +1,5 @@
 // app/api/support/submit/route.ts
-// 📅 Updated: 2025-12-10 11:32 ET
+// 📅 Updated: 2025-12-10 12:22 ET
 // Creates a SupportTicket and emails AEOBRO to the correct inbox based on category.
 
 export const runtime = "nodejs";
@@ -22,7 +22,6 @@ const ALLOWED_CATEGORIES = [
   "BILLING",
   "VERIFICATION",
   "TECHNICAL",
-  "REPORT_ABUSE",
   "OTHER",
 ] as const;
 
@@ -33,7 +32,6 @@ const CATEGORY_TO_ADDRESS: Record<SupportCategory, string> = {
   TECHNICAL: "support@aeobro.com",
   BILLING: "billing@aeobro.com",
   VERIFICATION: "support@aeobro.com",
-  REPORT_ABUSE: "abusebox@aeobro.com",
   OTHER: "contact@aeobro.com",
 };
 
@@ -42,7 +40,6 @@ const CATEGORY_LABEL: Record<SupportCategory, string> = {
   TECHNICAL: "Technical issue",
   BILLING: "Billing / subscription",
   VERIFICATION: "Verification / domain / platform",
-  REPORT_ABUSE: "Report abuse / impersonation",
   OTHER: "Other",
 };
 
