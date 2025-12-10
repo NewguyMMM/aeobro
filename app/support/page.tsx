@@ -17,7 +17,7 @@ const CATEGORIES = [
 export default function SupportPage() {
   const { data: session } = useSession();
   const { push } = useRouter();
-  const toast = useToast(); // 🔧 FIX: useToast returns a function, not { toast }
+  const toast = useToast(); // useToast returns a function: (message: string) => void
 
   const [email, setEmail] = React.useState(
     (session?.user?.email as string | undefined) || ""
@@ -45,12 +45,10 @@ export default function SupportPage() {
         throw new Error(data.error || "Failed to submit support request");
       }
 
-      toast({
-        title: "Support request sent",
-        description:
-          "Thanks for reaching out. We’ll follow up at your email as soon as possible.",
-        variant: "success",
-      });
+      // ✅ useToast expects a string, not an object
+      toast(
+        "Support request sent. We’ll follow up at your email as soon as possible."
+      );
 
       // Optional: redirect back to dashboard after a short delay
       setTimeout(() => {
@@ -63,12 +61,11 @@ export default function SupportPage() {
       setMessage("");
     } catch (err: any) {
       console.error(err);
-      toast({
-        title: "Something went wrong",
-        description:
-          err?.message || "We couldn’t send your request. Please try again.",
-        variant: "error",
-      });
+      toast(
+        `Something went wrong. ${
+          err?.message || "We couldn’t send your request. Please try again."
+        }`
+      );
     } finally {
       setIsSubmitting(false);
     }
