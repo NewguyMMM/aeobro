@@ -1,6 +1,6 @@
 // app/api/support/submit/route.ts
-// 📅 Added: 2025-12-10 06:12 ET
-// Creates a SupportTicket and (optionally) emails AEOBRO support.
+// 📅 Updated: 2025-12-10 11:32 ET
+// Creates a SupportTicket and emails AEOBRO to the correct inbox based on category.
 
 export const runtime = "nodejs";
 
@@ -14,11 +14,37 @@ import { Resend } from "resend";
 const resend =
   process.env.RESEND_API_KEY && new Resend(process.env.RESEND_API_KEY);
 
-const SUPPORT_EMAIL = process.env.SUPPORT_EMAIL || "support@aeobro.com";
+// Fallback / default support email (used only as a last resort)
+const DEFAULT_SUPPORT_EMAIL = process.env.SUPPORT_EMAIL || "support@aeobro.com";
 
 // Allowed enums must match prisma.schema
-const ALLOWED_CATEGORIES = ["BILLING", "VERIFICATION", "TECHNICAL", "OTHER"] as const;
+const ALLOWED_CATEGORIES = [
+  "BILLING",
+  "VERIFICATION",
+  "TECHNICAL",
+  "REPORT_ABUSE",
+  "OTHER",
+] as const;
+
 type SupportCategory = (typeof ALLOWED_CATEGORIES)[number];
+
+// Map category → destination inbox
+const CATEGORY_TO_ADDRESS: Record<SupportCategory, string> = {
+  TECHNICAL: "support@aeobro.com",
+  BILLING: "billing@aeobro.com",
+  VERIFICATION: "support@aeobro.com",
+  REPORT_ABUSE: "abusebox@aeobro.com",
+  OTHER: "contact@aeobro.com",
+};
+
+// Human-readable labels for email subject/body
+const CATEGORY_LABEL: Record<SupportCategory, string> = {
+  TECHNICAL: "Technical issue",
+  BILLING: "Billing / subscription",
+  VERIFICATION: "Verification / domain / platform",
+  REPORT_ABUSE: "Report abuse / impersonation",
+  OTHER: "Other",
+};
 
 export async function POST(req: Request) {
   const session = await getServerSession(authOptions);
@@ -91,31 +117,37 @@ export async function POST(req: Request) {
       },
     });
 
-    // Fire-and-forget email to support (if configured)
-    if (resend && SUPPORT_EMAIL) {
-      const previewId = ticket.id.slice(0, 8);
-      const planLabel = (session?.user as any)?.plan ?? "UNKNOWN";
+    // Decide which inbox to send to
+    const toAddress =
+      CATEGORY_TO_ADDRESS[category] || DEFAULT_SUPPORT_EMAIL;
+    const catLabel = CATEGORY_LABEL[category];
+    const previewId = ticket.id.slice(0, 8);
+    const planLabel = (session?.user as any)?.plan ?? "UNKNOWN";
+    const safeSubject = subject.slice(0, 200);
 
-      // Don't throw if email fails – ticket is already stored.
+    // Fire-and-forget email to the appropriate AEOBRO inbox (if configured)
+    if (resend && toAddress) {
       resend.emails
         .send({
           from: "AEOBRO Support <no-reply@aeobro.com>",
-          to: [SUPPORT_EMAIL],
-          subject: `[AEOBRO Support] #${previewId} – ${subject}`,
+          to: [toAddress],
+          replyTo: email,
+          subject: `[${catLabel}] #${previewId} – ${safeSubject}`,
           html: `
             <h2>New AEOBRO support ticket</h2>
             <p><strong>ID:</strong> ${ticket.id}</p>
             <p><strong>Created:</strong> ${new Date(
               ticket.createdAt
             ).toISOString()}</p>
-            <p><strong>Category:</strong> ${category}</p>
+            <p><strong>Category:</strong> ${catLabel} (${category})</p>
             <p><strong>Status:</strong> ${ticket.status}</p>
             <p><strong>User:</strong> ${
               userId || "anonymous"
             } (plan: ${planLabel})</p>
-            <p><strong>Email:</strong> ${email}</p>
+            <p><strong>From email:</strong> ${email}</p>
+            <p><strong>Routed to inbox:</strong> ${toAddress}</p>
             <hr />
-            <p><strong>Subject:</strong> ${subject}</p>
+            <p><strong>Subject:</strong> ${safeSubject}</p>
             <pre style="white-space:pre-wrap;font-family:system-ui, -apple-system, sans-serif;">
 ${message}
             </pre>
