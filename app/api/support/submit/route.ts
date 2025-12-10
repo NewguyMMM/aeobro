@@ -1,5 +1,5 @@
 // app/api/support/submit/route.ts
-// 📅 Updated: 2025-12-10 12:36 ET
+// 📅 Updated: 2025-12-10 12:41 ET
 // Creates a SupportTicket and emails AEOBRO to the correct inbox based on category.
 
 export const runtime = "nodejs";
@@ -131,7 +131,8 @@ export async function POST(req: Request) {
         .send({
           from: "AEOBRO Support <no-reply@aeobro.com>",
           to: [toAddress],
-          replyTo: email,
+          // Resend v2 uses snake_case for reply-to
+          reply_to: email,
           subject: `[${catLabel}] #${previewId} – ${safeSubject}`,
           html: `
             <h2>New AEOBRO support ticket</h2>
@@ -168,5 +169,5 @@ ${message}
   }
 }
 
-// 👇 Explicit empty export so TypeScript treats this as a module in all configs
+// Explicit empty export so TypeScript treats this as a module in all configs
 export {};
