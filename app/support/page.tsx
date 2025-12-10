@@ -75,7 +75,7 @@ export default function SupportPage() {
     <div className="min-h-screen bg-slate-950 text-slate-50">
       <main className="mx-auto max-w-2xl px-4 py-16">
         <h1 className="text-3xl font-semibold tracking-tight mb-2">
-          Contact AEOBRO Support
+          Contact AEOBRO
         </h1>
         <p className="text-slate-400 mb-8">
           Having trouble with your AI Identity Layer, billing, or verification?
@@ -153,7 +153,7 @@ export default function SupportPage() {
             disabled={isSubmitting}
             className="inline-flex items-center justify-center rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-60"
           >
-            {isSubmitting ? "Sending…" : "Send to AEOBRO Support"}
+            {isSubmitting ? "Sending…" : "Send to AEOBRO"}
           </button>
         </form>
       </main>
