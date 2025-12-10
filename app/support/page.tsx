@@ -1,5 +1,5 @@
 // app/support/page.tsx
-// 📅 Added: 2025-12-10 06:12 ET
+// 📅 Updated: 2025-12-10 11:22 ET
 "use client";
 
 import * as React from "react";
@@ -11,6 +11,7 @@ const CATEGORIES = [
   { value: "TECHNICAL", label: "Technical issue" },
   { value: "BILLING", label: "Billing / subscription" },
   { value: "VERIFICATION", label: "Verification / domain / platform" },
+  { value: "REPORT_ABUSE", label: "Report abuse / impersonation" }, // 🆕
   { value: "OTHER", label: "Other" },
 ];
 
@@ -45,12 +46,10 @@ export default function SupportPage() {
         throw new Error(data.error || "Failed to submit support request");
       }
 
-      // ✅ useToast expects a string, not an object
       toast(
         "Support request sent. We’ll follow up at your email as soon as possible."
       );
 
-      // Optional: redirect back to dashboard after a short delay
       setTimeout(() => {
         if (session) {
           push("/dashboard");
