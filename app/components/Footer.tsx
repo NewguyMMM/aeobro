@@ -33,6 +33,10 @@ export default function Footer() {
           <Link href="/billing" className="hover:text-gray-800">
             Manage subscription
           </Link>
+          {/* 🆕 Contact Support link */}
+          <Link href="/support" className="hover:text-gray-800">
+            Contact Support
+          </Link>
         </nav>
       </div>
     </footer>
