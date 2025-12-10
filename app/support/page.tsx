@@ -17,7 +17,7 @@ const CATEGORIES = [
 export default function SupportPage() {
   const { data: session } = useSession();
   const { push } = useRouter();
-  const { toast } = useToast();
+  const toast = useToast(); // 🔧 FIX: useToast returns a function, not { toast }
 
   const [email, setEmail] = React.useState(
     (session?.user?.email as string | undefined) || ""
@@ -85,7 +85,10 @@ export default function SupportPage() {
           Send us a message and we’ll get back to you at the email below.
         </p>
 
-        <form onSubmit={handleSubmit} className="space-y-6 bg-slate-900/60 border border-slate-800 rounded-2xl p-6">
+        <form
+          onSubmit={handleSubmit}
+          className="space-y-6 bg-slate-900/60 border border-slate-800 rounded-2xl p-6"
+        >
           <div className="space-y-2">
             <label className="block text-sm font-medium text-slate-200">
               Email
