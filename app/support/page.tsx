@@ -1,5 +1,5 @@
 // app/support/page.tsx
-// 📅 Updated: 2025-12-10 12:22 ET
+// 📅 Updated: 2025-12-10 12:30 ET
 "use client";
 
 import * as React from "react";
