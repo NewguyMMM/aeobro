@@ -1,5 +1,5 @@
 // app/support/page.tsx
-// 📅 Updated: 2025-12-10 11:22 ET
+// 📅 Updated: 2025-12-10 12:22 ET
 "use client";
 
 import * as React from "react";
@@ -11,7 +11,6 @@ const CATEGORIES = [
   { value: "TECHNICAL", label: "Technical issue" },
   { value: "BILLING", label: "Billing / subscription" },
   { value: "VERIFICATION", label: "Verification / domain / platform" },
-  { value: "REPORT_ABUSE", label: "Report abuse / impersonation" }, // 🆕
   { value: "OTHER", label: "Other" },
 ];
 
