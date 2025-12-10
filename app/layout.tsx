@@ -52,7 +52,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
 
             <main>{children}</main>
 
-            {/* Shared footer with Contact Support link */}
+            {/* Shared footer with Contact link */}
             <Footer />
           </ToastProvider>
         </Providers>
