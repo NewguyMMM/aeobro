@@ -1,5 +1,5 @@
 // prisma/schema.prisma
-// 📅 Updated: 2025-12-09 19:32 ET – Add SupportTicket model & enums
+// 📅 Updated: 2025-12-10 11:48 ET – Add REPORT_ABUSE to SupportCategory enum
 
 generator client {
   provider = "prisma-client-js"
@@ -63,6 +63,7 @@ enum SupportCategory {
   BILLING
   VERIFICATION
   TECHNICAL
+  REPORT_ABUSE
   OTHER
 }
 
