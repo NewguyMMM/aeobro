@@ -4,7 +4,8 @@ import "./globals.css";
 import Providers from "./providers";
 import AuthButton from "./components/AuthButton";
 import { ToastProvider } from "@/components/Toast";
-import HomeLink from "@/components/HomeLink"; // ⬅️ new
+import HomeLink from "@/components/HomeLink";
+import Footer from "./components/Footer";
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
@@ -51,17 +52,8 @@ export default function RootLayout({ children }: { children: ReactNode }) {
 
             <main>{children}</main>
 
-            <footer className="border-t mt-16">
-              <div className="container py-8 text-sm text-gray-600 flex flex-wrap items-center gap-4">
-                <span>© {new Date().getFullYear()} AEOBRO</span>
-                <a href="/privacy">Privacy</a>
-                <a href="/terms">Terms</a>
-                <a href="/aup">AUP</a>
-                <a href="/disputes">Disputes</a>
-                {/* 🔁 updated: /cancel → /billing & label */}
-                <a href="/billing">Manage subscription</a>
-              </div>
-            </footer>
+            {/* Shared footer with Contact Support link */}
+            <Footer />
           </ToastProvider>
         </Providers>
       </body>
