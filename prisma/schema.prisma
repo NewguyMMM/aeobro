@@ -1,5 +1,5 @@
 // prisma/schema.prisma
-// 📅 Updated: 2025-11-29 05:20 ET
+// 📅 Updated: 2025-12-09 19:32 ET – Add SupportTicket model & enums
 
 generator client {
   provider = "prisma-client-js"
@@ -58,6 +58,21 @@ enum VerificationLevel {
   DOMAIN_VERIFIED
 }
 
+/* Support ticket enums */
+enum SupportCategory {
+  BILLING
+  VERIFICATION
+  TECHNICAL
+  OTHER
+}
+
+enum SupportStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  CLOSED
+}
+
 /* ===============================
    Models
    =============================== */
@@ -91,6 +106,9 @@ model User {
 
   // Change history
   changeLogs        ChangeLog[]
+
+  // Support tickets
+  supportTickets    SupportTicket[]
 }
 
 model Account {
@@ -302,6 +320,33 @@ model BioCode {
   @@index([platform])
   @@index([userId, platform, status])
   @@index([expiresAt])
+}
+
+/* ===============================
+   Support Models
+   =============================== */
+
+model SupportTicket {
+  id        String         @id @default(cuid())
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+
+  // Optional relationship to User (allows anonymous tickets)
+  userId String?
+  user   User?            @relation(fields: [userId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+
+  email    String
+  subject  String
+  category SupportCategory
+  message  String
+
+  status   SupportStatus   @default(OPEN)
+
+  // Optional metadata for debugging / abuse protection
+  userAgent String?
+  ipHash    String?
+
+  @@index([userId, createdAt])
 }
 
 /* ===============================
