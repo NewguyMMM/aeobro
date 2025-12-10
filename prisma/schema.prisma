@@ -1,5 +1,5 @@
 // prisma/schema.prisma
-// 📅 Updated: 2025-12-10 11:48 ET – Add REPORT_ABUSE to SupportCategory enum
+// 📅 Updated: 2025-12-10 12:22 ET – SupportCategory back to 4 values
 
 generator client {
   provider = "prisma-client-js"
@@ -63,7 +63,6 @@ enum SupportCategory {
   BILLING
   VERIFICATION
   TECHNICAL
-  REPORT_ABUSE
   OTHER
 }
 
