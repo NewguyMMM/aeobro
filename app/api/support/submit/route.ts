@@ -159,7 +159,7 @@ export async function POST(req: Request) {
       from: SUPPORT_FROM,
       to: [toAddress],
       bcc: SUPPORT_BCC ? [SUPPORT_BCC] : undefined,
-      replyTo: email, // NOTE: replyTo is correct for current Resend SDK
+      reply_to: email, // NOTE: replyTo is correct for current Resend SDK
       subject: `[${catLabel}] #${previewId} – ${safeSubject}`,
       html: `
         <h2>New AEOBRO message</h2>
