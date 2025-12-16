@@ -1,6 +1,7 @@
 // app/api/support/submit/route.ts
-// 📅 Updated: 2025-12-11 15:22 ET
-// Creates a SupportTicket and emails AEOBRO to the correct inbox based on category.
+// 📅 Updated: 2025-12-16 01:09 PM ET
+// Single endpoint for Support + Contact.
+// Creates SupportTicket first, then sends routed email via Resend (awaited), returns requestId for traceability.
 
 export const runtime = "nodejs";
 
@@ -11,20 +12,21 @@ import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { Resend } from "resend";
 
-const resend =
-  process.env.RESEND_API_KEY && new Resend(process.env.RESEND_API_KEY);
+const RESEND_API_KEY = process.env.RESEND_API_KEY || "";
+const resend = RESEND_API_KEY ? new Resend(RESEND_API_KEY) : null;
 
-// Fallback / default support email (used only as a last resort)
+// IMPORTANT: set this to a sender verified in Resend.
+// Example: "AEOBRO <login@aeobro.com>" or "AEOBRO Support <login@aeobro.com>"
+const SUPPORT_FROM = process.env.SUPPORT_FROM || "AEOBRO Support <login@aeobro.com>";
+
+// Optional: backstop copy during launch week (your personal inbox)
+const SUPPORT_BCC = process.env.SUPPORT_BCC || "";
+
+// Fallback / default inbox
 const DEFAULT_SUPPORT_EMAIL = process.env.SUPPORT_EMAIL || "support@aeobro.com";
 
 // Allowed enums must match prisma.schema (SupportCategory)
-const ALLOWED_CATEGORIES = [
-  "BILLING",
-  "VERIFICATION",
-  "TECHNICAL",
-  "OTHER",
-] as const;
-
+const ALLOWED_CATEGORIES = ["BILLING", "VERIFICATION", "TECHNICAL", "OTHER"] as const;
 type SupportCategory = (typeof ALLOWED_CATEGORIES)[number];
 
 // Map category → destination inbox
@@ -35,59 +37,65 @@ const CATEGORY_TO_ADDRESS: Record<SupportCategory, string> = {
   OTHER: "contact@aeobro.com",
 };
 
-// Human-readable labels for email subject/body
+// Human-readable labels
 const CATEGORY_LABEL: Record<SupportCategory, string> = {
   TECHNICAL: "Technical issue",
   BILLING: "Billing / subscription",
   VERIFICATION: "Verification / domain / platform",
-  OTHER: "Other",
+  OTHER: "General / contact",
 };
 
+function safeTrim(v: any) {
+  return typeof v === "string" ? v.trim() : "";
+}
+
+function normalizeCategory(raw: string): SupportCategory {
+  const up = (raw || "").toUpperCase().trim();
+  return ALLOWED_CATEGORIES.includes(up as SupportCategory) ? (up as SupportCategory) : "OTHER";
+}
+
+function makeRequestId() {
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`.toUpperCase();
+}
+
 export async function POST(req: Request) {
+  const requestId = makeRequestId();
   const session = await getServerSession(authOptions);
 
   let body: any;
   try {
     body = await req.json();
   } catch {
-    return NextResponse.json(
-      { ok: false, error: "Invalid JSON body" },
-      { status: 400 }
-    );
+    return NextResponse.json({ ok: false, requestId, error: "Invalid JSON body" }, { status: 400 });
   }
 
-  const email =
-    (body.email as string | undefined)?.trim() ||
-    (session?.user?.email ?? "").trim();
-  const subject = (body.subject as string | undefined)?.trim() || "";
-  const message = (body.message as string | undefined)?.trim() || "";
-  const rawCategory =
-    (body.category as string | undefined)?.toUpperCase().trim() || "OTHER";
+  // Support form fields (existing)
+  const emailFromBody = safeTrim(body.email);
+  const subjectFromBody = safeTrim(body.subject);
+  const messageFromBody = safeTrim(body.message);
+  const rawCategory = safeTrim(body.category) || "OTHER";
+
+  // Contact-form-style optional fields (new)
+  const name = safeTrim(body.name);
+  const company = safeTrim(body.company);
+  const pageUrl = safeTrim(body.pageUrl);
+
+  const email = emailFromBody || safeTrim(session?.user?.email);
+  const category = normalizeCategory(rawCategory);
+
+  // If contact form doesn’t include a subject, synthesize one
+  const subject =
+    subjectFromBody ||
+    (category === "OTHER" ? "Contact form submission" : `${CATEGORY_LABEL[category]} submission`);
+
+  const message = messageFromBody;
 
   if (!email) {
-    return NextResponse.json(
-      { ok: false, error: "Email is required" },
-      { status: 400 }
-    );
-  }
-  if (!subject) {
-    return NextResponse.json(
-      { ok: false, error: "Subject is required" },
-      { status: 400 }
-    );
+    return NextResponse.json({ ok: false, requestId, error: "Email is required" }, { status: 400 });
   }
   if (!message) {
-    return NextResponse.json(
-      { ok: false, error: "Message is required" },
-      { status: 400 }
-    );
+    return NextResponse.json({ ok: false, requestId, error: "Message is required" }, { status: 400 });
   }
-
-  const category: SupportCategory = ALLOWED_CATEGORIES.includes(
-    rawCategory as SupportCategory
-  )
-    ? (rawCategory as SupportCategory)
-    : "OTHER";
 
   const userId = (session?.user as any)?.id ?? null;
 
@@ -96,15 +104,20 @@ export async function POST(req: Request) {
     req.headers.get("x-forwarded-for")?.split(",")[0].trim() ||
     req.headers.get("x-real-ip") ||
     undefined;
-  const ipHash = ip
-    ? crypto.createHash("sha256").update(ip).digest("hex")
-    : undefined;
+
+  const ipHash = ip ? crypto.createHash("sha256").update(ip).digest("hex") : undefined;
+
+  // Route inbox
+  const toAddress = CATEGORY_TO_ADDRESS[category] || DEFAULT_SUPPORT_EMAIL;
+  const catLabel = CATEGORY_LABEL[category];
+  const planLabel = (session?.user as any)?.plan ?? "UNKNOWN";
 
   try {
+    // 1) Store ticket first (never lose the lead)
     const ticket = await prisma.supportTicket.create({
       data: {
         email,
-        subject,
+        subject: subject.slice(0, 200),
         message,
         category,
         status: "OPEN",
@@ -114,56 +127,78 @@ export async function POST(req: Request) {
       },
     });
 
-    // Decide which inbox to send to
-    const toAddress =
-      CATEGORY_TO_ADDRESS[category] || DEFAULT_SUPPORT_EMAIL;
-    const catLabel = CATEGORY_LABEL[category];
     const previewId = ticket.id.slice(0, 8);
-    const planLabel = (session?.user as any)?.plan ?? "UNKNOWN";
     const safeSubject = subject.slice(0, 200);
 
-    // Fire-and-forget email to the appropriate AEOBRO inbox (if configured)
-    if (resend && toAddress) {
-      resend.emails
-        .send({
-          from: "AEOBRO Support <no-reply@aeobro.com>",
-          to: [toAddress],
-          // Resend v2 uses snake_case for reply-to
-          reply_to: email,
-          subject: `[${catLabel}] #${previewId} – ${safeSubject}`,
-          html: `
-            <h2>New AEOBRO support ticket</h2>
-            <p><strong>ID:</strong> ${ticket.id}</p>
-            <p><strong>Created:</strong> ${new Date(
-              ticket.createdAt
-            ).toISOString()}</p>
-            <p><strong>Category:</strong> ${catLabel} (${category})</p>
-            <p><strong>Status:</strong> ${ticket.status}</p>
-            <p><strong>User:</strong> ${
-              userId || "anonymous"
-            } (plan: ${planLabel})</p>
-            <p><strong>From email:</strong> ${email}</p>
-            <p><strong>Routed to inbox:</strong> ${toAddress}</p>
-            <hr />
-            <p><strong>Subject:</strong> ${safeSubject}</p>
-            <pre style="white-space:pre-wrap;font-family:system-ui, -apple-system, sans-serif;">
-${message}
-            </pre>
-          `.trim(),
-        })
-        .catch((err) => {
-          console.error("[support-email] Failed to send support email", err);
-        });
+    const extraContextLines = [
+      `Request ID: ${requestId}`,
+      `Ticket ID: ${ticket.id}`,
+      `Created: ${new Date(ticket.createdAt).toISOString()}`,
+      `Category: ${catLabel} (${category})`,
+      `Status: ${ticket.status}`,
+      `User: ${userId || "anonymous"} (plan: ${planLabel})`,
+      `From email: ${email}`,
+      `Routed to inbox: ${toAddress}`,
+      name ? `Name: ${name}` : "",
+      company ? `Company: ${company}` : "",
+      pageUrl ? `Page: ${pageUrl}` : "",
+    ]
+      .filter(Boolean)
+      .join("\n");
+
+    // 2) Send email (awaited; no silent failures)
+    if (!resend) {
+      console.error("[support-email] Resend not configured (missing RESEND_API_KEY)", { requestId });
+      return NextResponse.json(
+        { ok: true, requestId, note: "Ticket saved; email not sent (Resend not configured)." },
+        { status: 200 }
+      );
     }
 
-    return NextResponse.json({ ok: true });
-  } catch (err) {
-    console.error("[support-ticket] Error creating ticket", err);
+    const sendResult = await resend.emails.send({
+      from: SUPPORT_FROM,
+      to: [toAddress],
+      bcc: SUPPORT_BCC ? [SUPPORT_BCC] : undefined,
+      replyTo: email, // NOTE: replyTo is correct for current Resend SDK
+      subject: `[${catLabel}] #${previewId} – ${safeSubject}`,
+      html: `
+        <h2>New AEOBRO message</h2>
+        <pre style="white-space:pre-wrap;font-family:system-ui,-apple-system,sans-serif;">${escapeHtml(
+          extraContextLines
+        )}</pre>
+        <hr />
+        <p><strong>Subject:</strong> ${escapeHtml(safeSubject)}</p>
+        <pre style="white-space:pre-wrap;font-family:system-ui,-apple-system,sans-serif;">${escapeHtml(
+          message
+        )}</pre>
+      `.trim(),
+    });
+
+    // Log provider response to Vercel logs for easy debugging
+    console.log("[support-email] sent", {
+      requestId,
+      ticketId: ticket.id,
+      toAddress,
+      resendId: (sendResult as any)?.data?.id || null,
+    });
+
+    return NextResponse.json({ ok: true, requestId });
+  } catch (err: any) {
+    console.error("[support-submit] error", { requestId, err });
     return NextResponse.json(
-      { ok: false, error: "Failed to create support ticket" },
+      { ok: false, requestId, error: err?.message || "Failed to create support ticket" },
       { status: 500 }
     );
   }
+}
+
+function escapeHtml(s: string) {
+  return s
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
 }
 
 // Explicit empty export so TypeScript treats this as a module in all configs
