@@ -1,7 +1,6 @@
 // app/p/[slug]/page.tsx
-// 📅 Updated: 2025-12-03 23:04 ET
-// Hardened profile page: deterministic server render, safe JSON-LD, badges, Latest Update, FAQ & Services.
-// Branding & Media / Platforms sections now only render when they have real content.
+// 📅 Updated: 2025-12-28 05:33 ET
+// Adds: visibility guard (PUBLIC only). UNPUBLISHED/DELETED => notFound() => no longer crawlable.
 
 import { prisma } from "@/lib/prisma";
 import {
@@ -33,10 +32,13 @@ const getProfileMetaCached = (slug: string) =>
         select: {
           displayName: true,
           tagline: true,
+          visibility: true,
         },
       });
 
+      // If not found or not public, treat as not found (unpublished/deleted)
       if (!profile) return null;
+      if (profile.visibility !== "PUBLIC") return null;
 
       return {
         displayName: profile.displayName ?? "Profile",
@@ -55,6 +57,7 @@ const getProfileFullCached = (slug: string) =>
         select: {
           id: true,
           slug: true,
+          visibility: true, // NEW
           displayName: true,
           legalName: true,
           entityType: true,
@@ -148,6 +151,11 @@ export default async function Page({ params }: PageProps) {
   const profile = await getProfileFullCached(slug)();
 
   if (!profile) {
+    notFound();
+  }
+
+  // NEW: visibility guard (PUBLIC only)
+  if (profile.visibility !== "PUBLIC") {
     notFound();
   }
 
@@ -325,15 +333,13 @@ export default async function Page({ params }: PageProps) {
                   Latest update
                 </span>
                 {updatedDate && (
-                  <span className="text-xs text-amber-800">
-                    • {updatedDate}
-                  </span>
+                  <span className="text-xs text-amber-800">• {updatedDate}</span>
                 )}
               </div>
               <p className="mt-1 whitespace-pre-wrap">{updateMessage}</p>
               <p className="mt-1 text-[11px] text-amber-800/80">
-                AEOBRO exposes this in machine-readable JSON-LD so AI systems
-                can see what&apos;s new.
+                AEOBRO exposes this in machine-readable JSON-LD so AI systems can
+                see what&apos;s new.
               </p>
             </section>
           )}
@@ -346,9 +352,7 @@ export default async function Page({ params }: PageProps) {
             {bio && (
               <div>
                 <h3 className="text-sm font-semibold mb-1">About</h3>
-                <p className="text-sm text-gray-800 whitespace-pre-wrap">
-                  {bio}
-                </p>
+                <p className="text-sm text-gray-800 whitespace-pre-wrap">{bio}</p>
               </div>
             )}
 
@@ -376,9 +380,7 @@ export default async function Page({ params }: PageProps) {
         {/* Website, Location, Reach */}
         {(website || location || serviceArea.length > 0) && (
           <section className="space-y-2">
-            <h2 className="text-lg font-semibold">
-              Website, Location &amp; Reach
-            </h2>
+            <h2 className="text-lg font-semibold">Website, Location &amp; Reach</h2>
             {website && (
               <p className="text-sm">
                 <span className="font-medium">Website:</span>{" "}
@@ -418,14 +420,12 @@ export default async function Page({ params }: PageProps) {
             <ul className="space-y-1 text-sm">
               {profile.foundedYear && (
                 <li>
-                  <span className="font-medium">Founded:</span>{" "}
-                  {profile.foundedYear}
+                  <span className="font-medium">Founded:</span> {profile.foundedYear}
                 </li>
               )}
               {profile.teamSize && (
                 <li>
-                  <span className="font-medium">Team size:</span>{" "}
-                  {profile.teamSize}
+                  <span className="font-medium">Team size:</span> {profile.teamSize}
                 </li>
               )}
               {profile.pricingModel && (
@@ -455,7 +455,7 @@ export default async function Page({ params }: PageProps) {
           </section>
         )}
 
-        {/* Services (from servicesJson) */}
+        {/* Services */}
         {servicesJson.length > 0 && (
           <section className="space-y-3">
             <h2 className="text-lg font-semibold">Services</h2>
@@ -464,9 +464,7 @@ export default async function Page({ params }: PageProps) {
                 <li key={`${s.name}-${idx}`} className="rounded-xl border p-4">
                   <div className="font-medium">{s.name}</div>
                   {s.description && (
-                    <p className="text-sm text-gray-600 mt-1">
-                      {s.description}
-                    </p>
+                    <p className="text-sm text-gray-600 mt-1">{s.description}</p>
                   )}
                   {(s.priceMin || s.priceMax || s.currency || s.priceUnit) && (
                     <div className="text-xs text-gray-700 mt-2">
@@ -497,7 +495,7 @@ export default async function Page({ params }: PageProps) {
           </section>
         )}
 
-        {/* FAQs (from faqJson) */}
+        {/* FAQs */}
         {faqJson.length > 0 && (
           <section className="space-y-3">
             <h2 className="text-lg font-semibold">FAQs</h2>
@@ -517,16 +515,14 @@ export default async function Page({ params }: PageProps) {
           </section>
         )}
 
-        {/* Platform handles (from handles JSON) */}
+        {/* Platform handles */}
         {handleEntries.length > 0 && (
           <section className="space-y-2">
             <h2 className="text-lg font-semibold">Platforms</h2>
             <ul className="list-disc space-y-1 pl-6 text-sm">
               {handleEntries.map(({ key, value }) => (
                 <li key={key}>
-                  <span className="font-medium">
-                    {prettyHandleLabel(key)}:
-                  </span>{" "}
+                  <span className="font-medium">{prettyHandleLabel(key)}:</span>{" "}
                   {value}
                 </li>
               ))}
@@ -537,9 +533,7 @@ export default async function Page({ params }: PageProps) {
         {/* Verified platform accounts (OAuth) */}
         {profile.platformAccounts?.length ? (
           <section className="space-y-2">
-            <h2 className="text-sm font-semibold text-neutral-700">
-              Verified on
-            </h2>
+            <h2 className="text-sm font-semibold text-neutral-700">Verified on</h2>
             <ul className="space-y-1 text-sm text-neutral-800">
               {profile.platformAccounts.map((a: any) => (
                 <li key={a.id}>
@@ -616,8 +610,8 @@ export default async function Page({ params }: PageProps) {
           <section className="mt-10">
             <h2 className="mb-2 text-lg font-semibold">Schema &amp; JSON-LD</h2>
             <p className="mb-2 text-sm text-gray-600 max-w-xl">
-              This profile is eligible for JSON-LD export. You can copy the
-              same structured data that AEOBRO exposes to AI systems.
+              This profile is eligible for JSON-LD export. You can copy the same
+              structured data that AEOBRO exposes to AI systems.
             </p>
             <div className="flex items-center gap-3">
               <SchemaPreviewButton
@@ -638,7 +632,7 @@ export default async function Page({ params }: PageProps) {
         )}
       </main>
 
-      {/* JSON-LD injection (single script, safe, best-effort only) */}
+      {/* JSON-LD injection */}
       {jsonLdPayload.length > 0 && (
         <script
           type="application/ld+json"
