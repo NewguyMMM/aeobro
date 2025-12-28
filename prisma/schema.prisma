@@ -1,5 +1,5 @@
 // prisma/schema.prisma
-// 📅 Updated: 2025-12-10 12:30 ET – Restore REPORT_ABUSE in SupportCategory enum
+// 📅 Updated: 2025-12-18 06:27 ET – Add publish/unpublish + 90-day retention fields for profile lifecycle
 
 generator client {
   provider = "prisma-client-js"
@@ -75,6 +75,24 @@ enum SupportStatus {
 }
 
 /* ===============================
+   NEW: Publish + retention enums
+   =============================== */
+
+enum ProfileVisibility {
+  PUBLIC
+  UNPUBLISHED
+  DELETED
+}
+
+enum UnpublishReason {
+  NONE
+  SUBSCRIPTION_LAPSED
+  USER_REQUEST
+  ADMIN_ACTION
+  POLICY
+}
+
+/* ===============================
    Models
    =============================== */
 
@@ -92,6 +110,10 @@ model User {
   stripeCustomerId     String?  @unique
   stripeSubscriptionId String?  @unique
   currentPeriodEnd     DateTime?
+
+  // NEW: retention anchor timestamps (90-day window starts at lapse)
+  subscriptionLapsedAt      DateTime?
+  subscriptionReactivatedAt DateTime?
 
   // Auth relations
   accounts      Account[]
@@ -158,6 +180,16 @@ model Profile {
   // Routing / Public URL
   slug        String   @unique
 
+  // NEW: publish + crawl controls
+  visibility        ProfileVisibility @default(PUBLIC)
+  unpublishedAt     DateTime?
+  unpublishReason   UnpublishReason   @default(NONE)
+
+  // NEW: 90-day retention + deletion lifecycle
+  retentionUntil        DateTime?
+  deletedAt             DateTime?
+  deletionJobLockedAt   DateTime?
+
   // Core identity
   displayName String?
   legalName   String?
@@ -176,11 +208,11 @@ model Profile {
   serviceArea String[]  @default([])
 
   // Trust & authority
-  foundedYear  Int?
-  teamSize     Int?
-  languages    String[]  @default([])
-  pricingModel String?
-  hours        String?
+  foundedYear   Int?
+  teamSize      Int?
+  languages     String[]  @default([])
+  pricingModel  String?
+  hours         String?
   certifications String?
 
   // Media & authority signals
@@ -218,6 +250,10 @@ model Profile {
   serviceItems      ServiceItem[]
   changeLogs        ChangeLog[]
   platformAccounts  PlatformAccount[]
+
+  @@index([visibility])
+  @@index([retentionUntil])
+  @@index([deletedAt])
 }
 
 // ===============================
