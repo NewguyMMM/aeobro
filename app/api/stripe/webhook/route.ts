@@ -1,8 +1,8 @@
 // app/api/stripe/webhook/route.ts
-// ✅ Updated: 2025-11-30 07:20 ET
-// - LITE is baseline fallback plan
-// - Map plan from Stripe price IDs (Lite/Plus/Pro/Business/Enterprise)
-// - Extra logging so we can debug price → plan mapping in Vercel logs
+// ✅ Updated: 2025-12-28 05:33 ET
+// Adds: subscription lapse → unpublish profile + start 90-day retention timer
+// Adds: reactivation → republish profile + clear retention
+// Keeps: price->plan mapping + logging
 
 import { NextResponse } from "next/server";
 import Stripe from "stripe";
@@ -49,10 +49,7 @@ function mapPriceToPlan(priceId?: string | null): DbPlan | undefined {
   if (!priceId) return undefined;
   const plan = PRICE_TO_PLAN[priceId];
   if (!plan) {
-    console.warn(
-      "[stripe webhook] Unknown priceId, cannot map to plan:",
-      priceId
-    );
+    console.warn("[stripe webhook] Unknown priceId, cannot map to plan:", priceId);
   } else {
     console.log("[stripe webhook] Mapped priceId → plan:", priceId, "→", plan);
   }
@@ -65,6 +62,71 @@ function isLiveCustomer(
   c: Stripe.Customer | Stripe.DeletedCustomer
 ): c is Stripe.Customer {
   return !("deleted" in (c as any) && (c as any).deleted === true);
+}
+
+/* ------------------------ Lapse/Reactivate helpers ------------------------- */
+
+const DAYS_90_MS = 90 * 24 * 60 * 60 * 1000;
+
+async function applySubscriptionLapseEffects(userId: string, reason = "SUBSCRIPTION_LAPSED") {
+  const now = new Date();
+  const retentionUntil = new Date(now.getTime() + DAYS_90_MS);
+
+  console.log("[stripe webhook] Applying lapse effects for user:", userId, "retentionUntil:", retentionUntil.toISOString());
+
+  // 1) Anchor the lapse timestamp (only set once)
+  await prisma.user.update({
+    where: { id: userId },
+    data: {
+      subscriptionLapsedAt: now,
+      subscriptionReactivatedAt: null,
+    },
+  });
+
+  // 2) Unpublish profile immediately (404 => effectively not crawlable)
+  await prisma.profile.updateMany({
+    where: { userId },
+    data: {
+      visibility: "UNPUBLISHED",
+      unpublishedAt: now,
+      unpublishReason: reason as any,
+      retentionUntil,
+      deletedAt: null,
+      deletionJobLockedAt: null,
+    },
+  });
+}
+
+async function applySubscriptionReactivationEffects(userId: string) {
+  const now = new Date();
+
+  console.log("[stripe webhook] Applying reactivation effects for user:", userId);
+
+  // Clear lapse anchor
+  await prisma.user.update({
+    where: { id: userId },
+    data: {
+      subscriptionLapsedAt: null,
+      subscriptionReactivatedAt: now,
+    },
+  });
+
+  // Republish ONLY if it was unpublished due to lapse
+  await prisma.profile.updateMany({
+    where: {
+      userId,
+      visibility: "UNPUBLISHED",
+      unpublishReason: "SUBSCRIPTION_LAPSED" as any,
+    },
+    data: {
+      visibility: "PUBLIC",
+      unpublishedAt: null,
+      unpublishReason: "NONE" as any,
+      retentionUntil: null,
+      deletedAt: null,
+      deletionJobLockedAt: null,
+    },
+  });
 }
 
 /* ------------------------- Helper: upsert user record ---------------------- */
@@ -83,7 +145,7 @@ async function upsertUserFromCustomerId(
   // 1) Try by stripeCustomerId
   const byCustomer = await prisma.user.findFirst({
     where: { stripeCustomerId: customerId },
-    select: { id: true, email: true },
+    select: { id: true, email: true, subscriptionLapsedAt: true },
   });
   if (byCustomer) {
     console.log(
@@ -95,6 +157,7 @@ async function upsertUserFromCustomerId(
     return prisma.user.update({
       where: { id: byCustomer.id },
       data: fields,
+      select: { id: true, plan: true, planStatus: true, subscriptionLapsedAt: true },
     });
   }
 
@@ -106,7 +169,7 @@ async function upsertUserFromCustomerId(
   if (isLiveCustomer(retrieved) && retrieved.email) {
     const byEmail = await prisma.user.findUnique({
       where: { email: retrieved.email },
-      select: { id: true, email: true },
+      select: { id: true, email: true, subscriptionLapsedAt: true },
     });
     if (byEmail) {
       console.log(
@@ -121,6 +184,7 @@ async function upsertUserFromCustomerId(
           stripeCustomerId: customerId,
           ...fields,
         },
+        select: { id: true, plan: true, planStatus: true, subscriptionLapsedAt: true },
       });
     }
   }
@@ -181,12 +245,17 @@ export async function POST(req: Request) {
           );
         }
 
-        await upsertUserFromCustomerId(customerId ?? "", {
+        const updated = await upsertUserFromCustomerId(customerId ?? "", {
           stripeSubscriptionId: subscriptionId ?? undefined,
           plan: mappedPlan, // if undefined, leave existing plan as-is
           planStatus: mappedPlan ? "active" : undefined,
           currentPeriodEnd: undefined,
         });
+
+        // If this was a purchase/activation, treat as reactivation safety
+        if (updated?.id && updated.planStatus === "active") {
+          await applySubscriptionReactivationEffects(updated.id);
+        }
 
         break;
       }
@@ -214,24 +283,38 @@ export async function POST(req: Request) {
 
         const mappedPlan = mapPriceToPlan(priceId);
 
-        const activeStatuses = ["trialing", "active", "past_due"] as const;
-        const isActive = activeStatuses.includes(sub.status as any);
+        // Define "active entitlement" strictly.
+        // Past_due can be treated as active-ish for billing grace, but your policy statement
+        // says "after your subscription lapses" — so we only lapse on truly non-active states.
+        const entitlementStatuses = ["trialing", "active", "past_due"] as const;
+        const isEntitled = entitlementStatuses.includes(sub.status as any);
 
-        // If we can map the price and the sub is active-ish, use that plan.
+        // If we can map the price and the sub is entitled, use that plan.
         // Otherwise fall back to LITE as the baseline.
-        const plan: DbPlan = mappedPlan && isActive ? mappedPlan : "LITE";
+        const plan: DbPlan = mappedPlan && isEntitled ? mappedPlan : "LITE";
 
         let currentPeriodEnd: Date | null = null;
         if (sub.current_period_end) {
           currentPeriodEnd = new Date(sub.current_period_end * 1000);
         }
 
-        await upsertUserFromCustomerId(sub.customer as string, {
+        const updated = await upsertUserFromCustomerId(sub.customer as string, {
           stripeSubscriptionId: sub.id,
           plan,
           planStatus: sub.status,
           currentPeriodEnd,
         });
+
+        if (updated?.id) {
+          if (isEntitled) {
+            // active/trialing/past_due → ensure profile is PUBLIC
+            await applySubscriptionReactivationEffects(updated.id);
+          } else {
+            // lapsed state (canceled/unpaid/etc.) → unpublish + start retention
+            await applySubscriptionLapseEffects(updated.id);
+          }
+        }
+
         break;
       }
 
@@ -266,13 +349,17 @@ export async function POST(req: Request) {
           ? new Date(periodEndUnix * 1000)
           : null;
 
-        await upsertUserFromCustomerId(customerId, {
+        const updated = await upsertUserFromCustomerId(customerId, {
           stripeSubscriptionId: subscriptionId ?? undefined,
           // Only set plan if we can map from price ID.
           plan: mappedPlan ?? undefined,
           planStatus: "active",
           currentPeriodEnd,
         });
+
+        if (updated?.id) {
+          await applySubscriptionReactivationEffects(updated.id);
+        }
 
         break;
       }
@@ -281,15 +368,20 @@ export async function POST(req: Request) {
       case "customer.subscription.deleted": {
         const sub = event.data.object as Stripe.Subscription;
         console.log(
-          "[stripe webhook] subscription deleted, downgrading to LITE. sub.id:",
+          "[stripe webhook] subscription deleted, downgrading to LITE + unpublishing. sub.id:",
           sub.id
         );
-        await upsertUserFromCustomerId(sub.customer as string, {
+
+        const updated = await upsertUserFromCustomerId(sub.customer as string, {
           stripeSubscriptionId: null,
           plan: "LITE",
           planStatus: "canceled",
           currentPeriodEnd: null,
         });
+
+        if (updated?.id) {
+          await applySubscriptionLapseEffects(updated.id);
+        }
         break;
       }
 
