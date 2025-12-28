@@ -1,5 +1,8 @@
 // app/api/profile/[slug]/schema/route.ts
-// 📅 Updated: 2025-11-21 — Include updateMessage in JSON-LD without invalid Prisma include.
+// 📅 Updated: 2025-12-28 05:44 ET
+// Adds: visibility guard so UNPUBLISHED/DELETED profiles return 404 (no longer crawlable)
+// Keeps: syndication gating via isSyndicationAllowed
+// Keeps: updateMessage in JSON-LD
 
 import { NextResponse, NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
@@ -11,6 +14,7 @@ import {
 import { getBaseUrl } from "@/lib/getBaseUrl";
 import { isSyndicationAllowed } from "@/lib/isSyndicationAllowed";
 
+export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 type Params = { params: { slug: string } };
@@ -18,6 +22,20 @@ type Params = { params: { slug: string } };
 /** Prevent </script> injection */
 function escapeForJsonLd(obj: unknown) {
   return JSON.stringify(obj).replace(/</g, "\\u003c");
+}
+
+function notFoundJson(message = "Profile not found") {
+  return NextResponse.json(
+    { error: message },
+    {
+      status: 404,
+      headers: {
+        "Cache-Control": "no-store",
+        "Content-Type": "application/json; charset=utf-8",
+        "X-Robots-Tag": "noindex, nofollow, noarchive",
+      },
+    }
+  );
 }
 
 export async function GET(req: NextRequest, { params }: Params) {
@@ -35,34 +53,32 @@ export async function GET(req: NextRequest, { params }: Params) {
     },
     include: {
       user: { select: { plan: true, planStatus: true } },
-      // ❌ no latestUpdate here – updateMessage is a scalar on Profile
     },
   });
 
+  // 1) Missing profile => 404
   if (!profile) {
-    return NextResponse.json(
-      { error: "Profile not found" },
-      {
-        status: 404,
-        headers: {
-          "Cache-Control": "no-store",
-          "Content-Type": "application/json; charset=utf-8",
-          "X-Robots-Tag": "noindex",
-        },
-      }
-    );
+    return notFoundJson("Profile not found");
+  }
+
+  // 2) Visibility guard (airtight with /p/[slug] behavior)
+  // If profile is UNPUBLISHED or DELETED, treat as not found so it is not crawlable.
+  // Note: This assumes schema.prisma now includes `visibility` as recommended.
+  const visibility = (profile as any).visibility as
+    | "PUBLIC"
+    | "UNPUBLISHED"
+    | "DELETED"
+    | undefined;
+
+  if (visibility && visibility !== "PUBLIC") {
+    return notFoundJson("Profile not found");
   }
 
   const baseUrl = getBaseUrl();
-  const humanUrl = `${baseUrl}/p/${encodeURIComponent(
-    profile.slug ?? slug
-  )}`;
+  const humanUrl = `${baseUrl}/p/${encodeURIComponent(profile.slug ?? slug)}`;
 
   /** Normalize plan */
-  const plan =
-    (profile as any).plan ??
-    profile.user?.plan ??
-    null;
+  const plan = (profile as any).plan ?? profile.user?.plan ?? null;
 
   const verificationStatus =
     (profile.verificationStatus as
@@ -96,7 +112,7 @@ export async function GET(req: NextRequest, { params }: Params) {
         status: 403,
         headers: {
           "Cache-Control": "no-store",
-          "X-Robots-Tag": "noindex, nofollow",
+          "X-Robots-Tag": "noindex, nofollow, noarchive",
           Link: `<${humanUrl}>; rel="alternate"; type="text/html"`,
         },
       }
@@ -108,7 +124,7 @@ export async function GET(req: NextRequest, { params }: Params) {
     const profileSchema = buildProfileSchema(
       profile,
       baseUrl,
-      profile.updateMessage ?? null
+      (profile as any).updateMessage ?? null
     );
 
     /** Return profile-only schema */
