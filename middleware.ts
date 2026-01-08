@@ -1,11 +1,17 @@
 // middleware.ts
-// Updated: 2025-11-08 06:38 ET
+// Updated: 2026-01-08 06:48 ET
+// - Add: Canonical host enforcement (aeobro.com + aeobro.vercel.app -> www.aeobro.com)
 // - Preserve: legacy auth redirects, Link header on /p/[slug], anti-enumeration
-// - Add: security headers (CSP, HSTS, X-CTO, Referrer-Policy, Permissions-Policy, etc.)
+// - Preserve: security headers (CSP, HSTS, X-CTO, Referrer-Policy, Permissions-Policy, etc.)
 // - Use Edge-safe dynamic import() for Upstash libs
 
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
+
+// ---------- Canonical Host Enforcement ----------
+const CANONICAL_HOST = "www.aeobro.com";
+// Only enforce for these exact hosts (so preview deployments are not affected)
+const ENFORCED_HOSTS = new Set(["aeobro.com", "aeobro.vercel.app"]);
 
 // ---------- Tunables ----------
 const PROBE_LIMIT_PER_MIN =
@@ -110,7 +116,18 @@ const legacy = new Set([
 ]);
 
 export async function middleware(req: NextRequest) {
-  const { pathname, origin } = req.nextUrl;
+  const { pathname } = req.nextUrl;
+
+  // ---- 0) Canonical host redirect (RUN FIRST) ----
+  // Prevents cookies/OAuth/schema URLs from ever being served on non-canonical hosts.
+  const host = req.headers.get("host") || "";
+  if (ENFORCED_HOSTS.has(host) && host !== CANONICAL_HOST) {
+    const url = req.nextUrl.clone();
+    url.host = CANONICAL_HOST;
+    url.protocol = "https:";
+    // 308 = method-preserving, OAuth-safe
+    return NextResponse.redirect(url, 308);
+  }
 
   // ---- 1) Legacy auth redirects ----
   if (legacy.has(pathname)) {
@@ -129,9 +146,11 @@ export async function middleware(req: NextRequest) {
     const parts = pathname.split("/").filter(Boolean); // ["p", "slug", ...]
     const slug = parts[1];
     if (slug) {
+      // Use canonical origin explicitly to avoid any future drift
+      const canonicalOrigin = `https://${CANONICAL_HOST}`;
       res.headers.append(
         "Link",
-        `<${origin}/api/profile/${encodeURIComponent(
+        `<${canonicalOrigin}/api/profile/${encodeURIComponent(
           slug
         )}/schema>; rel="alternate"; type="application/ld+json"`
       );
@@ -234,14 +253,9 @@ export async function middleware(req: NextRequest) {
 }
 
 export const config = {
-  // Keep your original matchers; extend if you want headers on more paths.
+  // Expand matchers so canonical redirect + security headers apply broadly,
+  // while still avoiding API routes and Next internals.
   matcher: [
-    "/sign-in",
-    "/signin",
-    "/auth/sign-in",
-    "/sign-up",
-    "/signup",
-    "/auth-sign-up",
-    "/p/:path*",
+    "/((?!api/|_next/|favicon.ico|robots.txt|sitemap.xml|.*\\.(?:png|jpg|jpeg|gif|webp|svg|ico|css|js|map|txt|woff|woff2|ttf|eot)).*)",
   ],
 };
