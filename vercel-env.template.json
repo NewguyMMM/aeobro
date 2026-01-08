@@ -7,7 +7,7 @@
     },
     {
       "key": "DIRECT_URL",
-      "value": "postgresql://<user>:<password>@<project>.<region>.neon.tech/<database>?sslmode=require&channel_binding=require",
+      "value": "postgresql://<user>:<password>@<project>.<region>.neon.tech/<database>?sslmode=require&channel_binding=require&channel_binding=require",
       "target": ["production", "preview", "development"]
     },
     {
@@ -22,7 +22,7 @@
     },
     {
       "key": "NEXTAUTH_URL",
-      "value": "https://aeobro.vercel.app",
+      "value": "https://www.aeobro.com",
       "target": ["production", "preview", "development"]
     },
     {
@@ -37,4 +37,3 @@
     }
   ]
 }
-
