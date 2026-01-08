@@ -12,5 +12,18 @@
       "path": "/api/jobs/profile-retention",
       "schedule": "0 11 * * *"
     }
+  ],
+  "redirects": [
+    {
+      "source": "/(.*)",
+      "has": [
+        {
+          "type": "host",
+          "value": "aeobro.vercel.app"
+        }
+      ],
+      "destination": "https://www.aeobro.com/$1",
+      "permanent": true
+    }
   ]
 }
