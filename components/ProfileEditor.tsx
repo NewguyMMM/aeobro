@@ -1,8 +1,9 @@
 // components/ProfileEditor.tsx
-// 📅 Updated: 2025-12-04 01:40 ET –
+// 📅 Updated: 2026-01-10 07:20 AM EST –
 //  - Keep Verify card near bottom
 //  - Insert standalone LinkedAccountsCard tile above Billing card
 //  - Billing card remains last
+//  - Add Products / Catalog editor (Plus+), stored as productsJson (JSON)
 
 "use client";
 
@@ -78,6 +79,34 @@ type ServiceItem = {
   position?: number;
 };
 
+type ProductType = "PRODUCT" | "SERVICE" | "OFFER";
+type ProductAvailability =
+  | ""
+  | "InStock"
+  | "OutOfStock"
+  | "PreOrder"
+  | "LimitedAvailability"
+  | "OnlineOnly";
+
+type PriceSpec = {
+  amount?: number | null;
+  currency?: string | null;
+};
+
+type ProductItem = {
+  name: string;
+  type?: ProductType;
+  url?: string | null;
+  image?: string | null;
+  price?: PriceSpec | null;
+  availability?: ProductAvailability;
+  category?: string | null;
+  sku?: string | null;
+  brand?: string | null;
+  gtin?: string | null;
+  position?: number;
+};
+
 type Profile = {
   id?: string | null;
   displayName?: string | null;
@@ -106,6 +135,9 @@ type Profile = {
   // Phase 2 JSON editors
   faqJson?: FAQItem[] | null;
   servicesJson?: ServiceItem[] | null;
+
+  // Products / catalog (JSON)
+  productsJson?: ProductItem[] | null;
 };
 
 /** -------- Utils -------- */
@@ -137,6 +169,12 @@ function toNum(input: string): number | undefined {
   if (!input) return undefined;
   const n = parseInt(input, 10);
   return Number.isFinite(n) ? n : undefined;
+}
+function toMoney(input: string): number | null {
+  const v = (input || "").trim();
+  if (!v) return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
 }
 
 /**
@@ -274,6 +312,37 @@ export default function ProfileEditor({
     currency: "",
   });
 
+  // ---- Products / Catalog (JSON)
+  const [products, setProducts] = React.useState<ProductItem[]>(
+    initial?.productsJson ?? []
+  );
+  const [productAdvanced, setProductAdvanced] = React.useState(false);
+  const [productDraft, setProductDraft] = React.useState<{
+    name: string;
+    type: ProductType;
+    url: string;
+    image: string;
+    amount: string;
+    currency: string;
+    availability: ProductAvailability;
+    category: string;
+    sku: string;
+    brand: string;
+    gtin: string;
+  }>({
+    name: "",
+    type: "PRODUCT",
+    url: "",
+    image: "",
+    amount: "",
+    currency: "USD",
+    availability: "",
+    category: "",
+    sku: "",
+    brand: "",
+    gtin: "",
+  });
+
   // ---- UI
   const [saving, setSaving] = React.useState(false);
   const [savedSlug, setSavedSlug] = React.useState<string | null>(null);
@@ -324,6 +393,9 @@ export default function ProfileEditor({
   // Updates editor should be available on Plus and Pro+ plans only
   const canEditUpdates = planKey === "PLUS" || isProPlan;
 
+  // Products editor should be available on Plus and Pro+ plans (Lite is read-only)
+  const canEditProducts = planKey === "PLUS" || isProPlan;
+
   /** ---- Build a normalized payload ---- */
   const buildPayload = React.useCallback((): Profile => {
     const base: Profile = {
@@ -360,6 +432,44 @@ export default function ProfileEditor({
       // 🔹 Latest update is now saved with the main profile payload
       updateMessage: (updateMessage || "").trim() || null,
     };
+
+    // 🔹 Products / Catalog — only send when Plus/Pro+ so Lite users don't wipe
+    if (canEditProducts) {
+      const productsJson = (products ?? [])
+        .map((p, index) => {
+          const name = (p.name || "").trim();
+          if (!name) return null;
+          const url = p.url ? normalizeUrl(p.url) : null;
+          const image = p.image ? normalizeUrl(p.image) : null;
+
+          const amount =
+            typeof p.price?.amount === "number" && Number.isFinite(p.price.amount)
+              ? p.price.amount
+              : null;
+
+          const currency = (p.price?.currency || "").trim() || null;
+
+          return {
+            name,
+            type: (p.type || "PRODUCT") as ProductType,
+            url,
+            image,
+            price:
+              amount != null || currency != null
+                ? { amount: amount ?? null, currency: currency ?? null }
+                : null,
+            availability: (p.availability || "") as ProductAvailability,
+            category: (p.category || "").trim() || null,
+            sku: (p.sku || "").trim() || null,
+            brand: (p.brand || "").trim() || null,
+            gtin: (p.gtin || "").trim() || null,
+            position: p.position ?? index + 1,
+          } as ProductItem;
+        })
+        .filter(Boolean) as ProductItem[];
+
+      base.productsJson = productsJson;
+    }
 
     // 🔹 Phase 2 JSON editors — only send when Pro/Business/Enterprise so
     // Lite users don’t accidentally wipe existing structured data.
@@ -420,6 +530,8 @@ export default function ProfileEditor({
     handles,
     links,
     updateMessage,
+    products,
+    canEditProducts,
     faqs,
     services,
     isProPlan,
@@ -472,6 +584,9 @@ export default function ProfileEditor({
         if (data.handles) setHandles(data.handles);
         if (data.links) setLinks(data.links || []);
 
+        // Products (always prefill; Lite users see read-only)
+        if (Array.isArray(data.productsJson)) setProducts(data.productsJson);
+
         // Phase 2 JSON editors (always prefill; Lite users see read-only)
         if (Array.isArray(data.faqJson)) setFaqs(data.faqJson);
         if (Array.isArray(data.servicesJson)) setServices(data.servicesJson);
@@ -523,6 +638,18 @@ export default function ProfileEditor({
       for (const l of links) {
         if (l.url && !isValidUrl(normalizeUrl(l.url))) {
           throw new Error("Extra links must be valid URLs.");
+        }
+      }
+
+      // Products validation (URLs only) for Plus/Pro+ where editor is unlocked
+      if (canEditProducts) {
+        for (const p of products) {
+          if (p.url && !isValidUrl(normalizeUrl(p.url))) {
+            throw new Error("Product URLs must be valid (https://example.com).");
+          }
+          if (p.image && !isValidUrl(normalizeUrl(p.image))) {
+            throw new Error("Product image URLs must be valid.");
+          }
         }
       }
 
@@ -720,10 +847,7 @@ export default function ProfileEditor({
       <section className="grid gap-4">
         <h3 className="text-lg font-semibold">Identity</h3>
         <div className={row}>
-          <label
-            className={label + " overflow-visible"}
-            htmlFor="displayName"
-          >
+          <label className={label + " overflow-visible"} htmlFor="displayName">
             Display Name *
             <span className="relative group ml-1 cursor-help align-middle">
               <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-gray-200 text-[10px] font-semibold text-gray-700">
@@ -836,6 +960,370 @@ export default function ProfileEditor({
         </div>
       </section>
 
+      {/* Products / Catalog – Plus & Pro+ only */}
+      <section className="grid gap-4">
+        <div className="rounded-2xl border bg-white p-6 shadow-sm space-y-3">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h3 className="text-lg font-semibold">Products / Catalog</h3>
+              <p className="text-sm text-gray-600">
+                Add your products, services, or offers (name + URL + price).
+                AEOBRO can expose these as machine-readable offers for AI tools.
+              </p>
+            </div>
+            {!canEditProducts && (
+              <span className="text-xs rounded-full bg-yellow-50 px-2.5 py-1 text-yellow-800 border border-yellow-200 whitespace-nowrap">
+                Upgrade to Plus to edit Products
+              </span>
+            )}
+          </div>
+
+          {canEditProducts ? (
+            <div className="grid gap-4">
+              {/* Draft row: fast fields */}
+              <div className="grid gap-3 rounded-xl border bg-gray-50 p-4">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className={row}>
+                    <label className={label}>Type</label>
+                    <select
+                      className={input}
+                      value={productDraft.type}
+                      onChange={(e) =>
+                        setProductDraft((d) => ({
+                          ...d,
+                          type: e.target.value as ProductType,
+                        }))
+                      }
+                    >
+                      <option value="PRODUCT">Product</option>
+                      <option value="SERVICE">Service</option>
+                      <option value="OFFER">Offer</option>
+                    </select>
+                  </div>
+                  <div className={row + " sm:col-span-2"}>
+                    <label className={label}>Name</label>
+                    <input
+                      className={input}
+                      placeholder="e.g., AEOBRO Plus"
+                      value={productDraft.name}
+                      onChange={(e) =>
+                        setProductDraft((d) => ({ ...d, name: e.target.value }))
+                      }
+                      maxLength={160}
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className={row}>
+                    <label className={label}>URL</label>
+                    <input
+                      className={input}
+                      placeholder="https://..."
+                      value={productDraft.url}
+                      onChange={(e) =>
+                        setProductDraft((d) => ({ ...d, url: e.target.value }))
+                      }
+                      maxLength={300}
+                    />
+                  </div>
+                  <div className={row}>
+                    <label className={label}>Image URL (optional)</label>
+                    <input
+                      className={input}
+                      placeholder="https://.../image.png"
+                      value={productDraft.image}
+                      onChange={(e) =>
+                        setProductDraft((d) => ({
+                          ...d,
+                          image: e.target.value,
+                        }))
+                      }
+                      maxLength={300}
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className={row}>
+                    <label className={label}>Price</label>
+                    <input
+                      className={input}
+                      inputMode="decimal"
+                      placeholder="e.g., 19.99"
+                      value={productDraft.amount}
+                      onChange={(e) =>
+                        setProductDraft((d) => ({
+                          ...d,
+                          amount: e.target.value,
+                        }))
+                      }
+                      maxLength={32}
+                    />
+                  </div>
+                  <div className={row}>
+                    <label className={label}>Currency</label>
+                    <input
+                      className={input}
+                      placeholder="USD"
+                      value={productDraft.currency}
+                      onChange={(e) =>
+                        setProductDraft((d) => ({
+                          ...d,
+                          currency: e.target.value.toUpperCase(),
+                        }))
+                      }
+                      maxLength={10}
+                    />
+                  </div>
+                  <div className={row}>
+                    <label className={label}>Availability</label>
+                    <select
+                      className={input}
+                      value={productDraft.availability}
+                      onChange={(e) =>
+                        setProductDraft((d) => ({
+                          ...d,
+                          availability: e.target.value as ProductAvailability,
+                        }))
+                      }
+                    >
+                      <option value="">(optional)</option>
+                      <option value="InStock">In stock</option>
+                      <option value="OutOfStock">Out of stock</option>
+                      <option value="PreOrder">Pre-order</option>
+                      <option value="LimitedAvailability">Limited</option>
+                      <option value="OnlineOnly">Online only</option>
+                    </select>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  className="text-sm text-blue-700 underline underline-offset-2 self-start"
+                  onClick={() => setProductAdvanced((v) => !v)}
+                >
+                  {productAdvanced ? "Hide advanced fields" : "Show advanced fields"}
+                </button>
+
+                {productAdvanced && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className={row}>
+                      <label className={label}>Category (optional)</label>
+                      <input
+                        className={input}
+                        placeholder="e.g., SaaS, Jewelry, Coaching"
+                        value={productDraft.category}
+                        onChange={(e) =>
+                          setProductDraft((d) => ({
+                            ...d,
+                            category: e.target.value,
+                          }))
+                        }
+                        maxLength={120}
+                      />
+                    </div>
+                    <div className={row}>
+                      <label className={label}>Brand (optional)</label>
+                      <input
+                        className={input}
+                        placeholder="e.g., AEOBRO"
+                        value={productDraft.brand}
+                        onChange={(e) =>
+                          setProductDraft((d) => ({
+                            ...d,
+                            brand: e.target.value,
+                          }))
+                        }
+                        maxLength={120}
+                      />
+                    </div>
+                    <div className={row}>
+                      <label className={label}>SKU (optional)</label>
+                      <input
+                        className={input}
+                        placeholder="Internal SKU"
+                        value={productDraft.sku}
+                        onChange={(e) =>
+                          setProductDraft((d) => ({ ...d, sku: e.target.value }))
+                        }
+                        maxLength={80}
+                      />
+                    </div>
+                    <div className={row}>
+                      <label className={label}>GTIN (optional)</label>
+                      <input
+                        className={input}
+                        placeholder="UPC/EAN/GTIN"
+                        value={productDraft.gtin}
+                        onChange={(e) =>
+                          setProductDraft((d) => ({
+                            ...d,
+                            gtin: e.target.value,
+                          }))
+                        }
+                        maxLength={80}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    className="px-3 py-2 border rounded-lg"
+                    onClick={() => {
+                      const name = productDraft.name.trim();
+                      if (!name) return;
+
+                      const url = productDraft.url.trim();
+                      if (url && !isValidUrl(normalizeUrl(url))) {
+                        toast("Product URL must be valid (https://...).", "error");
+                        return;
+                      }
+
+                      const img = productDraft.image.trim();
+                      if (img && !isValidUrl(normalizeUrl(img))) {
+                        toast("Product image URL must be valid (https://...).", "error");
+                        return;
+                      }
+
+                      const amt = toMoney(productDraft.amount);
+                      const currency = (productDraft.currency || "").trim().toUpperCase();
+
+                      const newItem: ProductItem = {
+                        name,
+                        type: productDraft.type,
+                        url: url ? normalizeUrl(url) : null,
+                        image: img ? normalizeUrl(img) : null,
+                        price:
+                          amt != null || currency
+                            ? { amount: amt, currency: currency || "USD" }
+                            : null,
+                        availability: productDraft.availability || "",
+                        category: productDraft.category.trim() || null,
+                        sku: productDraft.sku.trim() || null,
+                        brand: productDraft.brand.trim() || null,
+                        gtin: productDraft.gtin.trim() || null,
+                        position: products.length + 1,
+                      };
+
+                      setProducts((prev) => [...prev, newItem]);
+                      setProductDraft({
+                        name: "",
+                        type: "PRODUCT",
+                        url: "",
+                        image: "",
+                        amount: "",
+                        currency: "USD",
+                        availability: "",
+                        category: "",
+                        sku: "",
+                        brand: "",
+                        gtin: "",
+                      });
+                    }}
+                  >
+                    + Add item
+                  </button>
+
+                  {products.length > 0 && (
+                    <button
+                      type="button"
+                      className="px-3 py-2 border rounded-lg"
+                      onClick={() => setProducts([])}
+                    >
+                      Clear catalog
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Products list */}
+              {products.length > 0 ? (
+                <ul className="grid gap-3 text-sm">
+                  {products.map((p, idx) => (
+                    <li
+                      key={idx}
+                      className="rounded-lg border bg-white px-4 py-3 flex flex-col gap-1"
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="font-medium">
+                          {idx + 1}. {p.name}{" "}
+                          {p.type ? (
+                            <span className="ml-2 text-xs rounded-full bg-gray-100 px-2 py-0.5 text-gray-700">
+                              {p.type}
+                            </span>
+                          ) : null}
+                        </div>
+                        <button
+                          type="button"
+                          className="text-xs text-red-600 hover:underline"
+                          onClick={() =>
+                            setProducts((prev) => prev.filter((_, i) => i !== idx))
+                          }
+                        >
+                          Remove
+                        </button>
+                      </div>
+
+                      {(p.price?.amount != null || p.price?.currency) && (
+                        <div className="text-xs text-gray-700">
+                          {(p.price?.currency || "USD") + " "}
+                          {p.price?.amount != null ? p.price.amount : ""}
+                          {p.availability ? (
+                            <span className="ml-2 text-gray-500">
+                              • {p.availability}
+                            </span>
+                          ) : null}
+                        </div>
+                      )}
+
+                      {p.category ? (
+                        <div className="text-xs text-gray-600">
+                          Category: {p.category}
+                        </div>
+                      ) : null}
+
+                      {p.url ? (
+                        <a
+                          href={normalizeUrl(p.url)}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-xs text-blue-600 underline mt-1"
+                        >
+                          View item
+                        </a>
+                      ) : null}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <div className="rounded-md border border-dashed bg-gray-50 p-3 text-sm text-gray-600">
+                  No catalog items yet. Add your top offers first (the ones you
+                  want AI to recommend).
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="rounded-md border border-dashed bg-gray-50 p-3 text-sm text-gray-600">
+              Products/Catalog is available on{" "}
+              <span className="font-medium">Plus</span> and{" "}
+              <span className="font-medium">Pro</span> plans. Upgrade to add
+              machine-readable product and offer data.
+              <div className="mt-3">
+                <a
+                  href="/pricing"
+                  className="inline-flex items-center rounded-md border border-blue-600 bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700"
+                >
+                  Upgrade on Pricing page
+                </a>
+              </div>
+            </div>
+          )}
+        </div>
+      </section>
+
       {/* Updates – Plus & Pro+ only */}
       <section className="grid gap-4">
         <div className="rounded-2xl border bg-white p-6 shadow-sm space-y-3">
@@ -894,10 +1382,7 @@ export default function ProfileEditor({
         <h3 className="text-lg font-semibold">Website, Location & Reach</h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className={row}>
-            <label
-              className={label + " overflow-visible"}
-              htmlFor="website"
-            >
+            <label className={label + " overflow-visible"} htmlFor="website">
               Website
               <span className="relative group ml-1 cursor-help align-middle">
                 <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-gray-200 text-[10px] font-semibold text-gray-700">
@@ -922,10 +1407,7 @@ export default function ProfileEditor({
             </small>
           </div>
           <div className={row}>
-            <label
-              className={label + " overflow-visible"}
-              htmlFor="location"
-            >
+            <label className={label + " overflow-visible"} htmlFor="location">
               Location (address or city/state)
               <span className="relative group ml-1 cursor-help align-middle">
                 <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-gray-200 text-[10px] font-semibold text-gray-700">
@@ -948,10 +1430,7 @@ export default function ProfileEditor({
           </div>
         </div>
         <div className={row}>
-          <label
-            className={label + " overflow-visible"}
-            htmlFor="serviceArea"
-          >
+          <label className={label + " overflow-visible"} htmlFor="serviceArea">
             Service area (comma-separated regions)
             <span className="relative group ml-1 cursor-help align-middle">
               <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-gray-200 text-[10px] font-semibold text-gray-700">
@@ -1777,7 +2256,7 @@ export default function ProfileEditor({
         </div>
       )}
 
-          {/* ---- VERIFY SECTION ---- */}
+      {/* ---- VERIFY SECTION ---- */}
       <section id="verify" className="scroll-mt-24">
         <VerificationCard
           profileId={profileId ?? undefined}
