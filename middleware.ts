@@ -1,9 +1,10 @@
 // middleware.ts
-// Updated: 2026-01-08 06:48 ET
-// - Add: Canonical host enforcement (aeobro.com + aeobro.vercel.app -> www.aeobro.com)
-// - Preserve: legacy auth redirects, Link header on /p/[slug], anti-enumeration
-// - Preserve: security headers (CSP, HSTS, X-CTO, Referrer-Policy, Permissions-Policy, etc.)
-// - Use Edge-safe dynamic import() for Upstash libs
+// Updated: 2026-01-10 06:41 ET
+// - Fix: Next.js client JS hydration + event handlers by relaxing CSP script-src (TEMPORARY)
+// - Keep: Canonical host enforcement (aeobro.com + aeobro.vercel.app -> www.aeobro.com)
+// - Keep: legacy auth redirects, Link header on /p/[slug], anti-enumeration
+// - Keep: security headers (CSP, HSTS, X-CTO, Referrer-Policy, Permissions-Policy, etc.)
+// - Keep: Edge-safe dynamic import() for Upstash libs
 
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
@@ -24,29 +25,36 @@ const IMG_SRC = ["'self'", "data:", "https:"].join(" ");
 const FONT_SRC = ["'self'", "data:"].join(" ");
 const CONNECT_SRC = ["'self'", "https:", "wss:"].join(" ");
 
-// Next.js sometimes needs inline styles; keep 'unsafe-inline' for styles.
-// Avoid 'unsafe-inline' for scripts in prod; if something breaks, consider
-// adding a nonce and swapping to 'script-src 'self' 'nonce-<...>'.
+// Next.js App Router requires either nonce/hashes or (temporarily) allowing inline/eval.
+// This is a STABILITY PATCH. Once stable, we can migrate to a nonce-based CSP.
 function buildCSP(origin: string) {
   // Upgrade insecure requests only on HTTPS
-  const upgrade = origin.startsWith("https://") ? "upgrade-insecure-requests; " : "";
+  const upgrade = origin.startsWith("https://")
+    ? "upgrade-insecure-requests; "
+    : "";
 
   return [
     upgrade,
     "default-src 'self';",
-    `base-uri 'none';`,
-    `object-src 'none';`,
-    // Scripts: Next.js inline chunks are hashed; keep fairly strict
-    `script-src 'self';`,
+    "base-uri 'none';",
+    "object-src 'none';",
+
+    // ✅ TEMPORARY: allow Next.js hydration + event handlers
+    // Without this, Safari will show "Refused to execute a script..." and buttons become inert.
+    "script-src 'self' 'unsafe-inline' 'unsafe-eval';",
+
     // Styles: allow inline for Tailwind/style tags emitted by Next.js
-    `style-src 'self' 'unsafe-inline';`,
+    "style-src 'self' 'unsafe-inline';",
+
     `img-src ${IMG_SRC};`,
     `font-src ${FONT_SRC};`,
     `connect-src ${CONNECT_SRC};`,
+
     // Disallow all framing
-    `frame-ancestors 'none';`,
+    "frame-ancestors 'none';",
+
     // Optional but useful:
-    `form-action 'self';`,
+    "form-action 'self';",
   ].join(" ");
 }
 
@@ -78,7 +86,7 @@ function applySecurityHeaders(req: NextRequest, res: NextResponse) {
       "display-capture=()",
       "document-domain=()",
       "encrypted-media=()",
-      "fullscreen=(self)", // allow your own UI to go fullscreen
+      "fullscreen=(self)",
       "geolocation=()",
       "gyroscope=()",
       "magnetometer=()",
@@ -158,7 +166,11 @@ export async function middleware(req: NextRequest) {
   }
 
   // ---- 3) Anti-enumeration (rate limit /p/* requests) ----
-  if (isProfilePage && ENABLE_ANTI_ENUM && (req.method === "GET" || req.method === "HEAD")) {
+  if (
+    isProfilePage &&
+    ENABLE_ANTI_ENUM &&
+    (req.method === "GET" || req.method === "HEAD")
+  ) {
     const ip =
       req.ip ||
       req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
@@ -222,7 +234,6 @@ export async function middleware(req: NextRequest) {
         count += 1;
         const tooMany = count > PROBE_LIMIT_PER_MIN;
 
-        // sameSite must be lowercase ("lax" | "strict" | "none")
         res.cookies.set(cookieName, JSON.stringify({ s: windowStart, c: count }), {
           path: "/",
           httpOnly: false, // deterrent only
@@ -253,8 +264,7 @@ export async function middleware(req: NextRequest) {
 }
 
 export const config = {
-  // Expand matchers so canonical redirect + security headers apply broadly,
-  // while still avoiding API routes and Next internals.
+  // Apply to broad HTML routes, but avoid API routes and Next internals.
   matcher: [
     "/((?!api/|_next/|favicon.ico|robots.txt|sitemap.xml|.*\\.(?:png|jpg|jpeg|gif|webp|svg|ico|css|js|map|txt|woff|woff2|ttf|eot)).*)",
   ],
