@@ -4,6 +4,9 @@
 //  - Insert standalone LinkedAccountsCard tile above Billing card
 //  - Billing card remains last
 //  - Add Products / Catalog editor (Plus+), stored as productsJson (JSON)
+// ✅ Updated: 2026-01-10 11:53 AM EST –
+//  - Lite users now SEE persisted products list (read-only) + Upgrade CTA
+//  - Plus/Pro users keep full editor behavior
 
 "use client";
 
@@ -443,7 +446,8 @@ export default function ProfileEditor({
           const image = p.image ? normalizeUrl(p.image) : null;
 
           const amount =
-            typeof p.price?.amount === "number" && Number.isFinite(p.price.amount)
+            typeof p.price?.amount === "number" &&
+            Number.isFinite(p.price.amount)
               ? p.price.amount
               : null;
 
@@ -1103,7 +1107,9 @@ export default function ProfileEditor({
                   className="text-sm text-blue-700 underline underline-offset-2 self-start"
                   onClick={() => setProductAdvanced((v) => !v)}
                 >
-                  {productAdvanced ? "Hide advanced fields" : "Show advanced fields"}
+                  {productAdvanced
+                    ? "Hide advanced fields"
+                    : "Show advanced fields"}
                 </button>
 
                 {productAdvanced && (
@@ -1178,18 +1184,26 @@ export default function ProfileEditor({
 
                       const url = productDraft.url.trim();
                       if (url && !isValidUrl(normalizeUrl(url))) {
-                        toast("Product URL must be valid (https://...).", "error");
+                        toast(
+                          "Product URL must be valid (https://...).",
+                          "error"
+                        );
                         return;
                       }
 
                       const img = productDraft.image.trim();
                       if (img && !isValidUrl(normalizeUrl(img))) {
-                        toast("Product image URL must be valid (https://...).", "error");
+                        toast(
+                          "Product image URL must be valid (https://...).",
+                          "error"
+                        );
                         return;
                       }
 
                       const amt = toMoney(productDraft.amount);
-                      const currency = (productDraft.currency || "").trim().toUpperCase();
+                      const currency = (productDraft.currency || "")
+                        .trim()
+                        .toUpperCase();
 
                       const newItem: ProductItem = {
                         name,
@@ -1260,7 +1274,9 @@ export default function ProfileEditor({
                           type="button"
                           className="text-xs text-red-600 hover:underline"
                           onClick={() =>
-                            setProducts((prev) => prev.filter((_, i) => i !== idx))
+                            setProducts((prev) =>
+                              prev.filter((_, i) => i !== idx)
+                            )
                           }
                         >
                           Remove
@@ -1306,19 +1322,90 @@ export default function ProfileEditor({
               )}
             </div>
           ) : (
-            <div className="rounded-md border border-dashed bg-gray-50 p-3 text-sm text-gray-600">
-              Products/Catalog is available on{" "}
-              <span className="font-medium">Plus</span> and{" "}
-              <span className="font-medium">Pro</span> plans. Upgrade to add
-              machine-readable product and offer data.
-              <div className="mt-3">
-                <a
-                  href="/pricing"
-                  className="inline-flex items-center rounded-md border border-blue-600 bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700"
-                >
-                  Upgrade on Pricing page
-                </a>
-              </div>
+            // ✅ Lite path: show existing products read-only if present, else show CTA only
+            <div className="grid gap-3">
+              {products.length > 0 ? (
+                <div className="rounded-xl border bg-white p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="text-sm font-semibold">
+                        Your catalog (read-only on Lite)
+                      </div>
+                      <div className="text-xs text-gray-600">
+                        Your items are saved. Upgrade to Plus to edit your catalog.
+                      </div>
+                    </div>
+                    <a
+                      href="/pricing"
+                      className="inline-flex items-center rounded-md border border-blue-600 bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 whitespace-nowrap"
+                    >
+                      Upgrade to edit
+                    </a>
+                  </div>
+
+                  <ul className="mt-3 grid gap-3 text-sm">
+                    {products.map((p, idx) => (
+                      <li
+                        key={idx}
+                        className="rounded-lg border bg-gray-50 px-4 py-3 flex flex-col gap-1"
+                      >
+                        <div className="font-medium">
+                          {idx + 1}. {p.name}{" "}
+                          {p.type ? (
+                            <span className="ml-2 text-xs rounded-full bg-gray-100 px-2 py-0.5 text-gray-700">
+                              {p.type}
+                            </span>
+                          ) : null}
+                        </div>
+
+                        {(p.price?.amount != null || p.price?.currency) && (
+                          <div className="text-xs text-gray-700">
+                            {(p.price?.currency || "USD") + " "}
+                            {p.price?.amount != null ? p.price.amount : ""}
+                            {p.availability ? (
+                              <span className="ml-2 text-gray-500">
+                                • {p.availability}
+                              </span>
+                            ) : null}
+                          </div>
+                        )}
+
+                        {p.category ? (
+                          <div className="text-xs text-gray-600">
+                            Category: {p.category}
+                          </div>
+                        ) : null}
+
+                        {p.url ? (
+                          <a
+                            href={normalizeUrl(p.url)}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-xs text-blue-600 underline mt-1"
+                          >
+                            View item
+                          </a>
+                        ) : null}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : (
+                <div className="rounded-md border border-dashed bg-gray-50 p-3 text-sm text-gray-600">
+                  Products/Catalog is available on{" "}
+                  <span className="font-medium">Plus</span> and{" "}
+                  <span className="font-medium">Pro</span> plans. Upgrade to add
+                  machine-readable product and offer data.
+                  <div className="mt-3">
+                    <a
+                      href="/pricing"
+                      className="inline-flex items-center rounded-md border border-blue-600 bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700"
+                    >
+                      Upgrade on Pricing page
+                    </a>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>
