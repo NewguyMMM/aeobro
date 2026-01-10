@@ -49,6 +49,29 @@ async function requireUserId() {
   }
 }
 
+/**
+ * ✅ Server-side plan gating (permission boundary)
+ * We intentionally use (prisma.user as any) so this compiles even if your User model
+ * uses a slightly different field shape in Prisma typings.
+ *
+ * Expected: user.plan (enum/string): FREE/LITE/PLUS/PRO/BUSINESS/ENTERPRISE
+ * If missing, we default to LITE.
+ */
+async function getUserPlanKey(userId: string): Promise<string> {
+  try {
+    const u = await (prisma.user as any).findUnique({
+      where: { id: userId },
+      select: { plan: true },
+    });
+    const raw = (u?.plan ?? "LITE").toString().toUpperCase();
+    // Normalize common variants
+    if (raw === "FREE") return "LITE";
+    return raw;
+  } catch {
+    return "LITE";
+  }
+}
+
 // URL schema that allows empty, normalizes protocol, and enforces MAX length
 const urlMaybeEmptyMax = (maxLen: number) =>
   z
@@ -274,10 +297,7 @@ const ServiceItem = z.object({
   position: z.number().int().min(1).max(500).optional().nullable(),
 });
 
-/** ✅ NEW: Product schema (safe, minimal, iteration-friendly)
- * - Keeps fields you mentioned: name, type, url, price, image, category, availability.
- * - Allows optional extras without breaking: sku, brand, gtin
- */
+/** ✅ NEW: Product schema */
 const Money = z.object({
   amount: z.union([z.number(), z.string()]).optional().nullable(),
   currency: z.string().trim().max(10).optional().nullable(),
@@ -295,7 +315,6 @@ const ProductItem = z.object({
     .nullable(),
   price: Money.optional().nullable(),
 
-  // Optional extras (not required, but useful)
   sku: z.string().trim().max(80).optional().nullable(),
   brand: z.string().trim().max(120).optional().nullable(),
   gtin: z.string().trim().max(40).optional().nullable(),
@@ -334,17 +353,13 @@ const ProfileSchema = z.object({
 
   handles: PlatformHandles,
 
-  // allow client to propose a slug
   slug: z.string().trim().max(80).optional().nullable(),
 
-  /** Phase 2 fields */
   faqJson: z.array(FAQItem).optional().nullable().default([]),
   servicesJson: z.array(ServiceItem).optional().nullable().default([]),
 
-  /** ✅ NEW: productsJson */
   productsJson: z.array(ProductItem).optional().nullable().default([]),
 
-  /** Latest update */
   updateMessage: z.string().trim().max(500).optional().nullable(),
 });
 
@@ -371,11 +386,10 @@ export async function GET() {
         languages: [],
         faqJson: [],
         servicesJson: [],
-        productsJson: [], // ✅ NEW default
+        productsJson: [],
         handles: {},
       };
 
-    // Return both a `profile` object and flattened fields
     return NextResponse.json({
       ok: true,
       profile: payload,
@@ -412,6 +426,16 @@ export async function PUT(req: Request) {
   try {
     // ✅ Sanitize AFTER validation, BEFORE any DB write
     const d = sanitizeProfilePayload(parsed.data as any);
+
+    // ✅ Server-side permission boundary
+    const planKey = await getUserPlanKey(auth.userId);
+    const isProPlan =
+      planKey === "PRO" || planKey === "BUSINESS" || planKey === "ENTERPRISE";
+    const canEditPlus =
+      planKey === "PLUS" || isProPlan; // Plus includes Pro+
+    const canEditProducts = canEditPlus;
+    const canEditUpdates = canEditPlus;
+    const canEditProJson = isProPlan;
 
     // read existing (so we can detect slug changes)
     const existing = await prisma.profile.findUnique({
@@ -453,14 +477,27 @@ export async function PUT(req: Request) {
       handles: d.handles ?? {},
       links: d.links ?? [],
 
-      /** store Phase 2 fields */
-      faqJson: d.faqJson ?? [],
-      servicesJson: d.servicesJson ?? [],
+      // ✅ Pro-only fields (server enforced)
+      ...(canEditProJson
+        ? {
+            faqJson: d.faqJson ?? [],
+            servicesJson: d.servicesJson ?? [],
+          }
+        : {}),
 
-      /** ✅ NEW: products */
-      productsJson: d.productsJson ?? [],
+      // ✅ Plus+ products (server enforced)
+      ...(canEditProducts
+        ? {
+            productsJson: d.productsJson ?? [],
+          }
+        : {}),
 
-      updateMessage: emptyToNull(d.updateMessage),
+      // ✅ Plus+ updates (server enforced)
+      ...(canEditUpdates
+        ? {
+            updateMessage: emptyToNull(d.updateMessage),
+          }
+        : {}),
 
       slug: finalSlug,
     };
@@ -486,8 +523,6 @@ export async function PUT(req: Request) {
     revalidatePath(`/api/profile/${saved.slug}/schema`);
     revalidatePath(`/og/${saved.slug}`);
     revalidateTag(`profile:${saved.slug}`);
-
-    // Optional: if sitemap lists profiles, refresh it too
     revalidatePath(`/sitemap.xml`);
 
     return NextResponse.json({
