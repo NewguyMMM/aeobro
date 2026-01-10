@@ -1,5 +1,8 @@
 // lib/auth.ts
-// ✅ Updated: 2025-11-29 06:45 ET – always sync plan/planStatus from Prisma; default plan LITE when missing
+// ✅ Updated: 2026-01-10 05:55 ET
+// - Add: cookie domain scoping for NextAuth session cookie to support apex + www (".aeobro.com")
+// - Preserve: all existing providers, callbacks, events, plan sync logic, verification finalization
+
 import type { NextAuthOptions } from "next-auth";
 import { PrismaAdapter } from "@auth/prisma-adapter";
 import { prisma } from "@/lib/prisma";
@@ -45,6 +48,27 @@ const tiktokEnabled =
 export const authOptions: NextAuthOptions = {
   adapter: PrismaAdapter(prisma),
   session: { strategy: "jwt" },
+
+  /**
+   * ✅ Critical: ensure the SESSION cookie works on both:
+   * - aeobro.com
+   * - www.aeobro.com
+   *
+   * This prevents “logged out on www / logged in on apex” regressions after canonical redirects.
+   */
+  cookies: {
+    // This is the cookie you showed in DevTools: __Secure-next-auth.session-token
+    sessionToken: {
+      name: "__Secure-next-auth.session-token",
+      options: {
+        domain: ".aeobro.com",
+        path: "/",
+        httpOnly: true,
+        sameSite: "lax",
+        secure: true,
+      },
+    },
+  },
 
   providers: [
     // --- Email magic link via Resend ---
