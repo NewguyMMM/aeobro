@@ -8,14 +8,19 @@ import { toKebab, isSlugAllowed, RESERVED_SLUGS } from "@/lib/slug";
 import { revalidatePath, revalidateTag } from "next/cache";
 import { sanitizeProfilePayload } from "@/lib/sanitize";
 
-export const runtime = "nodejs";          // Prisma requires Node runtime
-export const dynamic = "force-dynamic";   // don't cache API responses
+export const runtime = "nodejs"; // Prisma requires Node runtime
+export const dynamic = "force-dynamic"; // don't cache API responses
 
 /* --------------------------------------------------- */
 /*                         HELPERS                     */
 /* --------------------------------------------------- */
 
-function jsonError(status: number, errorCode: string, message: string, extra?: any) {
+function jsonError(
+  status: number,
+  errorCode: string,
+  message: string,
+  extra?: any
+) {
   return NextResponse.json({ ok: false, errorCode, message, ...extra }, { status });
 }
 
@@ -34,7 +39,13 @@ async function requireUserId() {
 
     return { userId: user.id };
   } catch (e: any) {
-    return { err: jsonError(500, "AUTH_FAILURE", e?.message || "Auth resolution failed") };
+    return {
+      err: jsonError(
+        500,
+        "AUTH_FAILURE",
+        e?.message || "Auth resolution failed"
+      ),
+    };
   }
 }
 
@@ -47,16 +58,19 @@ const urlMaybeEmptyMax = (maxLen: number) =>
     .optional()
     .nullable()
     .transform((v) => (v ?? "").trim())
-    .refine((v) => {
-      if (!v) return true; // allow empty
-      try {
-        const s = /^https?:\/\//i.test(v) ? v : `https://${v}`;
-        new URL(s);
-        return true;
-      } catch {
-        return false;
-      }
-    }, "Must be a valid URL")
+    .refine(
+      (v) => {
+        if (!v) return true; // allow empty
+        try {
+          const s = /^https?:\/\//i.test(v) ? v : `https://${v}`;
+          new URL(s);
+          return true;
+        } catch {
+          return false;
+        }
+      },
+      "Must be a valid URL"
+    )
     .transform((v) => {
       if (!v) return "";
       return /^https?:\/\//i.test(v) ? v : `https://${v}`;
@@ -72,7 +86,10 @@ const csvOrArray = z
   .transform((v) => {
     if (!v) return [] as string[];
     if (Array.isArray(v)) return v.map(String).map((s) => s.trim()).filter(Boolean);
-    return String(v).split(",").map((s) => s.trim()).filter(Boolean);
+    return String(v)
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
   });
 
 const intNullable = z
@@ -89,18 +106,61 @@ const intNullable = z
 
 const REGION_MAP: Record<string, string> = {
   // US states
-  alabama: "al", alaska: "ak", arizona: "az", arkansas: "ar", california: "ca", colorado: "co",
-  connecticut: "ct", delaware: "de", florida: "fl", georgia: "ga", hawaii: "hi", idaho: "id",
-  illinois: "il", indiana: "in", iowa: "ia", kansas: "ks", kentucky: "ky", louisiana: "la",
-  maine: "me", maryland: "md", massachusetts: "ma", michigan: "mi", minnesota: "mn",
-  mississippi: "ms", missouri: "mo", montana: "mt", nebraska: "ne", nevada: "nv",
-  "new hampshire": "nh", "new jersey": "nj", "new mexico": "nm", "new york": "ny",
-  "north carolina": "nc", "north dakota": "nd", ohio: "oh", oklahoma: "ok", oregon: "or",
-  pennsylvania: "pa", "rhode island": "ri", "south carolina": "sc", "south dakota": "sd",
-  tennessee: "tn", texas: "tx", utah: "ut", vermont: "vt", virginia: "va", washington: "wa",
-  "west virginia": "wv", wisconsin: "wi", wyoming: "wy",
+  alabama: "al",
+  alaska: "ak",
+  arizona: "az",
+  arkansas: "ar",
+  california: "ca",
+  colorado: "co",
+  connecticut: "ct",
+  delaware: "de",
+  florida: "fl",
+  georgia: "ga",
+  hawaii: "hi",
+  idaho: "id",
+  illinois: "il",
+  indiana: "in",
+  iowa: "ia",
+  kansas: "ks",
+  kentucky: "ky",
+  louisiana: "la",
+  maine: "me",
+  maryland: "md",
+  massachusetts: "ma",
+  michigan: "mi",
+  minnesota: "mn",
+  mississippi: "ms",
+  missouri: "mo",
+  montana: "mt",
+  nebraska: "ne",
+  nevada: "nv",
+  "new hampshire": "nh",
+  "new jersey": "nj",
+  "new mexico": "nm",
+  "new york": "ny",
+  "north carolina": "nc",
+  "north dakota": "nd",
+  ohio: "oh",
+  oklahoma: "ok",
+  oregon: "or",
+  pennsylvania: "pa",
+  "rhode island": "ri",
+  "south carolina": "sc",
+  "south dakota": "sd",
+  tennessee: "tn",
+  texas: "tx",
+  utah: "ut",
+  vermont: "vt",
+  virginia: "va",
+  washington: "wa",
+  "west virginia": "wv",
+  wisconsin: "wi",
+  wyoming: "wy",
   // Canadian provinces (subset)
-  ontario: "on", quebec: "qc", "british columbia": "bc", alberta: "ab",
+  ontario: "on",
+  quebec: "qc",
+  "british columbia": "bc",
+  alberta: "ab",
 };
 
 function geoSuffixFromLocation(location?: string | null): string | null {
@@ -196,7 +256,7 @@ const PlatformHandles = z
   .partial()
   .optional();
 
-/** NEW: FAQ + SERVICE JSON schemas */
+/** FAQ + SERVICE JSON schemas */
 const FAQItem = z.object({
   question: z.string().trim().max(500),
   answer: z.string().trim().max(5000),
@@ -211,6 +271,35 @@ const ServiceItem = z.object({
   priceMax: z.union([z.string(), z.number()]).optional().nullable(),
   priceUnit: z.string().trim().max(40).optional().nullable(),
   currency: z.string().trim().max(10).optional().nullable(),
+  position: z.number().int().min(1).max(500).optional().nullable(),
+});
+
+/** ✅ NEW: Product schema (safe, minimal, iteration-friendly)
+ * - Keeps fields you mentioned: name, type, url, price, image, category, availability.
+ * - Allows optional extras without breaking: sku, brand, gtin
+ */
+const Money = z.object({
+  amount: z.union([z.number(), z.string()]).optional().nullable(),
+  currency: z.string().trim().max(10).optional().nullable(),
+});
+
+const ProductItem = z.object({
+  name: z.string().trim().min(1).max(200),
+  type: z.enum(["PRODUCT", "SERVICE", "OFFER"]).optional().nullable(),
+  url: urlMaybeEmpty300.optional().nullable(),
+  image: urlMaybeEmpty300.optional().nullable(),
+  category: z.string().trim().max(80).optional().nullable(),
+  availability: z
+    .enum(["InStock", "OutOfStock", "PreOrder", "LimitedAvailability"])
+    .optional()
+    .nullable(),
+  price: Money.optional().nullable(),
+
+  // Optional extras (not required, but useful)
+  sku: z.string().trim().max(80).optional().nullable(),
+  brand: z.string().trim().max(120).optional().nullable(),
+  gtin: z.string().trim().max(40).optional().nullable(),
+
   position: z.number().int().min(1).max(500).optional().nullable(),
 });
 
@@ -248,9 +337,12 @@ const ProfileSchema = z.object({
   // allow client to propose a slug
   slug: z.string().trim().max(80).optional().nullable(),
 
-  /** 🔥 NEW FIELDS */
+  /** Phase 2 fields */
   faqJson: z.array(FAQItem).optional().nullable().default([]),
   servicesJson: z.array(ServiceItem).optional().nullable().default([]),
+
+  /** ✅ NEW: productsJson */
+  productsJson: z.array(ProductItem).optional().nullable().default([]),
 
   /** Latest update */
   updateMessage: z.string().trim().max(500).optional().nullable(),
@@ -279,6 +371,7 @@ export async function GET() {
         languages: [],
         faqJson: [],
         servicesJson: [],
+        productsJson: [], // ✅ NEW default
         handles: {},
       };
 
@@ -360,9 +453,12 @@ export async function PUT(req: Request) {
       handles: d.handles ?? {},
       links: d.links ?? [],
 
-      /** 🔥 NEW: store Phase 2 fields */
+      /** store Phase 2 fields */
       faqJson: d.faqJson ?? [],
       servicesJson: d.servicesJson ?? [],
+
+      /** ✅ NEW: products */
+      productsJson: d.productsJson ?? [],
 
       updateMessage: emptyToNull(d.updateMessage),
 
@@ -371,8 +467,8 @@ export async function PUT(req: Request) {
 
     const saved = await prisma.profile.upsert({
       where: { userId: auth.userId },
-      update: payload,
-      create: { userId: auth.userId, ...payload },
+      update: payload as any,
+      create: { userId: auth.userId, ...(payload as any) },
       select: { id: true, slug: true },
     });
 
