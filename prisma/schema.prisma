@@ -228,6 +228,9 @@ model Profile {
   faqJson      Json?
   servicesJson Json?
 
+  // ✅ NEW: Products/Catalog JSON blob (initial iteration)
+  productsJson Json?
+
   // --- Verified Badge & gating state (existing) ---
   verificationStatus  VerificationLevel @default(UNVERIFIED)
   verificationToken   String?  @unique
