@@ -1,6 +1,6 @@
 // components/ProfileEditor.tsx
-// 📅 Updated: 2026-01-19 21:04 (split output 1/4) –
-//  - Move Products / Catalog + Updates above FAQs (Pro)
+// 📅 Updated: 2026-01-19 21:04
+//  - Move Products / Catalog + Updates immediately after Links (and before FAQs)
 //  - Replace Products tile description copy
 //  - Add Products tooltip explaining why Products > Links
 //  - Preserve Lite read-only products list + Plus/Pro editor behavior
@@ -24,12 +24,9 @@ import dynamic from "next/dynamic";
 const VerificationCard = dynamic(() => import("@/components/VerificationCard"), {
   ssr: false,
 });
-const LinkedAccountsCard = dynamic(
-  () => import("@/components/LinkedAccountsCard"),
-  {
-    ssr: false,
-  }
-);
+const LinkedAccountsCard = dynamic(() => import("@/components/LinkedAccountsCard"), {
+  ssr: false,
+});
 
 /** -------- Types -------- */
 type EntityType =
@@ -214,23 +211,16 @@ export default function ProfileEditor({
   const toast = useToast();
 
   // ---- Server identifiers
-  const [profileId, setProfileId] = React.useState<string | null>(
-    initial?.id ?? null
-  );
-  const [serverSlug, setServerSlug] = React.useState<string | null>(
-    initial?.slug ?? null
-  );
+  const [profileId, setProfileId] = React.useState<string | null>(initial?.id ?? null);
+  const [serverSlug, setServerSlug] = React.useState<string | null>(initial?.slug ?? null);
 
   // ---- Verification status
-  const [verificationStatus, setVerificationStatus] =
-    React.useState<VerificationStatus>(
-      (initial?.verificationStatus as VerificationStatus) ?? "UNVERIFIED"
-    );
+  const [verificationStatus, setVerificationStatus] = React.useState<VerificationStatus>(
+    (initial?.verificationStatus as VerificationStatus) ?? "UNVERIFIED"
+  );
 
   // ---- Core identity
-  const [displayName, setDisplayName] = React.useState(
-    initial?.displayName ?? ""
-  );
+  const [displayName, setDisplayName] = React.useState(initial?.displayName ?? "");
   const [legalName, setLegalName] = React.useState(initial?.legalName ?? "");
   const [entityType, setEntityType] = React.useState<EntityType | "">(
     (initial?.entityType as EntityType) ?? ""
@@ -241,33 +231,25 @@ export default function ProfileEditor({
   const [bio, setBio] = React.useState(initial?.bio ?? "");
 
   // ---- Updates (latest announcement)
-  const [updateMessage, setUpdateMessage] = React.useState(
-    initial?.updateMessage ?? ""
-  );
+  const [updateMessage, setUpdateMessage] = React.useState(initial?.updateMessage ?? "");
 
   // ---- Anchors
   const [website, setWebsite] = React.useState(initial?.website ?? "");
   const [location, setLocation] = React.useState(initial?.location ?? "");
-  const [serviceArea, setServiceArea] = React.useState(
-    toCsv(initial?.serviceArea)
-  );
+  const [serviceArea, setServiceArea] = React.useState(toCsv(initial?.serviceArea));
 
   // ---- Trust & Authority
   const [foundedYear, setFoundedYear] = React.useState(
     initial?.foundedYear ? String(initial.foundedYear) : ""
   );
-  const [teamSize, setTeamSize] = React.useState(
-    initial?.teamSize ? String(initial.teamSize) : ""
-  );
+  const [teamSize, setTeamSize] = React.useState(initial?.teamSize ? String(initial.teamSize) : "");
   const [languages, setLanguages] = React.useState(toCsv(initial?.languages));
   const [pricingModel, setPricingModel] = React.useState<
     "Free" | "Subscription" | "One-time" | "Custom" | ""
   >((initial?.pricingModel as any) ?? "");
   const [hours, setHours] = React.useState(initial?.hours ?? "");
 
-  const [certifications, setCertifications] = React.useState(
-    initial?.certifications ?? ""
-  );
+  const [certifications, setCertifications] = React.useState(initial?.certifications ?? "");
   const [press, setPress] = React.useState<PressItem[]>(initial?.press ?? []);
   const [pressDraft, setPressDraft] = React.useState<PressItem>({
     title: "",
@@ -277,15 +259,11 @@ export default function ProfileEditor({
   // ---- Branding & media
   const [logoUrl, setLogoUrl] = React.useState(initial?.logoUrl ?? "");
   const [imageUrls, setImageUrls] = React.useState<string[]>(
-    initial?.imageUrls && initial.imageUrls.length
-      ? initial.imageUrls
-      : ["", "", ""]
+    initial?.imageUrls && initial.imageUrls.length ? initial.imageUrls : ["", "", ""]
   );
 
   // ---- Platforms & links
-  const [handles, setHandles] = React.useState<PlatformHandles>(
-    initial?.handles ?? {}
-  );
+  const [handles, setHandles] = React.useState<PlatformHandles>(initial?.handles ?? {});
   const [links, setLinks] = React.useState<LinkItem[]>(initial?.links ?? []);
   const [linkDraft, setLinkDraft] = React.useState<LinkItem>({
     label: "",
@@ -299,9 +277,7 @@ export default function ProfileEditor({
     answer: "",
   });
 
-  const [services, setServices] = React.useState<ServiceItem[]>(
-    initial?.servicesJson ?? []
-  );
+  const [services, setServices] = React.useState<ServiceItem[]>(initial?.servicesJson ?? []);
   const [serviceDraft, setServiceDraft] = React.useState<ServiceItem>({
     name: "",
     description: "",
@@ -313,9 +289,7 @@ export default function ProfileEditor({
   });
 
   // ---- Products / Catalog (JSON)
-  const [products, setProducts] = React.useState<ProductItem[]>(
-    initial?.productsJson ?? []
-  );
+  const [products, setProducts] = React.useState<ProductItem[]>(initial?.productsJson ?? []);
   const [productAdvanced, setProductAdvanced] = React.useState(false);
   const [productDraft, setProductDraft] = React.useState<{
     name: string;
@@ -387,8 +361,7 @@ export default function ProfileEditor({
   const planKey = (plan ?? "Lite").toUpperCase();
 
   // Treat PRO/BUSINESS/ENTERPRISE as Pro-level for JSON editors
-  const isProPlan =
-    planKey === "PRO" || planKey === "BUSINESS" || planKey === "ENTERPRISE";
+  const isProPlan = planKey === "PRO" || planKey === "BUSINESS" || planKey === "ENTERPRISE";
 
   // Updates editor should be available on Plus and Pro+ plans only
   const canEditUpdates = planKey === "PLUS" || isProPlan;
@@ -442,8 +415,7 @@ export default function ProfileEditor({
           const image = p.image ? normalizeUrl(p.image) : null;
 
           const amount =
-            typeof p.price?.amount === "number" &&
-            Number.isFinite(p.price.amount)
+            typeof p.price?.amount === "number" && Number.isFinite(p.price.amount)
               ? p.price.amount
               : null;
 
@@ -588,9 +560,7 @@ export default function ProfileEditor({
         if (Array.isArray(data.servicesJson)) setServices(data.servicesJson);
 
         setServerSlug(data.slug || null);
-        setVerificationStatus(
-          (data.verificationStatus as VerificationStatus) ?? "UNVERIFIED"
-        );
+        setVerificationStatus((data.verificationStatus as VerificationStatus) ?? "UNVERIFIED");
 
         const snapshot = JSON.stringify(buildPayload());
         lastSavedRef.current = snapshot;
@@ -671,17 +641,15 @@ export default function ProfileEditor({
 
       if (!res.ok) {
         const text =
-          (json && (json.error || json.message)) ||
-          `Save failed (HTTP ${res.status}).`;
+          (json && (json.error || json.message)) || `Save failed (HTTP ${res.status}).`;
         throw new Error(text);
       }
 
       const finalSlug: string | undefined = json?.profile?.slug || json?.slug || undefined;
-      const finalId: string | undefined =
-        json?.profile?.id || json?.id || profileId || undefined;
-      const finalStatus: VerificationStatus | undefined =
-        (json?.profile?.verificationStatus ||
-          json?.verificationStatus) as VerificationStatus | undefined;
+      const finalId: string | undefined = json?.profile?.id || json?.id || profileId || undefined;
+      const finalStatus: VerificationStatus | undefined = (
+        json?.profile?.verificationStatus || json?.verificationStatus
+      ) as VerificationStatus | undefined;
 
       if (finalId) setProfileId(finalId);
       if (finalSlug) {
@@ -735,11 +703,7 @@ export default function ProfileEditor({
 
   /** ---- Status pill ---- */
   const hasEverSaved = Boolean(serverSlug || profileId);
-  const status = !hasEverSaved
-    ? "Not yet published"
-    : dirty
-    ? "Unsaved changes"
-    : "Published";
+  const status = !hasEverSaved ? "Not yet published" : dirty ? "Unsaved changes" : "Published";
   const statusClasses =
     status === "Published"
       ? "bg-green-100 text-green-700 ring-1 ring-green-200"
@@ -751,7 +715,6 @@ export default function ProfileEditor({
   const input = "w-full border rounded-lg px-3 py-2";
   const label = "text-sm font-medium text-gray-700";
   const row = "grid gap-2";
-
   return (
     <div className="max-w-2xl grid gap-8">
       {/* Top note + plan pill */}
@@ -805,9 +768,7 @@ export default function ProfileEditor({
         )}
 
         <div className="flex items-center gap-3">
-          <span className={`text-xs px-2.5 py-1 rounded-full ${statusClasses}`}>
-            {status}
-          </span>
+          <span className={`text-xs px-2.5 py-1 rounded-full ${statusClasses}`}>{status}</span>
           <button
             type="button"
             onClick={() => {
@@ -940,528 +901,6 @@ export default function ProfileEditor({
           />
         </div>
       </section>
-      {/* Products / Catalog – Plus & Pro+ only (MOVED: now above Website/Location/Reach and above FAQs) */}
-      <section className="grid gap-4">
-        <div className="rounded-2xl border bg-white p-6 shadow-sm space-y-3">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <h3 className="text-lg font-semibold flex items-center gap-2">
-                Products / Catalog
-                {/* ✅ NEW tooltip */}
-                <span className="relative group cursor-help align-middle">
-                  <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-gray-200 text-[10px] font-semibold text-gray-700">
-                    i
-                  </span>
-                  <span className="pointer-events-none absolute left-1/2 top-full z-10 mt-1 hidden w-[22rem] -translate-x-1/2 rounded-md bg-black px-2 py-1 text-xs leading-snug text-white group-hover:block">
-                    <span className="font-semibold">
-                      Why list a Product instead of a link?
-                    </span>
-                    <br />
-                    A link is just a destination for humans.
-                    <br />
-                    A product is a structured offering for AI systems.
-                    <br />
-                    When you list a product, you define what it is, what it
-                    costs, and how it should be understood — in a machine-readable
-                    format. This helps AI systems interpret, compare, and include
-                    your offering in relevant answers.
-                    <br />
-                    Links don’t carry this context. Products do.
-                  </span>
-                </span>
-              </h3>
-
-              {/* ✅ REPLACED description copy */}
-              <p className="text-sm text-gray-600">
-                Listing a product, and its details, makes your offering
-                machine-readable, improving how AI systems interpret, compare,
-                and surface what you sell.
-              </p>
-            </div>
-
-            {!canEditProducts && (
-              <span className="text-xs rounded-full bg-yellow-50 px-2.5 py-1 text-yellow-800 border border-yellow-200 whitespace-nowrap">
-                Upgrade to Plus to edit Products
-              </span>
-            )}
-          </div>
-
-          {canEditProducts ? (
-            <div className="grid gap-4">
-              {/* Draft row: fast fields */}
-              <div className="grid gap-3 rounded-xl border bg-gray-50 p-4">
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  <div className={row}>
-                    <label className={label}>Type</label>
-                    <select
-                      className={input}
-                      value={productDraft.type}
-                      onChange={(e) =>
-                        setProductDraft((d) => ({
-                          ...d,
-                          type: e.target.value as ProductType,
-                        }))
-                      }
-                    >
-                      <option value="PRODUCT">Product</option>
-                      <option value="SERVICE">Service</option>
-                      <option value="OFFER">Offer</option>
-                    </select>
-                  </div>
-                  <div className={row + " sm:col-span-2"}>
-                    <label className={label}>Name</label>
-                    <input
-                      className={input}
-                      placeholder="e.g., AEOBRO Plus"
-                      value={productDraft.name}
-                      onChange={(e) =>
-                        setProductDraft((d) => ({ ...d, name: e.target.value }))
-                      }
-                      maxLength={160}
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div className={row}>
-                    <label className={label}>URL</label>
-                    <input
-                      className={input}
-                      placeholder="https://..."
-                      value={productDraft.url}
-                      onChange={(e) =>
-                        setProductDraft((d) => ({ ...d, url: e.target.value }))
-                      }
-                      maxLength={300}
-                    />
-                  </div>
-                  <div className={row}>
-                    <label className={label}>Image URL (optional)</label>
-                    <input
-                      className={input}
-                      placeholder="https://.../image.png"
-                      value={productDraft.image}
-                      onChange={(e) =>
-                        setProductDraft((d) => ({
-                          ...d,
-                          image: e.target.value,
-                        }))
-                      }
-                      maxLength={300}
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  <div className={row}>
-                    <label className={label}>Price</label>
-                    <input
-                      className={input}
-                      inputMode="decimal"
-                      placeholder="e.g., 19.99"
-                      value={productDraft.amount}
-                      onChange={(e) =>
-                        setProductDraft((d) => ({
-                          ...d,
-                          amount: e.target.value,
-                        }))
-                      }
-                      maxLength={32}
-                    />
-                  </div>
-                  <div className={row}>
-                    <label className={label}>Currency</label>
-                    <input
-                      className={input}
-                      placeholder="USD"
-                      value={productDraft.currency}
-                      onChange={(e) =>
-                        setProductDraft((d) => ({
-                          ...d,
-                          currency: e.target.value.toUpperCase(),
-                        }))
-                      }
-                      maxLength={10}
-                    />
-                  </div>
-                  <div className={row}>
-                    <label className={label}>Availability</label>
-                    <select
-                      className={input}
-                      value={productDraft.availability}
-                      onChange={(e) =>
-                        setProductDraft((d) => ({
-                          ...d,
-                          availability: e.target.value as ProductAvailability,
-                        }))
-                      }
-                    >
-                      <option value="">(optional)</option>
-                      <option value="InStock">In stock</option>
-                      <option value="OutOfStock">Out of stock</option>
-                      <option value="PreOrder">Pre-order</option>
-                      <option value="LimitedAvailability">Limited</option>
-                      <option value="OnlineOnly">Online only</option>
-                    </select>
-                  </div>
-                </div>
-
-                <button
-                  type="button"
-                  className="text-sm text-blue-700 underline underline-offset-2 self-start"
-                  onClick={() => setProductAdvanced((v) => !v)}
-                >
-                  {productAdvanced
-                    ? "Hide advanced fields"
-                    : "Show advanced fields"}
-                </button>
-
-                {productAdvanced && (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div className={row}>
-                      <label className={label}>Category (optional)</label>
-                      <input
-                        className={input}
-                        placeholder="e.g., SaaS, Jewelry, Coaching"
-                        value={productDraft.category}
-                        onChange={(e) =>
-                          setProductDraft((d) => ({
-                            ...d,
-                            category: e.target.value,
-                          }))
-                        }
-                        maxLength={120}
-                      />
-                    </div>
-                    <div className={row}>
-                      <label className={label}>Brand (optional)</label>
-                      <input
-                        className={input}
-                        placeholder="e.g., AEOBRO"
-                        value={productDraft.brand}
-                        onChange={(e) =>
-                          setProductDraft((d) => ({
-                            ...d,
-                            brand: e.target.value,
-                          }))
-                        }
-                        maxLength={120}
-                      />
-                    </div>
-                    <div className={row}>
-                      <label className={label}>SKU (optional)</label>
-                      <input
-                        className={input}
-                        placeholder="Internal SKU"
-                        value={productDraft.sku}
-                        onChange={(e) =>
-                          setProductDraft((d) => ({ ...d, sku: e.target.value }))
-                        }
-                        maxLength={80}
-                      />
-                    </div>
-                    <div className={row}>
-                      <label className={label}>GTIN (optional)</label>
-                      <input
-                        className={input}
-                        placeholder="UPC/EAN/GTIN"
-                        value={productDraft.gtin}
-                        onChange={(e) =>
-                          setProductDraft((d) => ({
-                            ...d,
-                            gtin: e.target.value,
-                          }))
-                        }
-                        maxLength={80}
-                      />
-                    </div>
-                  </div>
-                )}
-
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    className="px-3 py-2 border rounded-lg"
-                    onClick={() => {
-                      const name = productDraft.name.trim();
-                      if (!name) return;
-
-                      const url = productDraft.url.trim();
-                      if (url && !isValidUrl(normalizeUrl(url))) {
-                        toast("Product URL must be valid (https://...).", "error");
-                        return;
-                      }
-
-                      const img = productDraft.image.trim();
-                      if (img && !isValidUrl(normalizeUrl(img))) {
-                        toast("Product image URL must be valid (https://...).", "error");
-                        return;
-                      }
-
-                      const amt = toMoney(productDraft.amount);
-                      const currency = (productDraft.currency || "")
-                        .trim()
-                        .toUpperCase();
-
-                      const newItem: ProductItem = {
-                        name,
-                        type: productDraft.type,
-                        url: url ? normalizeUrl(url) : null,
-                        image: img ? normalizeUrl(img) : null,
-                        price:
-                          amt != null || currency
-                            ? { amount: amt, currency: currency || "USD" }
-                            : null,
-                        availability: productDraft.availability || "",
-                        category: productDraft.category.trim() || null,
-                        sku: productDraft.sku.trim() || null,
-                        brand: productDraft.brand.trim() || null,
-                        gtin: productDraft.gtin.trim() || null,
-                        position: products.length + 1,
-                      };
-
-                      setProducts((prev) => [...prev, newItem]);
-                      setProductDraft({
-                        name: "",
-                        type: "PRODUCT",
-                        url: "",
-                        image: "",
-                        amount: "",
-                        currency: "USD",
-                        availability: "",
-                        category: "",
-                        sku: "",
-                        brand: "",
-                        gtin: "",
-                      });
-                    }}
-                  >
-                    + Add item
-                  </button>
-
-                  {products.length > 0 && (
-                    <button
-                      type="button"
-                      className="px-3 py-2 border rounded-lg"
-                      onClick={() => setProducts([])}
-                    >
-                      Clear catalog
-                    </button>
-                  )}
-                </div>
-              </div>
-
-              {/* Products list */}
-              {products.length > 0 ? (
-                <ul className="grid gap-3 text-sm">
-                  {products.map((p, idx) => (
-                    <li
-                      key={idx}
-                      className="rounded-lg border bg-white px-4 py-3 flex flex-col gap-1"
-                    >
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="font-medium">
-                          {idx + 1}. {p.name}{" "}
-                          {p.type ? (
-                            <span className="ml-2 text-xs rounded-full bg-gray-100 px-2 py-0.5 text-gray-700">
-                              {p.type}
-                            </span>
-                          ) : null}
-                        </div>
-                        <button
-                          type="button"
-                          className="text-xs text-red-600 hover:underline"
-                          onClick={() =>
-                            setProducts((prev) =>
-                              prev.filter((_, i) => i !== idx)
-                            )
-                          }
-                        >
-                          Remove
-                        </button>
-                      </div>
-
-                      {(p.price?.amount != null || p.price?.currency) && (
-                        <div className="text-xs text-gray-700">
-                          {(p.price?.currency || "USD") + " "}
-                          {p.price?.amount != null ? p.price.amount : ""}
-                          {p.availability ? (
-                            <span className="ml-2 text-gray-500">
-                              • {p.availability}
-                            </span>
-                          ) : null}
-                        </div>
-                      )}
-
-                      {p.category ? (
-                        <div className="text-xs text-gray-600">
-                          Category: {p.category}
-                        </div>
-                      ) : null}
-
-                      {p.url ? (
-                        <a
-                          href={normalizeUrl(p.url)}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="text-xs text-blue-600 underline mt-1"
-                        >
-                          View item
-                        </a>
-                      ) : null}
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <div className="rounded-md border border-dashed bg-gray-50 p-3 text-sm text-gray-600">
-                  No catalog items yet. Add your top offers first (the ones you
-                  want AI to recommend).
-                </div>
-              )}
-            </div>
-          ) : (
-            // ✅ Lite path: show existing products read-only if present, else show CTA only
-            <div className="grid gap-3">
-              {products.length > 0 ? (
-                <div className="rounded-xl border bg-white p-4">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <div className="text-sm font-semibold">
-                        Your catalog (read-only on Lite)
-                      </div>
-                      <div className="text-xs text-gray-600">
-                        Your items are saved. Upgrade to Plus to edit your
-                        catalog.
-                      </div>
-                    </div>
-                    <a
-                      href="/pricing"
-                      className="inline-flex items-center rounded-md border border-blue-600 bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 whitespace-nowrap"
-                    >
-                      Upgrade to edit
-                    </a>
-                  </div>
-
-                  <ul className="mt-3 grid gap-3 text-sm">
-                    {products.map((p, idx) => (
-                      <li
-                        key={idx}
-                        className="rounded-lg border bg-gray-50 px-4 py-3 flex flex-col gap-1"
-                      >
-                        <div className="font-medium">
-                          {idx + 1}. {p.name}{" "}
-                          {p.type ? (
-                            <span className="ml-2 text-xs rounded-full bg-gray-100 px-2 py-0.5 text-gray-700">
-                              {p.type}
-                            </span>
-                          ) : null}
-                        </div>
-
-                        {(p.price?.amount != null || p.price?.currency) && (
-                          <div className="text-xs text-gray-700">
-                            {(p.price?.currency || "USD") + " "}
-                            {p.price?.amount != null ? p.price.amount : ""}
-                            {p.availability ? (
-                              <span className="ml-2 text-gray-500">
-                                • {p.availability}
-                              </span>
-                            ) : null}
-                          </div>
-                        )}
-
-                        {p.category ? (
-                          <div className="text-xs text-gray-600">
-                            Category: {p.category}
-                          </div>
-                        ) : null}
-
-                        {p.url ? (
-                          <a
-                            href={normalizeUrl(p.url)}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="text-xs text-blue-600 underline mt-1"
-                          >
-                            View item
-                          </a>
-                        ) : null}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              ) : (
-                <div className="rounded-md border border-dashed bg-gray-50 p-3 text-sm text-gray-600">
-                  Products/Catalog is available on{" "}
-                  <span className="font-medium">Plus</span> and{" "}
-                  <span className="font-medium">Pro</span> plans. Upgrade to add
-                  machine-readable product and offer data.
-                  <div className="mt-3">
-                    <a
-                      href="/pricing"
-                      className="inline-flex items-center rounded-md border border-blue-600 bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700"
-                    >
-                      Upgrade on Pricing page
-                    </a>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      </section>
-
-      {/* Updates – Plus & Pro+ only (MOVED: now above Website/Location/Reach and above FAQs) */}
-      <section className="grid gap-4">
-        <div className="rounded-2xl border bg-white p-6 shadow-sm space-y-3">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <h3 className="text-lg font-semibold">Updates</h3>
-              <p className="text-sm text-gray-600">
-                Post your latest offer, launch, or announcement. This becomes a
-                machine-readable “Latest update” that AEOBRO exposes to AI
-                systems.
-              </p>
-            </div>
-            {!canEditUpdates && (
-              <span className="text-xs rounded-full bg-yellow-50 px-2.5 py-1 text-yellow-800 border border-yellow-200 whitespace-nowrap">
-                Upgrade to Plus to unlock Updates
-              </span>
-            )}
-          </div>
-
-          {canEditUpdates ? (
-            <>
-              <textarea
-                className={input}
-                rows={3}
-                placeholder="Getting ready for launch."
-                value={updateMessage}
-                onChange={(e) => setUpdateMessage(e.target.value)}
-                maxLength={500}
-              />
-              <p className="text-xs text-gray-500">
-                Updates are saved when you click{" "}
-                <span className="font-medium">Save &amp; Publish</span>.
-              </p>
-            </>
-          ) : (
-            <div className="rounded-md border border-dashed bg-gray-50 p-3 text-sm text-gray-600">
-              Latest Updates are available on{" "}
-              <span className="font-medium">Plus</span> and{" "}
-              <span className="font-medium">Pro</span> plans. Upgrade to keep AI
-              tools in sync with your newest offers and announcements.
-              <div className="mt-3">
-                <a
-                  href="/pricing"
-                  className="inline-flex items-center rounded-md border border-blue-600 bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700"
-                >
-                  Upgrade on Pricing page
-                </a>
-              </div>
-            </div>
-          )}
-        </div>
-      </section>
 
       {/* Website, Location, Service area */}
       <section className="grid gap-4">
@@ -1475,8 +914,7 @@ export default function ProfileEditor({
                   i
                 </span>
                 <span className="pointer-events-none absolute left-1/2 top-full z-10 mt-1 hidden w-72 -translate-x-1/2 rounded-md bg-black px-2 py-1 text-xs leading-snug text-white group-hover:block">
-                  Your main website or landing page. Include https:// so AI
-                  tools and search engines can reliably confirm your brand.
+                  Your main website or landing page. Include https:// so AI tools and search engines can reliably confirm your brand.
                 </span>
               </span>
             </label>
@@ -1488,9 +926,7 @@ export default function ProfileEditor({
               onChange={(e) => setWebsite(e.target.value)}
               maxLength={200}
             />
-            <small className="text-xs text-gray-500">
-              Optional, but recommended for better AI ranking.
-            </small>
+            <small className="text-xs text-gray-500">Optional, but recommended for better AI ranking.</small>
           </div>
           <div className={row}>
             <label className={label + " overflow-visible"} htmlFor="location">
@@ -1500,8 +936,7 @@ export default function ProfileEditor({
                   i
                 </span>
                 <span className="pointer-events-none absolute left-1/2 top-full z-10 mt-1 hidden w-72 -translate-x-1/2 rounded-md bg-black px-2 py-1 text-xs leading-snug text-white group-hover:block">
-                  Where you’re based or operate from. City/state is enough for
-                  many brands; full address is optional.
+                  Where you’re based or operate from. City/state is enough for many brands; full address is optional.
                 </span>
               </span>
             </label>
@@ -1523,8 +958,7 @@ export default function ProfileEditor({
                 i
               </span>
               <span className="pointer-events-none absolute left-1/2 top-full z-10 mt-1 hidden w-72 -translate-x-1/2 rounded-md bg-black px-2 py-1 text-xs leading-snug text-white group-hover:block">
-                Geographic regions you serve. Example: “New York, New Jersey,
-                Remote (US-wide)”.
+                Geographic regions you serve. Example: “New York, New Jersey, Remote (US-wide)”.
               </span>
             </span>
           </label>
@@ -1538,6 +972,7 @@ export default function ProfileEditor({
           />
         </div>
       </section>
+
       {/* Trust & Authority */}
       <section className="grid gap-4">
         <h3 className="text-lg font-semibold">Trust & Authority</h3>
@@ -1641,18 +1076,14 @@ export default function ProfileEditor({
               className={input}
               placeholder="Title of mention or article"
               value={pressDraft.title}
-              onChange={(e) =>
-                setPressDraft({ ...pressDraft, title: e.target.value })
-              }
+              onChange={(e) => setPressDraft({ ...pressDraft, title: e.target.value })}
               maxLength={120}
             />
             <input
               className={input}
               placeholder="https://your-article-or-listing.com"
               value={pressDraft.url}
-              onChange={(e) =>
-                setPressDraft({ ...pressDraft, url: e.target.value })
-              }
+              onChange={(e) => setPressDraft({ ...pressDraft, url: e.target.value })}
               maxLength={300}
             />
           </div>
@@ -1669,11 +1100,7 @@ export default function ProfileEditor({
               + Add press link
             </button>
             {press.length > 0 && (
-              <button
-                type="button"
-                className="px-3 py-2 border rounded-lg"
-                onClick={() => setPress([])}
-              >
+              <button type="button" className="px-3 py-2 border rounded-lg" onClick={() => setPress([])}>
                 Clear
               </button>
             )}
@@ -1756,9 +1183,7 @@ export default function ProfileEditor({
                 className={input}
                 placeholder="https://..."
                 value={(handles as any)[key] || ""}
-                onChange={(e) =>
-                  setHandles((h) => ({ ...h, [key]: e.target.value }))
-                }
+                onChange={(e) => setHandles((h) => ({ ...h, [key]: e.target.value }))}
                 maxLength={300}
               />
             </div>
@@ -1775,9 +1200,8 @@ export default function ProfileEditor({
               i
             </span>
             <span className="pointer-events-none absolute left-1/2 top-full z-10 mt-1 hidden w-72 -translate-x-1/2 rounded-md bg-black px-2 py-1 text-xs leading-snug text-white group-hover:block">
-              Add important extra URLs such as review pages, booking links, app
-              store listings, docs, or other destinations that matter for your
-              brand.
+              Add important extra URLs such as review pages, booking links, app store listings, docs, or other destinations
+              that matter for your brand.
             </span>
           </span>
         </h3>
@@ -1790,16 +1214,10 @@ export default function ProfileEditor({
                   className={input}
                   placeholder="Link label (e.g., Reviews)"
                   value={linkDraft.label}
-                  onChange={(e) =>
-                    setLinkDraft({ ...linkDraft, label: e.target.value })
-                  }
+                  onChange={(e) => setLinkDraft({ ...linkDraft, label: e.target.value })}
                   maxLength={60}
                 />
-                <LinkTypeSelect
-                  onPick={(lbl) =>
-                    setLinkDraft((d) => ({ ...d, label: lbl }))
-                  }
-                />
+                <LinkTypeSelect onPick={(lbl) => setLinkDraft((d) => ({ ...d, label: lbl }))} />
               </div>
             </div>
             <div className="grid gap-2">
@@ -1808,9 +1226,7 @@ export default function ProfileEditor({
                 className={input}
                 placeholder="https://your-link.com"
                 value={linkDraft.url}
-                onChange={(e) =>
-                  setLinkDraft({ ...linkDraft, url: e.target.value })
-                }
+                onChange={(e) => setLinkDraft({ ...linkDraft, url: e.target.value })}
                 maxLength={300}
               />
             </div>
@@ -1841,13 +1257,446 @@ export default function ProfileEditor({
           )}
           {links.length > 0 && (
             <div>
-              <button
-                type="button"
-                className="px-3 py-2 border rounded-lg"
-                onClick={() => setLinks([])}
-              >
+              <button type="button" className="px-3 py-2 border rounded-lg" onClick={() => setLinks([])}>
                 Clear links
               </button>
+            </div>
+          )}
+        </div>
+      </section>
+      {/* Products / Catalog – Plus & Pro+ only (MOVED: now immediately after Links and before FAQs) */}
+      <section className="grid gap-4">
+        <div className="rounded-2xl border bg-white p-6 shadow-sm space-y-3">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h3 className="text-lg font-semibold flex items-center gap-2">
+                Products / Catalog
+                <span className="relative group cursor-help align-middle">
+                  <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-gray-200 text-[10px] font-semibold text-gray-700">
+                    i
+                  </span>
+                  <span className="pointer-events-none absolute left-1/2 top-full z-10 mt-1 hidden w-[22rem] -translate-x-1/2 rounded-md bg-black px-2 py-1 text-xs leading-snug text-white group-hover:block">
+                    <span className="font-semibold">Why list a Product instead of a link?</span>
+                    <br />
+                    A link is just a destination for humans.
+                    <br />
+                    A product is a structured offering for AI systems.
+                    <br />
+                    When you list a product, you define what it is, what it costs, and how it should be understood — in a
+                    machine-readable format. This helps AI systems interpret, compare, and include your offering in relevant
+                    answers.
+                    <br />
+                    Links don’t carry this context. Products do.
+                  </span>
+                </span>
+              </h3>
+
+              <p className="text-sm text-gray-600">
+                Listing a product, and its details, makes your offering machine-readable, improving how AI systems interpret,
+                compare, and surface what you sell.
+              </p>
+            </div>
+
+            {!canEditProducts && (
+              <span className="text-xs rounded-full bg-yellow-50 px-2.5 py-1 text-yellow-800 border border-yellow-200 whitespace-nowrap">
+                Upgrade to Plus to edit Products
+              </span>
+            )}
+          </div>
+
+          {canEditProducts ? (
+            <div className="grid gap-4">
+              <div className="grid gap-3 rounded-xl border bg-gray-50 p-4">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className={row}>
+                    <label className={label}>Type</label>
+                    <select
+                      className={input}
+                      value={productDraft.type}
+                      onChange={(e) =>
+                        setProductDraft((d) => ({
+                          ...d,
+                          type: e.target.value as ProductType,
+                        }))
+                      }
+                    >
+                      <option value="PRODUCT">Product</option>
+                      <option value="SERVICE">Service</option>
+                      <option value="OFFER">Offer</option>
+                    </select>
+                  </div>
+                  <div className={row + " sm:col-span-2"}>
+                    <label className={label}>Name</label>
+                    <input
+                      className={input}
+                      placeholder="e.g., AEOBRO Plus"
+                      value={productDraft.name}
+                      onChange={(e) => setProductDraft((d) => ({ ...d, name: e.target.value }))}
+                      maxLength={160}
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className={row}>
+                    <label className={label}>URL</label>
+                    <input
+                      className={input}
+                      placeholder="https://..."
+                      value={productDraft.url}
+                      onChange={(e) => setProductDraft((d) => ({ ...d, url: e.target.value }))}
+                      maxLength={300}
+                    />
+                  </div>
+                  <div className={row}>
+                    <label className={label}>Image URL (optional)</label>
+                    <input
+                      className={input}
+                      placeholder="https://.../image.png"
+                      value={productDraft.image}
+                      onChange={(e) => setProductDraft((d) => ({ ...d, image: e.target.value }))}
+                      maxLength={300}
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className={row}>
+                    <label className={label}>Price</label>
+                    <input
+                      className={input}
+                      inputMode="decimal"
+                      placeholder="e.g., 19.99"
+                      value={productDraft.amount}
+                      onChange={(e) => setProductDraft((d) => ({ ...d, amount: e.target.value }))}
+                      maxLength={32}
+                    />
+                  </div>
+                  <div className={row}>
+                    <label className={label}>Currency</label>
+                    <input
+                      className={input}
+                      placeholder="USD"
+                      value={productDraft.currency}
+                      onChange={(e) =>
+                        setProductDraft((d) => ({
+                          ...d,
+                          currency: e.target.value.toUpperCase(),
+                        }))
+                      }
+                      maxLength={10}
+                    />
+                  </div>
+                  <div className={row}>
+                    <label className={label}>Availability</label>
+                    <select
+                      className={input}
+                      value={productDraft.availability}
+                      onChange={(e) =>
+                        setProductDraft((d) => ({
+                          ...d,
+                          availability: e.target.value as ProductAvailability,
+                        }))
+                      }
+                    >
+                      <option value="">(optional)</option>
+                      <option value="InStock">In stock</option>
+                      <option value="OutOfStock">Out of stock</option>
+                      <option value="PreOrder">Pre-order</option>
+                      <option value="LimitedAvailability">Limited</option>
+                      <option value="OnlineOnly">Online only</option>
+                    </select>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  className="text-sm text-blue-700 underline underline-offset-2 self-start"
+                  onClick={() => setProductAdvanced((v) => !v)}
+                >
+                  {productAdvanced ? "Hide advanced fields" : "Show advanced fields"}
+                </button>
+
+                {productAdvanced && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className={row}>
+                      <label className={label}>Category (optional)</label>
+                      <input
+                        className={input}
+                        placeholder="e.g., SaaS, Jewelry, Coaching"
+                        value={productDraft.category}
+                        onChange={(e) => setProductDraft((d) => ({ ...d, category: e.target.value }))}
+                        maxLength={120}
+                      />
+                    </div>
+                    <div className={row}>
+                      <label className={label}>Brand (optional)</label>
+                      <input
+                        className={input}
+                        placeholder="e.g., AEOBRO"
+                        value={productDraft.brand}
+                        onChange={(e) => setProductDraft((d) => ({ ...d, brand: e.target.value }))}
+                        maxLength={120}
+                      />
+                    </div>
+                    <div className={row}>
+                      <label className={label}>SKU (optional)</label>
+                      <input
+                        className={input}
+                        placeholder="Internal SKU"
+                        value={productDraft.sku}
+                        onChange={(e) => setProductDraft((d) => ({ ...d, sku: e.target.value }))}
+                        maxLength={80}
+                      />
+                    </div>
+                    <div className={row}>
+                      <label className={label}>GTIN (optional)</label>
+                      <input
+                        className={input}
+                        placeholder="UPC/EAN/GTIN"
+                        value={productDraft.gtin}
+                        onChange={(e) => setProductDraft((d) => ({ ...d, gtin: e.target.value }))}
+                        maxLength={80}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    className="px-3 py-2 border rounded-lg"
+                    onClick={() => {
+                      const name = productDraft.name.trim();
+                      if (!name) return;
+
+                      const url = productDraft.url.trim();
+                      if (url && !isValidUrl(normalizeUrl(url))) {
+                        toast("Product URL must be valid (https://...).", "error");
+                        return;
+                      }
+
+                      const img = productDraft.image.trim();
+                      if (img && !isValidUrl(normalizeUrl(img))) {
+                        toast("Product image URL must be valid (https://...).", "error");
+                        return;
+                      }
+
+                      const amt = toMoney(productDraft.amount);
+                      const currency = (productDraft.currency || "").trim().toUpperCase();
+
+                      const newItem: ProductItem = {
+                        name,
+                        type: productDraft.type,
+                        url: url ? normalizeUrl(url) : null,
+                        image: img ? normalizeUrl(img) : null,
+                        price:
+                          amt != null || currency
+                            ? { amount: amt, currency: currency || "USD" }
+                            : null,
+                        availability: productDraft.availability || "",
+                        category: productDraft.category.trim() || null,
+                        sku: productDraft.sku.trim() || null,
+                        brand: productDraft.brand.trim() || null,
+                        gtin: productDraft.gtin.trim() || null,
+                        position: products.length + 1,
+                      };
+
+                      setProducts((prev) => [...prev, newItem]);
+                      setProductDraft({
+                        name: "",
+                        type: "PRODUCT",
+                        url: "",
+                        image: "",
+                        amount: "",
+                        currency: "USD",
+                        availability: "",
+                        category: "",
+                        sku: "",
+                        brand: "",
+                        gtin: "",
+                      });
+                    }}
+                  >
+                    + Add item
+                  </button>
+
+                  {products.length > 0 && (
+                    <button type="button" className="px-3 py-2 border rounded-lg" onClick={() => setProducts([])}>
+                      Clear catalog
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {products.length > 0 ? (
+                <ul className="grid gap-3 text-sm">
+                  {products.map((p, idx) => (
+                    <li key={idx} className="rounded-lg border bg-white px-4 py-3 flex flex-col gap-1">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="font-medium">
+                          {idx + 1}. {p.name}{" "}
+                          {p.type ? (
+                            <span className="ml-2 text-xs rounded-full bg-gray-100 px-2 py-0.5 text-gray-700">
+                              {p.type}
+                            </span>
+                          ) : null}
+                        </div>
+                        <button
+                          type="button"
+                          className="text-xs text-red-600 hover:underline"
+                          onClick={() => setProducts((prev) => prev.filter((_, i) => i !== idx))}
+                        >
+                          Remove
+                        </button>
+                      </div>
+
+                      {(p.price?.amount != null || p.price?.currency) && (
+                        <div className="text-xs text-gray-700">
+                          {(p.price?.currency || "USD") + " "}
+                          {p.price?.amount != null ? p.price.amount : ""}
+                          {p.availability ? <span className="ml-2 text-gray-500">• {p.availability}</span> : null}
+                        </div>
+                      )}
+
+                      {p.category ? <div className="text-xs text-gray-600">Category: {p.category}</div> : null}
+
+                      {p.url ? (
+                        <a
+                          href={normalizeUrl(p.url)}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-xs text-blue-600 underline mt-1"
+                        >
+                          View item
+                        </a>
+                      ) : null}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <div className="rounded-md border border-dashed bg-gray-50 p-3 text-sm text-gray-600">
+                  No catalog items yet. Add your top offers first (the ones you want AI to recommend).
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="grid gap-3">
+              {products.length > 0 ? (
+                <div className="rounded-xl border bg-white p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="text-sm font-semibold">Your catalog (read-only on Lite)</div>
+                      <div className="text-xs text-gray-600">Your items are saved. Upgrade to Plus to edit your catalog.</div>
+                    </div>
+                    <a
+                      href="/pricing"
+                      className="inline-flex items-center rounded-md border border-blue-600 bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 whitespace-nowrap"
+                    >
+                      Upgrade to edit
+                    </a>
+                  </div>
+
+                  <ul className="mt-3 grid gap-3 text-sm">
+                    {products.map((p, idx) => (
+                      <li key={idx} className="rounded-lg border bg-gray-50 px-4 py-3 flex flex-col gap-1">
+                        <div className="font-medium">
+                          {idx + 1}. {p.name}{" "}
+                          {p.type ? (
+                            <span className="ml-2 text-xs rounded-full bg-gray-100 px-2 py-0.5 text-gray-700">
+                              {p.type}
+                            </span>
+                          ) : null}
+                        </div>
+
+                        {(p.price?.amount != null || p.price?.currency) && (
+                          <div className="text-xs text-gray-700">
+                            {(p.price?.currency || "USD") + " "}
+                            {p.price?.amount != null ? p.price.amount : ""}
+                            {p.availability ? <span className="ml-2 text-gray-500">• {p.availability}</span> : null}
+                          </div>
+                        )}
+
+                        {p.category ? <div className="text-xs text-gray-600">Category: {p.category}</div> : null}
+
+                        {p.url ? (
+                          <a
+                            href={normalizeUrl(p.url)}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-xs text-blue-600 underline mt-1"
+                          >
+                            View item
+                          </a>
+                        ) : null}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : (
+                <div className="rounded-md border border-dashed bg-gray-50 p-3 text-sm text-gray-600">
+                  Products/Catalog is available on <span className="font-medium">Plus</span> and{" "}
+                  <span className="font-medium">Pro</span> plans. Upgrade to add machine-readable product and offer data.
+                  <div className="mt-3">
+                    <a
+                      href="/pricing"
+                      className="inline-flex items-center rounded-md border border-blue-600 bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700"
+                    >
+                      Upgrade on Pricing page
+                    </a>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </section>
+
+      {/* Updates – Plus & Pro+ only (MOVED: now immediately after Links and before FAQs) */}
+      <section className="grid gap-4">
+        <div className="rounded-2xl border bg-white p-6 shadow-sm space-y-3">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h3 className="text-lg font-semibold">Updates</h3>
+              <p className="text-sm text-gray-600">
+                Post your latest offer, launch, or announcement. This becomes a machine-readable “Latest update” that AEOBRO
+                exposes to AI systems.
+              </p>
+            </div>
+            {!canEditUpdates && (
+              <span className="text-xs rounded-full bg-yellow-50 px-2.5 py-1 text-yellow-800 border border-yellow-200 whitespace-nowrap">
+                Upgrade to Plus to unlock Updates
+              </span>
+            )}
+          </div>
+
+          {canEditUpdates ? (
+            <>
+              <textarea
+                className={input}
+                rows={3}
+                placeholder="Getting ready for launch."
+                value={updateMessage}
+                onChange={(e) => setUpdateMessage(e.target.value)}
+                maxLength={500}
+              />
+              <p className="text-xs text-gray-500">
+                Updates are saved when you click <span className="font-medium">Save &amp; Publish</span>.
+              </p>
+            </>
+          ) : (
+            <div className="rounded-md border border-dashed bg-gray-50 p-3 text-sm text-gray-600">
+              Latest Updates are available on <span className="font-medium">Plus</span> and{" "}
+              <span className="font-medium">Pro</span> plans. Upgrade to keep AI tools in sync with your newest offers and
+              announcements.
+              <div className="mt-3">
+                <a
+                  href="/pricing"
+                  className="inline-flex items-center rounded-md border border-blue-600 bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700"
+                >
+                  Upgrade on Pricing page
+                </a>
+              </div>
             </div>
           )}
         </div>
@@ -1863,9 +1712,8 @@ export default function ProfileEditor({
                 i
               </span>
               <span className="pointer-events-none absolute left-1/2 top-full z-10 mt-1 hidden w-72 -translate-x-1/2 rounded-md bg-black px-2 py-1 text-xs leading-snug text-white group-hover:block">
-                Question-and-answer pairs about your brand, policies, and
-                services. AEOBRO turns these into FAQ JSON-LD so AI tools can
-                quote you accurately.
+                Question-and-answer pairs about your brand, policies, and services. AEOBRO turns these into FAQ JSON-LD so AI
+                tools can quote you accurately.
               </span>
             </span>
           </h3>
@@ -1879,20 +1727,17 @@ export default function ProfileEditor({
         {isProPlan ? (
           <div className="grid gap-3 rounded-2xl border bg-white p-4 shadow-sm">
             <p className="text-sm text-gray-600">
-              Add common questions and answers about your brand, services, or
-              policies. AEOBRO turns these into FAQ JSON-LD for AI and search.
+              Add common questions and answers about your brand, services, or policies. AEOBRO turns these into FAQ JSON-LD
+              for AI and search.
             </p>
 
-            {/* FAQ Draft inputs */}
             <div className="grid gap-2">
               <label className={label}>New question</label>
               <input
                 className={input}
                 placeholder="e.g., What services do you offer?"
                 value={faqDraft.question}
-                onChange={(e) =>
-                  setFaqDraft((f) => ({ ...f, question: e.target.value }))
-                }
+                onChange={(e) => setFaqDraft((f) => ({ ...f, question: e.target.value }))}
                 maxLength={500}
               />
             </div>
@@ -1903,9 +1748,7 @@ export default function ProfileEditor({
                 rows={3}
                 placeholder="Provide a clear, helpful answer."
                 value={faqDraft.answer}
-                onChange={(e) =>
-                  setFaqDraft((f) => ({ ...f, answer: e.target.value }))
-                }
+                onChange={(e) => setFaqDraft((f) => ({ ...f, answer: e.target.value }))}
                 maxLength={4000}
               />
             </div>
@@ -1931,39 +1774,25 @@ export default function ProfileEditor({
                 + Add FAQ
               </button>
               {faqs.length > 0 && (
-                <button
-                  type="button"
-                  className="px-3 py-2 border rounded-lg"
-                  onClick={() => setFaqs([])}
-                >
+                <button type="button" className="px-3 py-2 border rounded-lg" onClick={() => setFaqs([])}>
                   Clear FAQs
                 </button>
               )}
             </div>
 
-            {/* FAQ list */}
             {faqs.length > 0 && (
               <ul className="mt-2 space-y-3 text-sm">
                 {faqs.map((f, idx) => (
-                  <li
-                    key={idx}
-                    className="rounded-lg border bg-gray-50 px-3 py-2 flex gap-3"
-                  >
-                    <div className="mt-1 text-xs font-semibold text-gray-500">
-                      {idx + 1}.
-                    </div>
+                  <li key={idx} className="rounded-lg border bg-gray-50 px-3 py-2 flex gap-3">
+                    <div className="mt-1 text-xs font-semibold text-gray-500">{idx + 1}.</div>
                     <div className="flex-1">
                       <div className="font-medium">{f.question}</div>
-                      <div className="mt-1 text-gray-700 whitespace-pre-wrap">
-                        {f.answer}
-                      </div>
+                      <div className="mt-1 text-gray-700 whitespace-pre-wrap">{f.answer}</div>
                     </div>
                     <button
                       type="button"
                       className="text-xs text-red-600 hover:underline ml-2"
-                      onClick={() =>
-                        setFaqs((prev) => prev.filter((_, i) => i !== idx))
-                      }
+                      onClick={() => setFaqs((prev) => prev.filter((_, i) => i !== idx))}
                     >
                       Remove
                     </button>
@@ -1974,9 +1803,8 @@ export default function ProfileEditor({
           </div>
         ) : (
           <div className="rounded-2xl border border-dashed bg-gray-50 p-4 text-sm text-gray-600">
-            FAQs are stored as structured JSON-LD for AI and search engines.
-            Upgrade to <span className="font-medium">Pro</span> to unlock the
-            FAQ editor here.
+            FAQs are stored as structured JSON-LD for AI and search engines. Upgrade to{" "}
+            <span className="font-medium">Pro</span> to unlock the FAQ editor here.
           </div>
         )}
       </section>
@@ -1991,9 +1819,8 @@ export default function ProfileEditor({
                 i
               </span>
               <span className="pointer-events-none absolute left-1/2 top-full z-10 mt-1 hidden w-72 -translate-x-1/2 rounded-md bg-black px-2 py-1 text-xs leading-snug text-white group-hover:block">
-                List the services or offers you provide, with optional price
-                ranges. AEOBRO exposes these as structured Service entities so
-                AI can describe and recommend your offers.
+                List the services or offers you provide, with optional price ranges. AEOBRO exposes these as structured
+                Service entities so AI can describe and recommend your offers.
               </span>
             </span>
           </h3>
@@ -2008,22 +1835,17 @@ export default function ProfileEditor({
           <div className="grid gap-3 rounded-2xl border bg-white p-4 shadow-sm">
             <p className="text-sm text-gray-600">
               List your services or offers. AEOBRO exposes these as{" "}
-              <code className="text-xs bg-gray-100 px-1 py-0.5 rounded">
-                Service
-              </code>{" "}
-              entities in JSON-LD, with optional price ranges.
+              <code className="text-xs bg-gray-100 px-1 py-0.5 rounded">Service</code> entities in JSON-LD, with optional
+              price ranges.
             </p>
 
-            {/* Service draft inputs */}
             <div className="grid gap-2">
               <label className={label}>Service name</label>
               <input
                 className={input}
                 placeholder="e.g., Website design package"
                 value={serviceDraft.name || ""}
-                onChange={(e) =>
-                  setServiceDraft((s) => ({ ...s, name: e.target.value }))
-                }
+                onChange={(e) => setServiceDraft((s) => ({ ...s, name: e.target.value }))}
                 maxLength={200}
               />
             </div>
@@ -2034,12 +1856,7 @@ export default function ProfileEditor({
                 rows={3}
                 placeholder="Short description of this service."
                 value={serviceDraft.description || ""}
-                onChange={(e) =>
-                  setServiceDraft((s) => ({
-                    ...s,
-                    description: e.target.value,
-                  }))
-                }
+                onChange={(e) => setServiceDraft((s) => ({ ...s, description: e.target.value }))}
                 maxLength={2000}
               />
             </div>
@@ -2050,9 +1867,7 @@ export default function ProfileEditor({
                   className={input}
                   placeholder="https://your-service-page.com"
                   value={serviceDraft.url || ""}
-                  onChange={(e) =>
-                    setServiceDraft((s) => ({ ...s, url: e.target.value }))
-                  }
+                  onChange={(e) => setServiceDraft((s) => ({ ...s, url: e.target.value }))}
                   maxLength={300}
                 />
               </div>
@@ -2063,12 +1878,7 @@ export default function ProfileEditor({
                     className={input}
                     placeholder="e.g., 500"
                     value={serviceDraft.priceMin || ""}
-                    onChange={(e) =>
-                      setServiceDraft((s) => ({
-                        ...s,
-                        priceMin: e.target.value,
-                      }))
-                    }
+                    onChange={(e) => setServiceDraft((s) => ({ ...s, priceMin: e.target.value }))}
                     maxLength={40}
                   />
                 </div>
@@ -2078,12 +1888,7 @@ export default function ProfileEditor({
                     className={input}
                     placeholder="e.g., 2000"
                     value={serviceDraft.priceMax || ""}
-                    onChange={(e) =>
-                      setServiceDraft((s) => ({
-                        ...s,
-                        priceMax: e.target.value,
-                      }))
-                    }
+                    onChange={(e) => setServiceDraft((s) => ({ ...s, priceMax: e.target.value }))}
                     maxLength={40}
                   />
                 </div>
@@ -2096,12 +1901,7 @@ export default function ProfileEditor({
                   className={input}
                   placeholder="e.g., USD"
                   value={serviceDraft.currency || ""}
-                  onChange={(e) =>
-                    setServiceDraft((s) => ({
-                      ...s,
-                      currency: e.target.value,
-                    }))
-                  }
+                  onChange={(e) => setServiceDraft((s) => ({ ...s, currency: e.target.value }))}
                   maxLength={10}
                 />
               </div>
@@ -2111,12 +1911,7 @@ export default function ProfileEditor({
                   className={input}
                   placeholder="e.g., project, hour, month"
                   value={serviceDraft.priceUnit || ""}
-                  onChange={(e) =>
-                    setServiceDraft((s) => ({
-                      ...s,
-                      priceUnit: e.target.value,
-                    }))
-                  }
+                  onChange={(e) => setServiceDraft((s) => ({ ...s, priceUnit: e.target.value }))}
                   maxLength={40}
                 />
               </div>
@@ -2154,24 +1949,16 @@ export default function ProfileEditor({
                 + Add service
               </button>
               {services.length > 0 && (
-                <button
-                  type="button"
-                  className="px-3 py-2 border rounded-lg"
-                  onClick={() => setServices([])}
-                >
+                <button type="button" className="px-3 py-2 border rounded-lg" onClick={() => setServices([])}>
                   Clear services
                 </button>
               )}
             </div>
 
-            {/* Services list */}
             {services.length > 0 && (
               <ul className="mt-2 grid gap-3 text-sm">
                 {services.map((s, idx) => (
-                  <li
-                    key={idx}
-                    className="rounded-lg border bg-gray-50 px-3 py-2 flex flex-col gap-1"
-                  >
+                  <li key={idx} className="rounded-lg border bg-gray-50 px-3 py-2 flex flex-col gap-1">
                     <div className="flex items-start justify-between gap-2">
                       <div className="font-medium">
                         {idx + 1}. {s.name}
@@ -2179,20 +1966,12 @@ export default function ProfileEditor({
                       <button
                         type="button"
                         className="text-xs text-red-600 hover:underline"
-                        onClick={() =>
-                          setServices((prev) =>
-                            prev.filter((_, i) => i !== idx)
-                          )
-                        }
+                        onClick={() => setServices((prev) => prev.filter((_, i) => i !== idx))}
                       >
                         Remove
                       </button>
                     </div>
-                    {s.description && (
-                      <div className="text-gray-700 whitespace-pre-wrap">
-                        {s.description}
-                      </div>
-                    )}
+                    {s.description && <div className="text-gray-700 whitespace-pre-wrap">{s.description}</div>}
                     {(s.priceMin || s.priceMax || s.currency || s.priceUnit) && (
                       <div className="text-xs text-gray-700 mt-1">
                         {s.currency ? `${s.currency} ` : ""}
@@ -2224,12 +2003,8 @@ export default function ProfileEditor({
         ) : (
           <div className="rounded-2xl border border-dashed bg-gray-50 p-4 text-sm text-gray-600">
             Services are exported as structured{" "}
-            <code className="text-xs bg-gray-100 px-1 py-0.5 rounded">
-              Service
-            </code>{" "}
-            entities in JSON-LD, including price ranges when available. Upgrade
-            to <span className="font-medium">Pro</span> to unlock the Services
-            editor here.
+            <code className="text-xs bg-gray-100 px-1 py-0.5 rounded">Service</code> entities in JSON-LD, including price
+            ranges when available. Upgrade to <span className="font-medium">Pro</span> to unlock the Services editor here.
           </div>
         )}
       </section>
@@ -2247,25 +2022,17 @@ export default function ProfileEditor({
           </button>
 
           {getPublicPath() ? (
-            <button
-              type="button"
-              onClick={copyUrl}
-              className="px-3 py-2 border rounded-lg"
-            >
+            <button type="button" onClick={copyUrl} className="px-3 py-2 border rounded-lg">
               Copy URL
             </button>
           ) : null}
 
-          <a
-            href="#verify"
-            className="ml-auto text-sm text-blue-600 underline hover:text-blue-700"
-          >
+          <a href="#verify" className="ml-auto text-sm text-blue-600 underline hover:text-blue-700">
             Go to Verify ↓
           </a>
         </div>
         <p className="text-xs text-gray-500">
-          Your changes go live immediately when you{" "}
-          <span className="font-medium">Save &amp; Publish</span>.
+          Your changes go live immediately when you <span className="font-medium">Save &amp; Publish</span>.
         </p>
       </div>
 
@@ -2292,21 +2059,13 @@ export default function ProfileEditor({
       {confirmOpen && (
         <div className="fixed inset-0 z-50 grid place-items-center bg-black/30">
           <div className="bg-white rounded-xl shadow-lg p-5 w-[min(92vw,480px)]">
-            <h4 className="text-base font-semibold mb-2">
-              You have unsaved changes
-            </h4>
+            <h4 className="text-base font-semibold mb-2">You have unsaved changes</h4>
             <p className="text-sm text-gray-600 mb-4">
-              The public profile you’re about to view shows the{" "}
-              <span className="font-medium">last published</span> version. To
-              include your edits, click{" "}
-              <span className="font-medium">Save &amp; View</span>.
+              The public profile you’re about to view shows the <span className="font-medium">last published</span> version.
+              To include your edits, click <span className="font-medium">Save &amp; View</span>.
             </p>
             <div className="flex justify-end gap-2">
-              <button
-                type="button"
-                className="px-3 py-2 border rounded-lg"
-                onClick={() => setConfirmOpen(false)}
-              >
+              <button type="button" className="px-3 py-2 border rounded-lg" onClick={() => setConfirmOpen(false)}>
                 Cancel
               </button>
               <button
@@ -2315,10 +2074,7 @@ export default function ProfileEditor({
                 onClick={() => {
                   const path = getPublicPath();
                   if (!path) {
-                    toast(
-                      "Not yet published — please Save & Publish first.",
-                      "error"
-                    );
+                    toast("Not yet published — please Save & Publish first.", "error");
                     return;
                   }
                   window.open(path, "_blank", "noopener,noreferrer");
@@ -2347,9 +2103,7 @@ export default function ProfileEditor({
           profileId={profileId ?? undefined}
           initialDomain={website ?? ""}
           initialStatus={verificationStatus as any}
-          onStatusChange={(status: VerificationStatus) =>
-            setVerificationStatus(status)
-          }
+          onStatusChange={(status: VerificationStatus) => setVerificationStatus(status)}
         />
       </section>
 
@@ -2362,19 +2116,13 @@ export default function ProfileEditor({
       <section className="mt-6">
         <div className="rounded-xl border bg-neutral-50 px-4 py-3 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
           <div>
-            <h2 className="text-sm font-semibold text-neutral-900">
-              Manage your subscription
-            </h2>
+            <h2 className="text-sm font-semibold text-neutral-900">Manage your subscription</h2>
             <p className="mt-1 text-xs text-neutral-600 max-w-md">
-              Need to change plans, update your card, or cancel? Use the button
-              to open the secure Stripe Billing Portal. Your subscription stays
-              active until the end of your current billing period.
+              Need to change plans, update your card, or cancel? Use the button to open the secure Stripe Billing Portal.
+              Your subscription stays active until the end of your current billing period.
             </p>
           </div>
-          <ManageBillingButton
-            label="Open billing portal"
-            className="text-xs md:text-sm px-4 py-2"
-          />
+          <ManageBillingButton label="Open billing portal" className="text-xs md:text-sm px-4 py-2" />
         </div>
       </section>
     </div>
