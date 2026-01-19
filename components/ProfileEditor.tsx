@@ -1,12 +1,9 @@
 // components/ProfileEditor.tsx
-// 📅 Updated: 2026-01-10 07:20 AM EST –
-//  - Keep Verify card near bottom
-//  - Insert standalone LinkedAccountsCard tile above Billing card
-//  - Billing card remains last
-//  - Add Products / Catalog editor (Plus+), stored as productsJson (JSON)
-// ✅ Updated: 2026-01-10 11:53 AM EST –
-//  - Lite users now SEE persisted products list (read-only) + Upgrade CTA
-//  - Plus/Pro users keep full editor behavior
+// 📅 Updated: 2026-01-19 21:04 (split output 1/4) –
+//  - Move Products / Catalog + Updates above FAQs (Pro)
+//  - Replace Products tile description copy
+//  - Add Products tooltip explaining why Products > Links
+//  - Preserve Lite read-only products list + Plus/Pro editor behavior
 
 "use client";
 
@@ -398,7 +395,6 @@ export default function ProfileEditor({
 
   // Products editor should be available on Plus and Pro+ plans (Lite is read-only)
   const canEditProducts = planKey === "PLUS" || isProPlan;
-
   /** ---- Build a normalized payload ---- */
   const buildPayload = React.useCallback((): Profile => {
     const base: Profile = {
@@ -563,27 +559,23 @@ export default function ProfileEditor({
         if (data.bio != null) setBio(data.bio || "");
 
         // Updates
-        if (data.updateMessage != null)
-          setUpdateMessage(data.updateMessage || "");
+        if (data.updateMessage != null) setUpdateMessage(data.updateMessage || "");
 
         if (data.website != null) setWebsite(data.website || "");
         if (data.location != null) setLocation(data.location || "");
         if (data.serviceArea) setServiceArea(toCsv(data.serviceArea));
 
-        if (data.foundedYear != null)
-          setFoundedYear(String(data.foundedYear || ""));
+        if (data.foundedYear != null) setFoundedYear(String(data.foundedYear || ""));
         if (data.teamSize != null) setTeamSize(String(data.teamSize || ""));
         if (data.languages) setLanguages(toCsv(data.languages));
         if (data.pricingModel) setPricingModel(data.pricingModel as any);
         if (data.hours != null) setHours(data.hours || "");
 
-        if (data.certifications != null)
-          setCertifications(data.certifications || "");
+        if (data.certifications != null) setCertifications(data.certifications || "");
         if (data.press) setPress(data.press);
 
         if (data.logoUrl != null) setLogoUrl(data.logoUrl || "");
-        if (data.imageUrls && data.imageUrls.length)
-          setImageUrls(data.imageUrls);
+        if (data.imageUrls && data.imageUrls.length) setImageUrls(data.imageUrls);
 
         if (data.handles) setHandles(data.handles);
         if (data.links) setLinks(data.links || []);
@@ -662,9 +654,7 @@ export default function ProfileEditor({
       if (isProPlan) {
         for (const s of services) {
           if (s.url && !isValidUrl(normalizeUrl(s.url))) {
-            throw new Error(
-              "Service URLs must be valid (https://example.com)."
-            );
+            throw new Error("Service URLs must be valid (https://example.com).");
           }
         }
       }
@@ -686,8 +676,7 @@ export default function ProfileEditor({
         throw new Error(text);
       }
 
-      const finalSlug: string | undefined =
-        json?.profile?.slug || json?.slug || undefined;
+      const finalSlug: string | undefined = json?.profile?.slug || json?.slug || undefined;
       const finalId: string | undefined =
         json?.profile?.id || json?.id || profileId || undefined;
       const finalStatus: VerificationStatus | undefined =
@@ -769,20 +758,15 @@ export default function ProfileEditor({
       <div className="flex items-start justify-between">
         <p className="text-sm text-gray-600">
           <span className="block">
-            To build your AI Ready profile, fill out as much of the form below
-            as you can, and click{" "}
+            To build your AI Ready profile, fill out as much of the form below as you can, and click{" "}
             <span className="font-medium">Save &amp; Publish</span>.
           </span>
           <span className="block">
-            <span className="font-semibold">
-              Only Display Name is required to publish.
-            </span>{" "}
-            Add more when you’re ready — the more details you include, the
-            better your AI visibility.
+            <span className="font-semibold">Only Display Name is required to publish.</span>{" "}
+            Add more when you’re ready — the more details you include, the better your AI visibility.
           </span>
           <span className="block">
-            To have your AI Ready profile verified, complete one of the options
-            at the bottom of this page.
+            To have your AI Ready profile verified, complete one of the options at the bottom of this page.
           </span>
         </p>
         {plan && (
@@ -831,10 +815,7 @@ export default function ProfileEditor({
               else {
                 const path = getPublicPath();
                 if (!path) {
-                  toast(
-                    "Not yet published — please Save & Publish first.",
-                    "error"
-                  );
+                  toast("Not yet published — please Save & Publish first.", "error");
                   return;
                 }
                 window.open(path, "_blank", "noopener,noreferrer");
@@ -858,8 +839,7 @@ export default function ProfileEditor({
                 i
               </span>
               <span className="pointer-events-none absolute left-1/2 top-full z-10 mt-1 hidden w-64 -translate-x-1/2 rounded-md bg-black px-2 py-1 text-xs leading-snug text-white group-hover:block">
-                Your public name for this profile. It appears in your URL and is
-                the first thing AI tools and people will see.
+                Your public name for this profile. It appears in your URL and is the first thing AI tools and people will see.
               </span>
             </span>
           </label>
@@ -915,7 +895,7 @@ export default function ProfileEditor({
 
       {/* Tagline & Bio */}
       <section className="grid gap-4">
-        <h3 className="text-lg font-semibold">Tagline & Bio</h3>
+        <h3 className="text-lg font-semibold">Tagline &amp; Bio</h3>
         <div className={row}>
           <label className={label + " overflow-visible"} htmlFor="tagline">
             One-line Summary
@@ -924,8 +904,7 @@ export default function ProfileEditor({
                 i
               </span>
               <span className="pointer-events-none absolute left-1/2 top-full z-10 mt-1 hidden w-64 -translate-x-1/2 rounded-md bg-black px-2 py-1 text-xs leading-snug text-white group-hover:block">
-                A one-line summary of your brand or work. Example: “Handmade
-                jewelry for everyday wear”.
+                A one-line summary of your brand or work. Example: “Handmade jewelry for everyday wear”.
               </span>
             </span>
           </label>
@@ -946,9 +925,7 @@ export default function ProfileEditor({
                 i
               </span>
               <span className="pointer-events-none absolute left-1/2 top-full z-10 mt-1 hidden w-72 -translate-x-1/2 rounded-md bg-black px-2 py-1 text-xs leading-snug text-white group-hover:block">
-                A fuller description of what you do, who you help, and why you
-                are credible. AI systems use this to understand your expertise
-                and context.
+                A fuller description of what you do, who you help, and why you are credible. AI systems use this to understand your expertise and context.
               </span>
             </span>
           </label>
@@ -963,18 +940,45 @@ export default function ProfileEditor({
           />
         </div>
       </section>
-
-      {/* Products / Catalog – Plus & Pro+ only */}
+      {/* Products / Catalog – Plus & Pro+ only (MOVED: now above Website/Location/Reach and above FAQs) */}
       <section className="grid gap-4">
         <div className="rounded-2xl border bg-white p-6 shadow-sm space-y-3">
           <div className="flex items-start justify-between gap-3">
             <div>
-              <h3 className="text-lg font-semibold">Products / Catalog</h3>
+              <h3 className="text-lg font-semibold flex items-center gap-2">
+                Products / Catalog
+                {/* ✅ NEW tooltip */}
+                <span className="relative group cursor-help align-middle">
+                  <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-gray-200 text-[10px] font-semibold text-gray-700">
+                    i
+                  </span>
+                  <span className="pointer-events-none absolute left-1/2 top-full z-10 mt-1 hidden w-[22rem] -translate-x-1/2 rounded-md bg-black px-2 py-1 text-xs leading-snug text-white group-hover:block">
+                    <span className="font-semibold">
+                      Why list a Product instead of a link?
+                    </span>
+                    <br />
+                    A link is just a destination for humans.
+                    <br />
+                    A product is a structured offering for AI systems.
+                    <br />
+                    When you list a product, you define what it is, what it
+                    costs, and how it should be understood — in a machine-readable
+                    format. This helps AI systems interpret, compare, and include
+                    your offering in relevant answers.
+                    <br />
+                    Links don’t carry this context. Products do.
+                  </span>
+                </span>
+              </h3>
+
+              {/* ✅ REPLACED description copy */}
               <p className="text-sm text-gray-600">
-                Add your products, services, or offers (name + URL + price).
-                AEOBRO can expose these as machine-readable offers for AI tools.
+                Listing a product, and its details, makes your offering
+                machine-readable, improving how AI systems interpret, compare,
+                and surface what you sell.
               </p>
             </div>
+
             {!canEditProducts && (
               <span className="text-xs rounded-full bg-yellow-50 px-2.5 py-1 text-yellow-800 border border-yellow-200 whitespace-nowrap">
                 Upgrade to Plus to edit Products
@@ -1184,19 +1188,13 @@ export default function ProfileEditor({
 
                       const url = productDraft.url.trim();
                       if (url && !isValidUrl(normalizeUrl(url))) {
-                        toast(
-                          "Product URL must be valid (https://...).",
-                          "error"
-                        );
+                        toast("Product URL must be valid (https://...).", "error");
                         return;
                       }
 
                       const img = productDraft.image.trim();
                       if (img && !isValidUrl(normalizeUrl(img))) {
-                        toast(
-                          "Product image URL must be valid (https://...).",
-                          "error"
-                        );
+                        toast("Product image URL must be valid (https://...).", "error");
                         return;
                       }
 
@@ -1332,7 +1330,8 @@ export default function ProfileEditor({
                         Your catalog (read-only on Lite)
                       </div>
                       <div className="text-xs text-gray-600">
-                        Your items are saved. Upgrade to Plus to edit your catalog.
+                        Your items are saved. Upgrade to Plus to edit your
+                        catalog.
                       </div>
                     </div>
                     <a
@@ -1411,7 +1410,7 @@ export default function ProfileEditor({
         </div>
       </section>
 
-      {/* Updates – Plus & Pro+ only */}
+      {/* Updates – Plus & Pro+ only (MOVED: now above Website/Location/Reach and above FAQs) */}
       <section className="grid gap-4">
         <div className="rounded-2xl border bg-white p-6 shadow-sm space-y-3">
           <div className="flex items-start justify-between gap-3">
@@ -1449,8 +1448,8 @@ export default function ProfileEditor({
             <div className="rounded-md border border-dashed bg-gray-50 p-3 text-sm text-gray-600">
               Latest Updates are available on{" "}
               <span className="font-medium">Plus</span> and{" "}
-              <span className="font-medium">Pro</span> plans. Upgrade to keep
-              AI tools in sync with your newest offers and announcements.
+              <span className="font-medium">Pro</span> plans. Upgrade to keep AI
+              tools in sync with your newest offers and announcements.
               <div className="mt-3">
                 <a
                   href="/pricing"
@@ -1539,7 +1538,6 @@ export default function ProfileEditor({
           />
         </div>
       </section>
-
       {/* Trust & Authority */}
       <section className="grid gap-4">
         <h3 className="text-lg font-semibold">Trust & Authority</h3>
@@ -2355,12 +2353,12 @@ export default function ProfileEditor({
         />
       </section>
 
-      {/* ---- LINKED ACCOUNTS TILE (new standalone card) ---- */}
+      {/* ---- LINKED ACCOUNTS TILE (standalone card) ---- */}
       <section className="mt-6">
         <LinkedAccountsCard />
       </section>
 
-      {/* Billing / subscription helper – now last, under Linked Accounts */}
+      {/* Billing / subscription helper – last, under Linked Accounts */}
       <section className="mt-6">
         <div className="rounded-xl border bg-neutral-50 px-4 py-3 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
           <div>
