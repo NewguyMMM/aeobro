@@ -1,10 +1,10 @@
 // components/VerificationCard.tsx
 // AEOBRO — Domain + Platform Verification Card (DNS • Code-in-Bio • OAuth Connect)
-// ✅ Updated: 2025-12-04 01:30 ET —
-//  - Remove Linked Accounts list/UI (moved to standalone LinkedAccountsCard)
-//  - Keep OAuth confirmation (“use the account that represents this brand”)
-//  - Keep provider-specific guidance under OAuth about common failure reasons
-//  - Update copy to reference the separate Linked Accounts tile
+// ✅ Updated: 2026-01-19 21:25 ET —
+//  - Code-in-Bio: REMOVE unsupported options (Instagram, TikTok, Facebook, LinkedIn)
+//  - Code-in-Bio: Keep only platforms we support reliably right now (X, GitHub, Substack, Etsy)
+//  - Keep DNS TXT flow as preferred for domains
+//  - Keep OAuth connect + confirmation + failure guidance
 
 "use client";
 
@@ -272,9 +272,10 @@ export default function VerificationCard({
         <div>
           <div className="text-base font-semibold">Verify</div>
           <p className="text-sm text-neutral-600">
-            You have 3 options to verify your profile: 1) DNS TXT, 2)
-            Code-in-Bio, and 3) OAuth. We prefer DNS TXT, and you should use
-            this option if your brand has a domain.
+            Verification options depend on platform support:
+            <span className="font-medium"> DNS TXT</span> (domain),
+            <span className="font-medium"> Code-in-Bio</span> (only where supported),
+            and <span className="font-medium"> OAuth</span> (required for YouTube + Facebook).
           </p>
         </div>
         <StatusBadge status={status} />
@@ -440,27 +441,44 @@ export default function VerificationCard({
         </details>
       </section>
 
-      {/* === Option 2: Code-in-Bio === */}
+      {/* === Option 2: Code-in-Bio (Supported Platforms Only) === */}
       <section className="mt-6 rounded-xl border bg-neutral-50 p-4">
         <div className="mb-1 flex items-center gap-2 text-sm font-semibold text-neutral-900">
           <span>Option 2 for Verification — Code-in-Bio</span>
           <span
             className="cursor-help text-[11px] text-neutral-500"
-            title="Paste a short AEOBRO code into the bio/about text on a public social profile (Instagram, X, TikTok, Substack, etc.). For YouTube, use OAuth (Connect Google · YouTube) instead."
+            title="Paste a short AEOBRO code into the bio/about text on a public profile. Only platforms listed below are supported for Code-in-Bio."
           >
-            (Some platforms, like YouTube, require OAuth.)
+            (Supported platforms only)
           </span>
         </div>
+
         <p className="mb-3 text-xs text-neutral-600">
-          Use this if you can update the bio/about text on a public social
-          profile (Instagram, X, TikTok, Substack, GitHub, etc.). We&apos;ll
-          generate a short code for you to paste, then we&apos;ll check for it.
-          Platforms that don&apos;t expose a public bio (for bots), such as
-          YouTube, should be verified via OAuth instead.
+          Use this if you can update the bio/about text on a public profile and it&apos;s
+          one of the supported platforms listed below. We&apos;ll generate a short code
+          for you to paste, then we&apos;ll check for it.
         </p>
 
+        <div className="mb-3 rounded-lg bg-white p-3 text-[11px] text-neutral-600 ring-1 ring-neutral-200">
+          <div className="font-semibold text-neutral-800">
+            Not shown here (by design):
+          </div>
+          <ul className="mt-1 list-disc space-y-0.5 pl-4">
+            <li>
+              <span className="font-medium">YouTube</span>: requires OAuth (use Option 3).
+            </li>
+            <li>
+              <span className="font-medium">Facebook</span>: OAuth only (use Option 3).
+            </li>
+            <li>
+              <span className="font-medium">Instagram / TikTok / LinkedIn</span>: not supported
+              for Code-in-Bio at this time (avoid dead / flaky verification).
+            </li>
+          </ul>
+        </div>
+
         <div className="grid gap-3">
-          {PLATFORMS.map((p) => (
+          {CODE_IN_BIO_PLATFORMS.map((p) => (
             <PlatformBioRow
               key={p.key}
               platform={p.key}
@@ -484,9 +502,10 @@ export default function VerificationCard({
           your canonical identity (e.g., YouTube Channel ID, Twitter/X User ID)
           and mark your profile{" "}
           <span className="font-medium">VERIFIED</span>. This is the
-          recommended method for platforms like YouTube. Always choose the
-          account that represents this brand; if you connect the wrong one, you
-          can disconnect it later from the Linked Accounts tile on this page.
+          recommended method for platforms like YouTube and Facebook. Always
+          choose the account that represents this brand; if you connect the
+          wrong one, you can disconnect it later from the Linked Accounts tile
+          on this page.
         </p>
 
         {/* Provider-specific guidance on failures */}
@@ -501,20 +520,13 @@ export default function VerificationCard({
               try again.
             </li>
             <li>
-              <span className="font-medium">Facebook / Instagram Business:</span>{" "}
-              this account doesn&apos;t manage any Pages linked to an
-              Instagram Business account, or required scopes (pages_show_list,
-              instagram_basic) weren&apos;t granted.
+              <span className="font-medium">Facebook:</span> this account
+              doesn&apos;t manage any Pages, or required permissions weren&apos;t granted.
             </li>
             <li>
               <span className="font-medium">X (Twitter):</span> required
               permissions (users.read) were not granted, or the app is missing
               access to your user profile.
-            </li>
-            <li>
-              <span className="font-medium">TikTok:</span> the app has no access
-              to your user info (missing user.info.basic scope), or TikTok
-              returned no open_id.
             </li>
           </ul>
         </div>
@@ -534,7 +546,7 @@ export default function VerificationCard({
             onClick={() => startOAuth("facebook")}
             disabled={loading || profileMissing}
             className="rounded-xl border px-3 py-2 text-sm disabled:opacity-50"
-            title="Facebook (and Facebook Pages/IG Business via Graph later)"
+            title="Facebook"
           >
             Connect Facebook
           </button>
@@ -555,46 +567,18 @@ export default function VerificationCard({
 
 /* ---------- Small embedded component for Code-in-Bio rows ---------- */
 
-type PlatformKey =
-  | "instagram"
-  | "x"
-  | "tiktok"
-  | "substack"
-  | "facebook"
-  | "linkedin"
-  | "github"
-  | "etsy";
+type PlatformKey = "x" | "substack" | "github" | "etsy";
 
-const PLATFORMS: Array<{
+const CODE_IN_BIO_PLATFORMS: Array<{
   key: PlatformKey;
   label: string;
   placeholder: string;
 }> = [
-  {
-    key: "instagram",
-    label: "Instagram",
-    placeholder: "https://www.instagram.com/your_handle/",
-  },
   { key: "x", label: "X (Twitter)", placeholder: "https://x.com/your_handle" },
-  {
-    key: "tiktok",
-    label: "TikTok",
-    placeholder: "https://www.tiktok.com/@your_handle",
-  },
   {
     key: "substack",
     label: "Substack",
     placeholder: "https://yourname.substack.com/",
-  },
-  {
-    key: "facebook",
-    label: "Facebook",
-    placeholder: "https://www.facebook.com/your.profile",
-  },
-  {
-    key: "linkedin",
-    label: "LinkedIn",
-    placeholder: "https://www.linkedin.com/in/your-handle/",
   },
   {
     key: "github",
@@ -642,7 +626,7 @@ function PlatformBioRow({
         throw new Error(j?.error || "Failed to generate code");
       setCode(j.code);
       setExpiresAt(j.expiresAt);
-      setMsg("Code generated. Paste it into your bio, then click Check Now.");
+      setMsg("Code generated. Paste it into your bio/about, then click Check Now.");
     } catch (e: any) {
       setMsg(e?.message || "Error generating code");
     } finally {
@@ -666,9 +650,7 @@ function PlatformBioRow({
         return;
       }
       setOk(true);
-      setMsg(
-        "Verified! This account is now platform-verified via Code-in-Bio."
-      );
+      setMsg("Verified! This account is now platform-verified via Code-in-Bio.");
       onVerified?.();
     } catch (e: any) {
       setOk(false);
@@ -728,19 +710,14 @@ function PlatformBioRow({
               Edit your {label} profile and paste it into the bio/about section.
             </li>
             <li>
-              Make sure your profile is public, then click{" "}
-              <strong>Check Now</strong>.
+              Make sure the profile is public, then click <strong>Check Now</strong>.
             </li>
           </ul>
         </div>
       )}
 
       {!!msg && (
-        <div
-          className={`mt-2 text-xs ${
-            ok ? "text-emerald-700" : "text-neutral-700"
-          }`}
-        >
+        <div className={`mt-2 text-xs ${ok ? "text-emerald-700" : "text-neutral-700"}`}>
           {msg}
         </div>
       )}
