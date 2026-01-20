@@ -1,7 +1,7 @@
 // app/api/verify/bio-code/check/route.ts
-// ✅ Updated: 2025-12-03
-// - Removes YouTube from Code-in-Bio SUPPORTED_PLATFORMS
-// - Improves error messaging when profileUrl cannot be fetched.
+// ✅ Updated: 2026-01-19
+// - Server-side hardening: reject unsupported Code-in-Bio platforms (x | substack | github | etsy) with HTTP 400
+// - Minimal validation: require valid profileUrl (http/https) with HTTP 400
 // Behavior:
 // - fetches profileUrl, finds active code, verifies
 // - update/create PlatformAccount (provider=<platform>, platformContext="BIO_CODE", externalId from URL)
@@ -15,16 +15,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
-const SUPPORTED_PLATFORMS = new Set([
-  "github",
-  "x",
-  "instagram",
-  "tiktok",
-  "substack",
-  "etsy",
-  "linkedin",
-  "facebook",
-]);
+const ALLOWED_BIO_CODE_PLATFORMS = new Set(["github", "x", "substack", "etsy"]);
 
 export async function POST(req: Request) {
   try {
@@ -34,16 +25,21 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401, headers: nocache() });
     }
 
-    const { platform, profileUrl } = await req.json().catch(() => ({}));
-    if (typeof platform !== "string" || !SUPPORTED_PLATFORMS.has(platform)) {
+    const { platform: rawPlatform, profileUrl } = await req.json().catch(() => ({}));
+
+    const platform =
+      typeof rawPlatform === "string" ? rawPlatform.trim().toLowerCase() : "";
+
+    if (!platform || !ALLOWED_BIO_CODE_PLATFORMS.has(platform)) {
       return NextResponse.json(
-        { error: "Invalid or unsupported platform" },
+        { ok: false, error: "Unsupported platform for Code-in-Bio." },
         { status: 400, headers: nocache() }
       );
     }
-    if (!profileUrl || typeof profileUrl !== "string") {
+
+    if (typeof profileUrl !== "string" || !isValidHttpUrl(profileUrl)) {
       return NextResponse.json(
-        { error: "profileUrl is required" },
+        { ok: false, error: "Invalid or missing profileUrl." },
         { status: 400, headers: nocache() }
       );
     }
@@ -128,7 +124,6 @@ export async function POST(req: Request) {
           url: profileUrl,
           status: "VERIFIED" as any,
           verifiedAt: new Date(),
-          // Optionally refresh externalId if it changed
           externalId,
         },
       });
@@ -169,8 +164,9 @@ export async function POST(req: Request) {
       },
       { status: 200, headers: nocache() }
     );
-  } catch (err: any) {
-    console.error("[bio-code/check] error:", err);
+  } catch {
+    // Minimal logging (no tokens / URLs)
+    console.error("[bio-code/check] error");
     return NextResponse.json(
       { error: "Unable to complete Code-in-Bio check" },
       { status: 500, headers: nocache() }
@@ -182,6 +178,17 @@ export async function POST(req: Request) {
 
 function nocache() {
   return { "Cache-Control": "no-store" };
+}
+
+function isValidHttpUrl(value: string): boolean {
+  const v = value.trim();
+  if (!v) return false;
+  try {
+    const u = new URL(v);
+    return u.protocol === "http:" || u.protocol === "https:";
+  } catch {
+    return false;
+  }
 }
 
 function deriveExternalId(profileUrl: string): string {
