@@ -1,6 +1,9 @@
 // app/api/verify/bio-code/generate/route.ts
-// ✅ Updated: 2025-12-03
-// Returns { ok: true, platform, code, expiresAt: ISO, profileUrl }, reuses unexpired codes.
+// ✅ Updated: 2026-01-19
+// - Server-side hardening: reject unsupported Code-in-Bio platforms (x | substack | github | etsy)
+// - Minimal validation: require valid profileUrl (http/https) with 400
+// - Keep success payload shape unchanged: { ok: true, platform, code, expiresAt: ISO, profileUrl, instructions }
+// - Reuses unexpired codes.
 
 export const runtime = "nodejs";
 
@@ -10,16 +13,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
-const SUPPORTED_PLATFORMS = new Set([
-  "github",
-  "x",
-  "instagram",
-  "tiktok",
-  "substack",
-  "etsy",
-  "linkedin",
-  "facebook",
-]);
+const ALLOWED_BIO_CODE_PLATFORMS = new Set(["github", "x", "substack", "etsy"]);
 
 const BIO_CODE_TTL_HOURS_DEFAULT = 24;
 
@@ -31,10 +25,21 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401, headers: nocache() });
     }
 
-    const { platform, ttlHours, profileUrl } = await req.json().catch(() => ({}));
-    if (typeof platform !== "string" || !SUPPORTED_PLATFORMS.has(platform)) {
+    const { platform: rawPlatform, ttlHours, profileUrl } = await req.json().catch(() => ({}));
+
+    const platform =
+      typeof rawPlatform === "string" ? rawPlatform.trim().toLowerCase() : "";
+
+    if (!platform || !ALLOWED_BIO_CODE_PLATFORMS.has(platform)) {
       return NextResponse.json(
-        { error: "Invalid or unsupported platform" },
+        { ok: false, error: "Unsupported platform for Code-in-Bio." },
+        { status: 400, headers: nocache() }
+      );
+    }
+
+    if (typeof profileUrl !== "string" || !isValidHttpUrl(profileUrl)) {
+      return NextResponse.json(
+        { ok: false, error: "Invalid or missing profileUrl." },
         { status: 400, headers: nocache() }
       );
     }
@@ -86,7 +91,7 @@ export async function POST(req: Request) {
         platform,
         code,
         expiresAt,
-        profileUrl: profileUrl ?? "", // Prisma requires this
+        profileUrl: profileUrl ?? "", // Prisma requires this (still provided due to validation)
       },
       select: { code: true, expiresAt: true, platform: true, profileUrl: true },
     });
@@ -103,8 +108,9 @@ export async function POST(req: Request) {
       },
       { status: 200, headers: nocache() }
     );
-  } catch (err: any) {
-    console.error("[bio-code/generate] error:", err);
+  } catch {
+    // Minimal logging (no tokens / URLs)
+    console.error("[bio-code/generate] error");
     return NextResponse.json(
       { error: "Unable to generate BioCode" },
       { status: 500, headers: nocache() }
@@ -116,6 +122,17 @@ export async function POST(req: Request) {
 
 function nocache() {
   return { "Cache-Control": "no-store" };
+}
+
+function isValidHttpUrl(value: string): boolean {
+  const v = value.trim();
+  if (!v) return false;
+  try {
+    const u = new URL(v);
+    return u.protocol === "http:" || u.protocol === "https:";
+  } catch {
+    return false;
+  }
 }
 
 async function getAuthUserId(session: any): Promise<string | null> {
