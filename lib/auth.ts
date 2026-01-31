@@ -1,7 +1,9 @@
 // lib/auth.ts
-// ✅ Updated: 2026-01-10 05:55 ET
-// - Add: cookie domain scoping for NextAuth session cookie to support apex + www (".aeobro.com")
-// - Preserve: all existing providers, callbacks, events, plan sync logic, verification finalization
+// ✅ Updated: 2026-01-19 17:53 ET
+// - Harden OAuth finalization so unsupported providers cannot create/update PlatformAccounts
+// - Enforce provider ↔ verification-mode pairing by forcing platformContext="OAUTH" for OAuth writes
+// - Keep logs minimal (no tokens/URLs)
+// - Preserve existing providers, callbacks, events, plan sync logic, verification finalization
 
 import type { NextAuthOptions } from "next-auth";
 import { PrismaAdapter } from "@auth/prisma-adapter";
@@ -41,6 +43,17 @@ const twitterEnabled =
 // TikTok requires a custom provider; left as a stub below
 const tiktokEnabled =
   !!process.env.TIKTOK_CLIENT_ID && !!process.env.TIKTOK_CLIENT_SECRET; // not used yet
+
+// ───────────────────────────────────────────────────────────
+// OAuth allowlist (must mirror what UI enables)
+// - Deterministic: only providers with env enabled may finalize and write PlatformAccount
+// - NextAuth provider IDs here are: "google" | "facebook" | "twitter"
+// ───────────────────────────────────────────────────────────
+const ALLOWED_OAUTH_PROVIDERS = new Set<string>([
+  ...(googleEnabled ? ["google"] : []),
+  ...(facebookEnabled ? ["facebook"] : []),
+  ...(twitterEnabled ? ["twitter"] : []),
+]);
 
 // ───────────────────────────────────────────────────────────
 // NextAuth configuration
@@ -330,18 +343,26 @@ If you did not request this, you can safely ignore this email.`;
     async linkAccount({ user, account }) {
       try {
         if (!user?.id || !account?.provider) return;
-        const accessToken = (account as any).access_token as
-          | string
-          | undefined;
+
+        // ✅ HARDEN: Only finalize (and write PlatformAccount) for enabled OAuth providers
+        const provider = String(account.provider).toLowerCase();
+        if (!ALLOWED_OAUTH_PROVIDERS.has(provider)) {
+          // Minimal log only; no tokens, no URLs
+          console.error("[oauth] blocked unsupported provider");
+          return;
+        }
+
+        const accessToken = (account as any).access_token as string | undefined;
         const scope = (account as any).scope as string | undefined;
+
         await finalizePlatformVerification({
           userId: user.id,
-          provider: account.provider,
+          provider,
           accessToken,
           scope,
         });
-      } catch (err) {
-        console.error("finalizePlatformVerification error:", err);
+      } catch {
+        console.error("finalizePlatformVerification error");
       }
     },
   },
@@ -368,6 +389,19 @@ export async function finalizePlatformVerification({
   accessToken,
   scope,
 }: FinalizeParams) {
+  // ✅ HARDEN: prevent impossible states and unsupported providers
+  const normalizedProvider = String(provider ?? "").trim().toLowerCase();
+
+  // Block nonsense providers that should never become PlatformAccount providers
+  if (!normalizedProvider || normalizedProvider === "domain" || normalizedProvider === "dns" || normalizedProvider === "txt") {
+    return;
+  }
+
+  // Must be in enabled OAuth allowlist
+  if (!ALLOWED_OAUTH_PROVIDERS.has(normalizedProvider)) {
+    return;
+  }
+
   // 1) Load user + profile
   const user = await prisma.user.findUnique({
     where: { id: userId },
@@ -377,21 +411,23 @@ export async function finalizePlatformVerification({
   const profile = user.profile;
 
   // 2) Canonical identity via provider module
-  const { externalId, handle, url, platformContext } =
-    await fetchProviderIdentity(provider, accessToken);
+  // NOTE: We do NOT allow provider modules to decide platformContext for OAuth writes.
+  // OAuth writes are always platformContext="OAUTH".
+  const { externalId, handle, url } =
+    await fetchProviderIdentity(normalizedProvider, accessToken);
 
   if (!externalId) return; // safety
 
   // 3) Upsert PlatformAccount (unique on [provider, externalId])
   const pa = await prisma.platformAccount.upsert({
-    where: { provider_externalId: { provider, externalId } },
+    where: { provider_externalId: { provider: normalizedProvider, externalId } },
     update: {
       handle,
       url,
       status: "VERIFIED",
       verifiedAt: new Date(),
       method: "OAUTH",
-      platformContext,
+      platformContext: "OAUTH" as any, // ✅ ENFORCED
       scopes: scope ?? "",
       profileId: profile.id, // (re)attach to current profile
       updatedAt: new Date(),
@@ -399,14 +435,14 @@ export async function finalizePlatformVerification({
     create: {
       userId,
       profileId: profile.id,
-      provider,
+      provider: normalizedProvider,
       externalId,
       handle,
       url,
       status: "VERIFIED",
       verifiedAt: new Date(),
       method: "OAUTH",
-      platformContext,
+      platformContext: "OAUTH" as any, // ✅ ENFORCED
       scopes: scope ?? "",
     },
   });
@@ -414,11 +450,11 @@ export async function finalizePlatformVerification({
   // 4) Lift profile to PLATFORM_VERIFIED (idempotent) and record provider details
   const prevStatus = profile.verificationStatus;
   const verifiedMap = (profile.verifiedPlatforms as any) ?? {};
-  verifiedMap[provider] = {
+  verifiedMap[normalizedProvider] = {
     externalId,
     url,
     handle,
-    platformContext,
+    platformContext: "OAUTH",
     verifiedAt: new Date().toISOString(),
   };
 
@@ -443,7 +479,7 @@ export async function finalizePlatformVerification({
         before: { verificationStatus: prevStatus },
         after: {
           verificationStatus: "PLATFORM_VERIFIED",
-          provider,
+          provider: normalizedProvider,
           platformAccountId: pa.id,
         },
       },
