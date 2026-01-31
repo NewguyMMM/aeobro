@@ -360,6 +360,9 @@ export default function PricingPage() {
   const UPDATES_TOOLTIP =
     "Publish quick, structured updates (e.g., posts, announcements, listings, events) that AI can index — ideal for frequent changes like new inventory, listings, or promos.";
 
+  const PRODUCTS_TOOLTIP =
+    "Products/Catalog turns what you sell into structured data — not just a link — so AI can interpret details like name, price, category, and availability, then compare and surface your offerings more accurately.";
+
   const FAQ_TOOLTIP =
     "Beyond just listing a tagline, you can build a structured Q&A section AI can read.";
 
@@ -425,6 +428,7 @@ export default function PricingPage() {
           bestFor="For brands that are growing and already engage in frequent updates to social media, have calendar updates, retailers with upcoming sales promotions."
           features={[
             { label: "Centralized AI Ready Profile", tooltip: CENTRALIZED_TOOLTIP },
+            { label: "Products / Catalog", tooltip: PRODUCTS_TOOLTIP },
             { label: "Updates", tooltip: UPDATES_TOOLTIP },
           ]}
           btnText="Get Plus"
@@ -439,6 +443,7 @@ export default function PricingPage() {
           bestFor="professionals, small businesses, and product brands looking for richer AI visibility with FAQs, services, and updates."
           features={[
             { label: "Centralized AI Ready Profile", tooltip: CENTRALIZED_TOOLTIP },
+            { label: "Products / Catalog", tooltip: PRODUCTS_TOOLTIP },
             { label: "Updates", tooltip: UPDATES_TOOLTIP },
             { label: "FAQ markup", tooltip: FAQ_TOOLTIP },
             { label: "Service markup", tooltip: SERVICE_TOOLTIP },
