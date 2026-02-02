@@ -51,6 +51,9 @@ jobs:
       - name: Run smoke tests
         env:
           SMOKE_BASE_URL: http://localhost:3000
+          # ✅ Set this to a known, stable public profile slug that MUST always return schema (200).
+          # Recommended: your primary brand profile slug.
+          SMOKE_SCHEMA_SLUG: aeobro
         run: node scripts/smoke.mjs
 
       - name: Stop server
