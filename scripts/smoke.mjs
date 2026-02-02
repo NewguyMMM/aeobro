@@ -64,11 +64,15 @@ function expectContains(name, haystack, needle) {
     : fail(name, `Response did not include: ${needle}`);
 }
 
+function expectNot5xx(name, status) {
+  return status >= 500 ? fail(name, `Unexpected 5xx: ${status}`) : ok(name);
+}
+
 async function run() {
   const base = resolveBaseUrl();
   const results = [];
 
-  // 1) Health endpoint should be 200 and include "ok":true
+  // 1) Health endpoint should be OK and return JSON with ok:true.
   {
     const r = await http(`${base}/api/health`, { method: "GET" });
     const s = expectOneOf("health:status", r.status, [200]);
@@ -76,13 +80,14 @@ async function run() {
     if (s.ok) results.push(expectContains("health:body", r.text, `"ok":true`));
   }
 
-  // 2) NextAuth session endpoint should exist (200 even unauthenticated)
+  // 2) NextAuth session endpoint should exist (200 OK even if unauthenticated).
   {
     const r = await http(`${base}/api/auth/session`, { method: "GET" });
     results.push(expectOneOf("auth:session:status", r.status, [200]));
   }
 
-  // 3) Stripe checkout session route should exist (often POST-only => 405 is OK)
+  // 3) Stripe checkout session endpoint should exist (GET should not be 404).
+  //    Many implementations are POST-only, so GET often returns 405.
   {
     const r = await http(`${base}/api/stripe/create-checkout-session`, {
       method: "GET",
@@ -92,7 +97,7 @@ async function run() {
     );
   }
 
-  // 4) Bio-code routes should exist (GET often 405/401/403; must not be 404)
+  // 4) Bio-code routes should exist (GET likely 405/401/403; must not be 404).
   {
     const r1 = await http(`${base}/api/verify/bio-code/generate`, {
       method: "GET",
@@ -109,8 +114,34 @@ async function run() {
     );
   }
 
-  // 5) Rate limiting should be present on auth/verify routes:
-  //    We do a short burst and assert: no 5xx. (429 is acceptable.)
+  // 5) Schema route sanity check (always): must not 5xx.
+  // This proves the route handler doesn't crash even if slug doesn't exist.
+  {
+    const r = await http(`${base}/api/profile/__smoke__/schema`, { method: "GET" });
+    results.push(expectNot5xx("schema:any:no-5xx", r.status));
+  }
+
+  // 6) Schema route correctness check (optional): set SMOKE_SCHEMA_SLUG to a known public slug.
+  // Enforces: 200 + JSON-LD-ish response.
+  {
+    const slug = (process.env.SMOKE_SCHEMA_SLUG || "").trim();
+    if (slug) {
+      const r = await http(
+        `${base}/api/profile/${encodeURIComponent(slug)}/schema`,
+        { method: "GET" }
+      );
+      results.push(expectOneOf("schema:known:status", r.status, [200]));
+      // Don't require exact content-type; just ensure it's JSON-LD-ish.
+      if (r.status === 200) {
+        results.push(expectContains("schema:known:body:@context", r.text, `"@context"`));
+      }
+    } else {
+      results.push(ok("schema:known:skipped"));
+    }
+  }
+
+  // 7) Rate limiting should be active-ish on /api/auth/* and /api/verify/*:
+  //    Burst and assert we don't get 5xx; 429 is acceptable.
   {
     const burst = 12;
     const target = `${base}/api/auth/session`;
