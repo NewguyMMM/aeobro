@@ -1,0 +1,61 @@
+# .github/workflows/smoke.yml
+name: smoke
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+  workflow_dispatch:
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Start server
+        run: |
+          nohup npm run start -- -p 3000 > /tmp/next-start.log 2>&1 &
+          echo $! > /tmp/next.pid
+
+      - name: Wait for health
+        run: |
+          for i in {1..60}; do
+            code=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:3000/api/health || true)
+            if [ "$code" = "200" ]; then
+              echo "Health OK"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "Health did not become ready"
+          echo "---- server log ----"
+          tail -n 200 /tmp/next-start.log || true
+          exit 1
+
+      - name: Run smoke tests
+        env:
+          SMOKE_BASE_URL: http://localhost:3000
+        run: node scripts/smoke.mjs
+
+      - name: Stop server
+        if: always()
+        run: |
+          if [ -f /tmp/next.pid ]; then
+            kill $(cat /tmp/next.pid) || true
+          fi
