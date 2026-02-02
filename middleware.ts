@@ -1,13 +1,14 @@
 // middleware.ts
-// Updated: 2026-01-10 06:41 ET
-// - Fix: Next.js client JS hydration + event handlers by relaxing CSP script-src (TEMPORARY)
-// - Keep: Canonical host enforcement (aeobro.com + aeobro.vercel.app -> www.aeobro.com)
-// - Keep: legacy auth redirects, Link header on /p/[slug], anti-enumeration
-// - Keep: security headers (CSP, HSTS, X-CTO, Referrer-Policy, Permissions-Policy, etc.)
-// - Keep: Edge-safe dynamic import() for Upstash libs
+// Updated: 2026-02-01
+// - ADD: Vercel KV IP-based rate limiting for /api/auth/* and /api/verify/* (incl bio-code generate/check)
+// - KEEP: Canonical host enforcement (aeobro.com + aeobro.vercel.app -> www.aeobro.com)
+// - KEEP: legacy auth redirects, Link header on /p/[slug], anti-enumeration for /p/*
+// - KEEP: security headers (CSP, HSTS, X-CTO, Referrer-Policy, Permissions-Policy, etc.)
+// - KEEP: Edge-safe dynamic import() for Upstash libs (used only for /p/* anti-enumeration if configured)
 
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
+import { kv } from "@vercel/kv";
 
 // ---------- Canonical Host Enforcement ----------
 const CANONICAL_HOST = "www.aeobro.com";
@@ -19,6 +20,133 @@ const PROBE_LIMIT_PER_MIN =
   parseInt(process.env.AEO_PROBE_LIMIT_PER_MIN || "", 10) || 30;
 const TARPIT_PATH = "/tarpit";
 const ENABLE_ANTI_ENUM = (process.env.AEO_ANTI_ENUM ?? "1") !== "0";
+
+// ---------- API Rate Limiting (Vercel KV) ----------
+type Rule = {
+  name: string;
+  limit: number; // max requests per window
+  windowMs: number; // window size in ms
+};
+
+const API_RULES: Array<{ match: (path: string) => boolean; rule: Rule }> = [
+  {
+    match: (p) => p.startsWith("/api/auth/"),
+    rule: { name: "auth", limit: 30, windowMs: 60_000 },
+  },
+  {
+    match: (p) => p.startsWith("/api/verify/bio-code/generate"),
+    rule: { name: "bio_generate", limit: 10, windowMs: 60_000 },
+  },
+  {
+    match: (p) => p.startsWith("/api/verify/bio-code/check"),
+    rule: { name: "bio_check", limit: 15, windowMs: 60_000 },
+  },
+  {
+    match: (p) => p.startsWith("/api/verify/"),
+    rule: { name: "verify", limit: 20, windowMs: 60_000 },
+  },
+];
+
+function getClientIp(req: NextRequest): string {
+  // Vercel often populates req.ip; fall back to headers.
+  const direct = (req as any).ip as string | undefined;
+  if (direct && typeof direct === "string" && direct.trim()) return direct.trim();
+
+  const xff = req.headers.get("x-forwarded-for");
+  if (xff) {
+    // First IP in XFF is the original client in most setups.
+    const first = xff.split(",")[0]?.trim();
+    if (first) return first;
+  }
+
+  // Deterministic fallback; still rate-limits “unknown” clients together.
+  return "0.0.0.0";
+}
+
+function isApiRequest(pathname: string): boolean {
+  return pathname.startsWith("/api/");
+}
+
+function json429(params: {
+  limit: number;
+  remaining: number;
+  resetEpochSeconds: number;
+  retryAfterSeconds: number;
+}) {
+  const res = NextResponse.json(
+    {
+      ok: false,
+      error: "rate_limited",
+    },
+    { status: 429 }
+  );
+
+  res.headers.set("x-ratelimit-limit", String(params.limit));
+  res.headers.set("x-ratelimit-remaining", String(Math.max(0, params.remaining)));
+  res.headers.set("x-ratelimit-reset", String(params.resetEpochSeconds));
+  res.headers.set("retry-after", String(params.retryAfterSeconds));
+  return res;
+}
+
+async function rateLimitFixedWindow(args: {
+  keyPrefix: string;
+  ip: string;
+  limit: number;
+  windowMs: number;
+}): Promise<
+  | { allowed: true; limit: number; remaining: number; resetEpochSeconds: number }
+  | {
+      allowed: false;
+      limit: number;
+      remaining: number;
+      resetEpochSeconds: number;
+      retryAfterSeconds: number;
+    }
+  | { allowed: "kv_error" }
+> {
+  const now = Date.now();
+  const windowId = Math.floor(now / args.windowMs);
+  const ttlSeconds = Math.ceil(args.windowMs / 1000);
+
+  const key = `rl:${args.keyPrefix}:${args.ip}:${windowId}`;
+
+  try {
+    const count = await kv.incr(key);
+    if (count === 1) {
+      // Set expiry only on first hit in the window.
+      await kv.expire(key, ttlSeconds);
+    }
+
+    const windowEndMs = (windowId + 1) * args.windowMs;
+    const resetEpochSeconds = Math.ceil(windowEndMs / 1000);
+
+    if (count > args.limit) {
+      const retryAfterSeconds = Math.max(
+        1,
+        Math.ceil((windowEndMs - now) / 1000)
+      );
+      return {
+        allowed: false,
+        limit: args.limit,
+        remaining: 0,
+        resetEpochSeconds,
+        retryAfterSeconds,
+      };
+    }
+
+    return {
+      allowed: true,
+      limit: args.limit,
+      remaining: Math.max(0, args.limit - count),
+      resetEpochSeconds,
+    };
+  } catch {
+    // Fail-open for availability; no PII logs.
+    return { allowed: "kv_error" };
+  }
+}
+
+// ---------- Security Headers / CSP ----------
 
 // If you self-host assets from other domains, add them here
 const IMG_SRC = ["'self'", "data:", "https:"].join(" ");
@@ -114,6 +242,7 @@ function applySecurityHeaders(req: NextRequest, res: NextResponse) {
   }
 }
 
+// ---------- Legacy redirects ----------
 const legacy = new Set([
   "/sign-in",
   "/signin",
@@ -137,11 +266,57 @@ export async function middleware(req: NextRequest) {
     return NextResponse.redirect(url, 308);
   }
 
-  // ---- 1) Legacy auth redirects ----
+  // ---- 1) Legacy auth redirects (HTML only) ----
   if (legacy.has(pathname)) {
     const url = new URL("/login", req.url);
     return NextResponse.redirect(url);
   }
+
+  // ---- 2) API rate limiting (Vercel KV) ----
+  // Applies only to /api/auth/* and /api/verify/* rules declared above.
+  const apiMatched = isApiRequest(pathname)
+    ? API_RULES.find((r) => r.match(pathname))
+    : undefined;
+
+  if (apiMatched) {
+    const ip = getClientIp(req);
+    const { rule } = apiMatched;
+
+    const result = await rateLimitFixedWindow({
+      keyPrefix: rule.name,
+      ip,
+      limit: rule.limit,
+      windowMs: rule.windowMs,
+    });
+
+    if (result.allowed === "kv_error") {
+      // Fail-open for availability; still apply security headers.
+      const res = NextResponse.next();
+      res.headers.set("x-ratelimit", "kv_error");
+      applySecurityHeaders(req, res);
+      return res;
+    }
+
+    if (!result.allowed) {
+      const blocked = json429({
+        limit: result.limit,
+        remaining: result.remaining,
+        resetEpochSeconds: result.resetEpochSeconds,
+        retryAfterSeconds: result.retryAfterSeconds,
+      });
+      applySecurityHeaders(req, blocked);
+      return blocked;
+    }
+
+    const res = NextResponse.next();
+    res.headers.set("x-ratelimit-limit", String(result.limit));
+    res.headers.set("x-ratelimit-remaining", String(result.remaining));
+    res.headers.set("x-ratelimit-reset", String(result.resetEpochSeconds));
+    applySecurityHeaders(req, res);
+    return res;
+  }
+
+  // ---- 3) Non-API behavior (existing logic) ----
 
   // Only operate fully on /p/* pages below (but still add headers)
   const isProfilePage = pathname.startsWith("/p/");
@@ -149,7 +324,7 @@ export async function middleware(req: NextRequest) {
   // Prepare the base response and apply headers
   const res = NextResponse.next();
 
-  // ---- 2) Add Link header for JSON-LD association (HTML → JSON) ----
+  // ---- 4) Add Link header for JSON-LD association (HTML → JSON) ----
   if (isProfilePage) {
     const parts = pathname.split("/").filter(Boolean); // ["p", "slug", ...]
     const slug = parts[1];
@@ -165,14 +340,14 @@ export async function middleware(req: NextRequest) {
     }
   }
 
-  // ---- 3) Anti-enumeration (rate limit /p/* requests) ----
+  // ---- 5) Anti-enumeration (rate limit /p/* requests) ----
   if (
     isProfilePage &&
     ENABLE_ANTI_ENUM &&
     (req.method === "GET" || req.method === "HEAD")
   ) {
     const ip =
-      req.ip ||
+      (req as any).ip ||
       req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
       "unknown";
 
@@ -264,8 +439,12 @@ export async function middleware(req: NextRequest) {
 }
 
 export const config = {
-  // Apply to broad HTML routes, but avoid API routes and Next internals.
   matcher: [
+    // ✅ API hardening targets
+    "/api/auth/:path*",
+    "/api/verify/:path*",
+
+    // ✅ Broad HTML routes, but avoid Next internals + static assets.
     "/((?!api/|_next/|favicon.ico|robots.txt|sitemap.xml|.*\\.(?:png|jpg|jpeg|gif|webp|svg|ico|css|js|map|txt|woff|woff2|ttf|eot)).*)",
   ],
 };
