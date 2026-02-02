@@ -1,14 +1,21 @@
 // middleware.ts
 // Updated: 2026-02-02
-// - ADD: Safe, fail-open Vercel KV IP rate limiting for /api/auth/* and /api/verify/* (incl bio-code generate/check)
+// - ADD (SAFE): API abuse rate limiting for /api/auth/* and /api/verify/* using Upstash (Edge-safe dynamic imports)
 // - KEEP: Canonical host enforcement (aeobro.com + aeobro.vercel.app -> www.aeobro.com)
 // - KEEP: legacy auth redirects, Link header on /p/[slug], anti-enumeration
 // - KEEP: security headers (CSP, HSTS, X-CTO, Referrer-Policy, Permissions-Policy, etc.)
 // - KEEP: Edge-safe dynamic import() for Upstash libs
 //
-// Design goal: PUBLIC-LAUNCH HARDENING without breaking builds.
-// - KV is imported dynamically and wrapped in try/catch (fail-open).
-// - API limiting runs only when matcher includes /api/* routes.
+// IMPORTANT:
+// - We are NOT using @vercel/kv here because your build failed due to missing dependency.
+// - This file will compile with your existing Upstash packages (already used in current middleware).
+// - Rate limiting is FAIL-OPEN (never blocks if limiter errors or env is missing).
+//
+// To tune API limits via env (optional):
+// - AEO_AUTH_LIMIT_PER_MIN (default 30)
+// - AEO_VERIFY_LIMIT_PER_MIN (default 20)
+// - AEO_BIOGEN_LIMIT_PER_MIN (default 10)
+// - AEO_BIOCHECK_LIMIT_PER_MIN (default 15)
 
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
@@ -21,124 +28,23 @@ const ENFORCED_HOSTS = new Set(["aeobro.com", "aeobro.vercel.app"]);
 // ---------- Tunables ----------
 const PROBE_LIMIT_PER_MIN =
   parseInt(process.env.AEO_PROBE_LIMIT_PER_MIN || "", 10) || 30;
+
+const AUTH_LIMIT_PER_MIN =
+  parseInt(process.env.AEO_AUTH_LIMIT_PER_MIN || "", 10) || 30;
+
+const VERIFY_LIMIT_PER_MIN =
+  parseInt(process.env.AEO_VERIFY_LIMIT_PER_MIN || "", 10) || 20;
+
+const BIOGEN_LIMIT_PER_MIN =
+  parseInt(process.env.AEO_BIOGEN_LIMIT_PER_MIN || "", 10) || 10;
+
+const BIOCHECK_LIMIT_PER_MIN =
+  parseInt(process.env.AEO_BIOCHECK_LIMIT_PER_MIN || "", 10) || 15;
+
 const TARPIT_PATH = "/tarpit";
 const ENABLE_ANTI_ENUM = (process.env.AEO_ANTI_ENUM ?? "1") !== "0";
 
-// ---------- API Rate Limiting (Vercel KV, fail-open) ----------
-type ApiRule = {
-  name: string;
-  limit: number; // max requests per window
-  windowMs: number; // window size in ms
-};
-
-const API_RULES: Array<{ match: (path: string) => boolean; rule: ApiRule }> = [
-  { match: (p) => p.startsWith("/api/auth/"), rule: { name: "auth", limit: 30, windowMs: 60_000 } },
-  {
-    match: (p) => p.startsWith("/api/verify/bio-code/generate"),
-    rule: { name: "bio_generate", limit: 10, windowMs: 60_000 },
-  },
-  {
-    match: (p) => p.startsWith("/api/verify/bio-code/check"),
-    rule: { name: "bio_check", limit: 15, windowMs: 60_000 },
-  },
-  { match: (p) => p.startsWith("/api/verify/"), rule: { name: "verify", limit: 20, windowMs: 60_000 } },
-];
-
-function getClientIp(req: NextRequest): string {
-  // Vercel often populates req.ip; fall back to headers.
-  const direct = (req as any).ip as string | undefined;
-  if (direct && typeof direct === "string" && direct.trim()) return direct.trim();
-
-  const xff = req.headers.get("x-forwarded-for");
-  if (xff) {
-    const first = xff.split(",")[0]?.trim();
-    if (first) return first;
-  }
-
-  // Deterministic fallback; still rate-limits “unknown” clients together.
-  return "0.0.0.0";
-}
-
-function isApiRequest(pathname: string): boolean {
-  return pathname.startsWith("/api/");
-}
-
-function json429(params: {
-  limit: number;
-  remaining: number;
-  resetEpochSeconds: number;
-  retryAfterSeconds: number;
-}) {
-  const res = NextResponse.json(
-    { ok: false, error: "rate_limited" },
-    { status: 429 }
-  );
-
-  res.headers.set("x-ratelimit-limit", String(params.limit));
-  res.headers.set("x-ratelimit-remaining", String(Math.max(0, params.remaining)));
-  res.headers.set("x-ratelimit-reset", String(params.resetEpochSeconds));
-  res.headers.set("retry-after", String(params.retryAfterSeconds));
-  res.headers.set("cache-control", "no-store");
-  return res;
-}
-
-async function rateLimitFixedWindowKV(args: {
-  keyPrefix: string;
-  ip: string;
-  limit: number;
-  windowMs: number;
-}): Promise<
-  | { allowed: true; limit: number; remaining: number; resetEpochSeconds: number }
-  | { allowed: false; limit: number; remaining: number; resetEpochSeconds: number; retryAfterSeconds: number }
-  | { allowed: "kv_unavailable" }
-> {
-  const now = Date.now();
-  const windowId = Math.floor(now / args.windowMs);
-  const ttlSeconds = Math.ceil(args.windowMs / 1000);
-  const key = `rl:${args.keyPrefix}:${args.ip}:${windowId}`;
-
-  try {
-    // Dynamic import to reduce build/runtime fragility.
-    // If KV isn't configured or the package isn't available at runtime, we fail-open.
-    const mod = await import("@vercel/kv");
-    const kv = (mod as any).kv as {
-      incr: (k: string) => Promise<number>;
-      expire: (k: string, s: number) => Promise<number | boolean>;
-    };
-
-    if (!kv?.incr || !kv?.expire) return { allowed: "kv_unavailable" };
-
-    const count = await kv.incr(key);
-    if (count === 1) {
-      await kv.expire(key, ttlSeconds);
-    }
-
-    const windowEndMs = (windowId + 1) * args.windowMs;
-    const resetEpochSeconds = Math.ceil(windowEndMs / 1000);
-
-    if (count > args.limit) {
-      const retryAfterSeconds = Math.max(1, Math.ceil((windowEndMs - now) / 1000));
-      return {
-        allowed: false,
-        limit: args.limit,
-        remaining: 0,
-        resetEpochSeconds,
-        retryAfterSeconds,
-      };
-    }
-
-    return {
-      allowed: true,
-      limit: args.limit,
-      remaining: Math.max(0, args.limit - count),
-      resetEpochSeconds,
-    };
-  } catch {
-    return { allowed: "kv_unavailable" };
-  }
-}
-
-// ---------- CSP / Security Headers ----------
+// If you self-host assets from other domains, add them here
 const IMG_SRC = ["'self'", "data:", "https:"].join(" ");
 const FONT_SRC = ["'self'", "data:"].join(" ");
 const CONNECT_SRC = ["'self'", "https:", "wss:"].join(" ");
@@ -176,14 +82,23 @@ function buildCSP(origin: string) {
   ].join(" ");
 }
 
+// Extra security headers (defense-in-depth)
 function applySecurityHeaders(req: NextRequest, res: NextResponse) {
   const { origin, hostname } = req.nextUrl;
 
+  // Content Security Policy
   res.headers.set("Content-Security-Policy", buildCSP(origin));
+
+  // Prevent MIME sniffing
   res.headers.set("X-Content-Type-Options", "nosniff");
+
+  // Legacy clickjacking protection (CSP frame-ancestors already set)
   res.headers.set("X-Frame-Options", "DENY");
+
+  // Reasonable referrer policy for sites with external links
   res.headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
 
+  // Lock down powerful APIs by default
   res.headers.set(
     "Permissions-Policy",
     [
@@ -210,9 +125,11 @@ function applySecurityHeaders(req: NextRequest, res: NextResponse) {
     ].join(", ")
   );
 
+  // Cross-origin isolation knobs — choose conservative defaults to avoid breakage
   res.headers.set("Cross-Origin-Opener-Policy", "same-origin");
   res.headers.set("Cross-Origin-Resource-Policy", "same-site");
 
+  // HSTS (HTTPS only; safe on Vercel)
   if (hostname && hostname !== "localhost") {
     res.headers.set(
       "Strict-Transport-Security",
@@ -221,7 +138,6 @@ function applySecurityHeaders(req: NextRequest, res: NextResponse) {
   }
 }
 
-// ---------- Legacy redirects ----------
 const legacy = new Set([
   "/sign-in",
   "/signin",
@@ -231,15 +147,70 @@ const legacy = new Set([
   "/auth/sign-up",
 ]);
 
+function getClientIp(req: NextRequest): string {
+  return (
+    req.ip ||
+    req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
+    "unknown"
+  );
+}
+
+function json429() {
+  return NextResponse.json(
+    { ok: false, error: "rate_limited" },
+    {
+      status: 429,
+      headers: {
+        "Cache-Control": "no-store",
+      },
+    }
+  );
+}
+
+async function upstashLimitOrPass(args: {
+  prefix: string;
+  limitPerMin: number;
+  ip: string;
+}): Promise<"allow" | "block" | "unavailable"> {
+  try {
+    if (
+      !process.env.UPSTASH_REDIS_REST_URL ||
+      !process.env.UPSTASH_REDIS_REST_TOKEN
+    ) {
+      return "unavailable";
+    }
+
+    const [{ Ratelimit }, { Redis }] = await Promise.all([
+      import("@upstash/ratelimit"),
+      import("@upstash/redis"),
+    ]);
+
+    const redis = Redis.fromEnv();
+    const limiter = new Ratelimit({
+      redis,
+      limiter: Ratelimit.slidingWindow(args.limitPerMin, "1 m"),
+      prefix: args.prefix,
+    });
+
+    const { success } = await limiter.limit(`ip:${args.ip}`);
+    return success ? "allow" : "block";
+  } catch {
+    // FAIL-OPEN
+    return "unavailable";
+  }
+}
+
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
   // ---- 0) Canonical host redirect (RUN FIRST) ----
+  // Prevents cookies/OAuth/schema URLs from ever being served on non-canonical hosts.
   const host = req.headers.get("host") || "";
   if (ENFORCED_HOSTS.has(host) && host !== CANONICAL_HOST) {
     const url = req.nextUrl.clone();
     url.host = CANONICAL_HOST;
     url.protocol = "https:";
+    // 308 = method-preserving, OAuth-safe
     return NextResponse.redirect(url, 308);
   }
 
@@ -249,55 +220,54 @@ export async function middleware(req: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  // ---- 2) API rate limiting (only for matched API routes) ----
-  if (isApiRequest(pathname)) {
-    const matched = API_RULES.find((r) => r.match(pathname));
-    if (matched) {
-      const ip = getClientIp(req);
-      const { rule } = matched;
+  // ---- 2) API abuse rate limiting (Upstash, fail-open) ----
+  // Applies ONLY to the abusable endpoints needed for public launch.
+  if (pathname.startsWith("/api/auth/") || pathname.startsWith("/api/verify/")) {
+    const ip = getClientIp(req);
 
-      const result = await rateLimitFixedWindowKV({
-        keyPrefix: rule.name,
-        ip,
-        limit: rule.limit,
-        windowMs: rule.windowMs,
-      });
+    // Choose rule bucket
+    let bucketPrefix = "aeo:rl:api";
+    let limit = VERIFY_LIMIT_PER_MIN;
 
-      // Fail-open if KV is unavailable; still annotate (non-sensitive).
-      if (result.allowed === "kv_unavailable") {
-        const res = NextResponse.next();
-        res.headers.set("x-ratelimit", "kv_unavailable");
-        applySecurityHeaders(req, res);
-        return res;
-      }
-
-      if (!result.allowed) {
-        const blocked = json429({
-          limit: result.limit,
-          remaining: result.remaining,
-          resetEpochSeconds: result.resetEpochSeconds,
-          retryAfterSeconds: result.retryAfterSeconds,
-        });
-        applySecurityHeaders(req, blocked);
-        return blocked;
-      }
-
-      const res = NextResponse.next();
-      res.headers.set("x-ratelimit-limit", String(result.limit));
-      res.headers.set("x-ratelimit-remaining", String(result.remaining));
-      res.headers.set("x-ratelimit-reset", String(result.resetEpochSeconds));
-      applySecurityHeaders(req, res);
-      return res;
+    if (pathname.startsWith("/api/auth/")) {
+      bucketPrefix = "aeo:rl:auth";
+      limit = AUTH_LIMIT_PER_MIN;
+    } else if (pathname.startsWith("/api/verify/bio-code/generate")) {
+      bucketPrefix = "aeo:rl:biogen";
+      limit = BIOGEN_LIMIT_PER_MIN;
+    } else if (pathname.startsWith("/api/verify/bio-code/check")) {
+      bucketPrefix = "aeo:rl:biocheck";
+      limit = BIOCHECK_LIMIT_PER_MIN;
+    } else {
+      bucketPrefix = "aeo:rl:verify";
+      limit = VERIFY_LIMIT_PER_MIN;
     }
 
-    // Unmatched API routes: pass through, but keep security headers.
+    const decision = await upstashLimitOrPass({
+      prefix: bucketPrefix,
+      limitPerMin: limit,
+      ip,
+    });
+
+    if (decision === "block") {
+      const blocked = json429();
+      applySecurityHeaders(req, blocked);
+      return blocked;
+    }
+
+    // allow or unavailable -> pass through
     const res = NextResponse.next();
+    if (decision === "unavailable") {
+      res.headers.set("x-ratelimit", "unavailable");
+    }
     applySecurityHeaders(req, res);
     return res;
   }
 
-  // ---- 3) Non-API behavior (existing logic) ----
+  // ---- 3) HTML route behavior (existing logic) ----
   const isProfilePage = pathname.startsWith("/p/");
+
+  // Prepare the base response and apply headers
   const res = NextResponse.next();
 
   // ---- 4) Add Link header for JSON-LD association (HTML → JSON) ----
@@ -305,6 +275,7 @@ export async function middleware(req: NextRequest) {
     const parts = pathname.split("/").filter(Boolean); // ["p", "slug", ...]
     const slug = parts[1];
     if (slug) {
+      // Use canonical origin explicitly to avoid any future drift
       const canonicalOrigin = `https://${CANONICAL_HOST}`;
       res.headers.append(
         "Link",
@@ -321,16 +292,14 @@ export async function middleware(req: NextRequest) {
     ENABLE_ANTI_ENUM &&
     (req.method === "GET" || req.method === "HEAD")
   ) {
-    const ip =
-      req.ip ||
-      req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
-      "unknown";
+    const ip = getClientIp(req);
 
     try {
       if (
         process.env.UPSTASH_REDIS_REST_URL &&
         process.env.UPSTASH_REDIS_REST_TOKEN
       ) {
+        // Upstash rate limit (Edge-safe dynamic imports)
         const [{ Ratelimit }, { Redis }] = await Promise.all([
           import("@upstash/ratelimit"),
           import("@upstash/redis"),
@@ -407,16 +376,18 @@ export async function middleware(req: NextRequest) {
     }
   }
 
+  // Always apply security headers on the way out
   applySecurityHeaders(req, res);
   return res;
 }
 
 export const config = {
   matcher: [
-    // ✅ NEW: ensure middleware runs on API routes we want to protect
-    "/api/:path*",
+    // ✅ Apply to the API routes we are protecting
+    "/api/auth/:path*",
+    "/api/verify/:path*",
 
-    // ✅ Existing: broad HTML routes, but avoid Next internals + static assets
+    // ✅ Apply to broad HTML routes, but avoid Next internals and static assets.
     "/((?!api/|_next/|favicon.ico|robots.txt|sitemap.xml|.*\\.(?:png|jpg|jpeg|gif|webp|svg|ico|css|js|map|txt|woff|woff2|ttf|eot)).*)",
   ],
 };
