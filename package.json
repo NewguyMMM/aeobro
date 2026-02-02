@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "prisma generate && (sh -c 'export DATABASE_DIRECT_URL=${DATABASE_DIRECT_URL:-$DATABASE_URL}; prisma migrate deploy' || prisma db push) && next build",
+    "build": "prisma generate && sh scripts/migrate-deploy-safe.sh && next build",
     "start": "next start",
     "postinstall": "next telemetry disable",
     "migrate:deploy": "sh -c 'export DATABASE_DIRECT_URL=${DATABASE_DIRECT_URL:-$DATABASE_URL}; prisma migrate deploy'",
@@ -42,6 +42,6 @@
     "typescript": "^5.5.4"
   },
   "engines": {
-    "node": ">=18.18.0"
+    "node": "20.x"
   }
 }
