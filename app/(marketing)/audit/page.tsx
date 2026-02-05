@@ -731,6 +731,13 @@ export default async function Page({ searchParams }: PageProps) {
           verification status, entity disambiguation, link graph health, and crawlability over time.
           A higher score indicates clearer, more complete identity signals that help AI systems understand and interpret your brand.
         </p>
+
+        {/* Clarification (expectations) */}
+        <p className="text-sm text-gray-600">
+          This score reflects signals declared on the page evaluated. Linking to an AEOBRO profile improves AI understanding,
+          but on-site structured references (e.g., <code>sameAs</code>) are required for this audit to reflect that improvement.
+        </p>
+
         {/* Proprietary disclaimer */}
         <p className="mt-2 text-xs text-gray-500">
           <strong>Disclaimer:</strong> The AEOBRO AI Visibility Score is a proprietary analysis
