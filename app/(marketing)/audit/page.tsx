@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic" as const;
 export const metadata = {
   title: "AI-Visibility Audit | AEOBRO",
   description:
-    "Quick, provisional AI-visibility score for your domain. Enter your domain address to see a rough baseline of your current AI visibility optimization.",
+    "Quick, provisional AI-visibility score for your domain. Enter your domain address to see a rough baseline of your current AI interpretation.",
   alternates: { canonical: "/audit" },
 } as const;
 
@@ -328,19 +328,24 @@ const TOOLTIP: Record<string, string> = {
     "Detects Twitter Card tags for richer share cards and AI use.",
 };
 
-function scoreAll(baseOrigin: string, p: Parsed): { checks: Check[]; total: number } {
+function scoreAll(
+  baseOrigin: string,
+  p: Parsed
+): { checks: Check[]; total: number } {
   const types = getAllTypes(p.jsonLdBlocks);
   const typesLower = types.map((s) => s.toLowerCase());
   const sameAsList = getSameAs(p.jsonLdBlocks);
   const sameAsDomains = uniqueDomains(sameAsList);
   const address = getAddress(p.jsonLdBlocks);
-  const hasAddress = !!address && (!!address.addressLocality || !!address.addressRegion);
+  const hasAddress =
+    !!address && (!!address.addressLocality || !!address.addressRegion);
   const contactOK = hasContact(p.jsonLdBlocks);
   const logoOK = hasLogoOrImage(p.jsonLdBlocks);
   const publisherOrigin = getPublisherUrl(p.jsonLdBlocks);
   const publisherOK =
     !!publisherOrigin &&
-    publisherOrigin.replace(/^www\./, "") === baseOrigin.replace(/^www\./, "");
+    publisherOrigin.replace(/^www\./, "") ===
+      baseOrigin.replace(/^www\./, "");
   const servicesOK = hasServices(p.jsonLdBlocks);
   const faqOK = hasFAQ(p.jsonLdBlocks);
   const speakableOK = hasSpeakable(p.jsonLdBlocks);
@@ -348,30 +353,127 @@ function scoreAll(baseOrigin: string, p: Parsed): { checks: Check[]; total: numb
   const twitterOK = p.hasTwitterCard;
   const idConsistencyOK =
     nameMatches(p.title, p.jsonLdBlocks) &&
-    (!!p.ogSiteName ? p.title.includes(p.ogSiteName) || p.ogSiteName.includes(p.title) : true);
+    (!!p.ogSiteName
+      ? p.title.includes(p.ogSiteName) || p.ogSiteName.includes(p.title)
+      : true);
   const desc = pickFirstDesc(p.jsonLdBlocks);
   const readability = textScoreReadability(desc);
 
   // Weights sum to 100
   const checks: Check[] = [
-    { key: "jsonld",     label: "JSON-LD detected",                                   points: 14, passed: p.jsonLdBlocks.length > 0 },
-    { key: "type",       label: "Valid schema @type (Org/LocalBusiness/Person)",      points: 9,  passed: typesLower.some((t) => ["organization","localbusiness","person"].includes(t)) },
-    { key: "og",         label: "Open Graph tags present",                             points: 4,  passed: p.hasOG },
-    { key: "robots",     label: "robots.txt reachable",                                points: 4,  passed: true }, // patched after HEAD
-    { key: "sitemap",    label: "sitemap.xml reachable",                               points: 4,  passed: true }, // patched after HEAD
-    { key: "sameas",     label: "sameAs links (>=1)",                                  points: 9,  passed: sameAsList.length >= 1, note: `${sameAsList.length}` },
-    { key: "address",    label: "Address completeness (locality/region)",             points: 7,  passed: hasAddress },
-    { key: "contact",    label: "Contact info (phone or email)",                       points: 7,  passed: contactOK },
-    { key: "logo",       label: "Logo or image present",                               points: 3,  passed: logoOK },
-    { key: "publisher",  label: "Publisher/ownership consistency",                     points: 7,  passed: publisherOK },
-    { key: "services",   label: "Service/Product/Offer schema",                        points: 8,  passed: servicesOK },
-    { key: "faq",        label: "FAQ schema present",                                  points: 4,  passed: faqOK },
-    { key: "graphdepth", label: "sameAs graph depth (≥3 unique domains)",              points: 5,  passed: sameAsDomains.length >= 3, note: `${sameAsDomains.length}` },
-    { key: "identity",   label: "Entity identity consistency (JSON-LD vs title/OG)",   points: 4,  passed: idConsistencyOK },
-    { key: "readability",label: "AI-readable description (40–160 chars, low jargon)",  points: 4,  passed: readability.ok, note: `len=${readability.len}` },
-    { key: "speakable",  label: "Speakable (voice search) present",                    points: 2,  passed: speakableOK },
-    { key: "canonical",  label: "Canonical tag present",                               points: 3,  passed: canonicalOK },
-    { key: "twitter",    label: "Twitter Card tags present",                           points: 2,  passed: twitterOK },
+    {
+      key: "jsonld",
+      label: "JSON-LD detected",
+      points: 14,
+      passed: p.jsonLdBlocks.length > 0,
+    },
+    {
+      key: "type",
+      label: "Valid schema @type (Org/LocalBusiness/Person)",
+      points: 9,
+      passed: typesLower.some((t) =>
+        ["organization", "localbusiness", "person"].includes(t)
+      ),
+    },
+    {
+      key: "og",
+      label: "Open Graph tags present",
+      points: 4,
+      passed: p.hasOG,
+    },
+    {
+      key: "robots",
+      label: "robots.txt reachable",
+      points: 4,
+      passed: true,
+    }, // patched after HEAD
+    {
+      key: "sitemap",
+      label: "sitemap.xml reachable",
+      points: 4,
+      passed: true,
+    }, // patched after HEAD
+    {
+      key: "sameas",
+      label: "sameAs links (>=1)",
+      points: 9,
+      passed: sameAsList.length >= 1,
+      note: `${sameAsList.length}`,
+    },
+    {
+      key: "address",
+      label: "Address completeness (locality/region)",
+      points: 7,
+      passed: hasAddress,
+    },
+    {
+      key: "contact",
+      label: "Contact info (phone or email)",
+      points: 7,
+      passed: contactOK,
+    },
+    {
+      key: "logo",
+      label: "Logo or image present",
+      points: 3,
+      passed: logoOK,
+    },
+    {
+      key: "publisher",
+      label: "Publisher/ownership consistency",
+      points: 7,
+      passed: publisherOK,
+    },
+    {
+      key: "services",
+      label: "Service/Product/Offer schema",
+      points: 8,
+      passed: servicesOK,
+    },
+    {
+      key: "faq",
+      label: "FAQ schema present",
+      points: 4,
+      passed: faqOK,
+    },
+    {
+      key: "graphdepth",
+      label: "sameAs graph depth (≥3 unique domains)",
+      points: 5,
+      passed: sameAsDomains.length >= 3,
+      note: `${sameAsDomains.length}`,
+    },
+    {
+      key: "identity",
+      label: "Entity identity consistency (JSON-LD vs title/OG)",
+      points: 4,
+      passed: idConsistencyOK,
+    },
+    {
+      key: "readability",
+      label: "AI-readable description (40–160 chars, low jargon)",
+      points: 4,
+      passed: readability.ok,
+      note: `len=${readability.len}`,
+    },
+    {
+      key: "speakable",
+      label: "Speakable (voice search) present",
+      points: 2,
+      passed: speakableOK,
+    },
+    {
+      key: "canonical",
+      label: "Canonical tag present",
+      points: 3,
+      passed: canonicalOK,
+    },
+    {
+      key: "twitter",
+      label: "Twitter Card tags present",
+      points: 2,
+      passed: twitterOK,
+    },
   ];
 
   const total = checks.reduce((sum, c) => sum + (c.passed ? c.points : 0), 0);
@@ -419,9 +521,11 @@ export default async function Page({ searchParams }: PageProps) {
 
       // Patch robots/sitemap from HEAD results
       checks = checks.map((c) =>
-        c.key === "robots" ? { ...c, passed: robotsOk } :
-        c.key === "sitemap" ? { ...c, passed: sitemapOk } :
-        c
+        c.key === "robots"
+          ? { ...c, passed: robotsOk }
+          : c.key === "sitemap"
+          ? { ...c, passed: sitemapOk }
+          : c
       );
 
       const clamped = Math.min(
@@ -463,7 +567,7 @@ export default async function Page({ searchParams }: PageProps) {
     name: "AI-Visibility Audit",
     url: "https://aeobro.com/audit",
     description:
-      "Quick, provisional AI-visibility score for your domain. Enter your domain address to see a rough baseline of your current AI visibility optimization.",
+      "Quick, provisional AI-visibility score for your domain. Enter your domain address to see a rough baseline of your current AI interpretation.",
     isPartOf: { "@type": "WebSite", name: "AEOBRO", url: "https://aeobro.com" },
   };
 
@@ -471,8 +575,18 @@ export default async function Page({ searchParams }: PageProps) {
     "@context": "https://schema.org",
     "@type": "BreadcrumbList",
     itemListElement: [
-      { "@type": "ListItem", position: 1, name: "Home", item: "https://aeobro.com/" },
-      { "@type": "ListItem", position: 2, name: "AI-Visibility Audit", item: "https://aeobro.com/audit" },
+      {
+        "@type": "ListItem",
+        position: 1,
+        name: "Home",
+        item: "https://aeobro.com/",
+      },
+      {
+        "@type": "ListItem",
+        position: 2,
+        name: "AI-Visibility Audit",
+        item: "https://aeobro.com/audit",
+      },
     ],
   } as const;
 
@@ -491,7 +605,8 @@ export default async function Page({ searchParams }: PageProps) {
         className="mt-3 text-gray-600"
         title="A fast, single-page analysis with short timeouts."
       >
-        Enter your domain address to get a quick snapshot score of your current AI visibility optimization.
+        Enter your domain address to get a quick snapshot analysis of how clearly
+        AI systems can interpret your brand.
       </p>
 
       {/* Form */}
@@ -524,7 +639,7 @@ export default async function Page({ searchParams }: PageProps) {
 
       {!q && (
         <p id="audit-help" className="text-sm text-gray-500 mt-2">
-          Example result: “✅ JSON-LD detected. AI-readiness score: 82 / 100 (Verified domain)”
+          Example result: “✅ JSON-LD detected. AI-readiness score: 82 / 100 (clear identity signals detected)”
         </p>
       )}
 
@@ -588,23 +703,23 @@ export default async function Page({ searchParams }: PageProps) {
       </div>
 
       {/* CTA: Create/Edit AI-Ready Profile */}
-{(view.mode === "url" || view.mode === "brand") && (
-  <div className="mt-8">
-    <h3 className="text-lg font-semibold mb-1">
-      Boost your score with an AI-Ready Profile.
-    </h3>
-    <p className="text-sm text-gray-500 max-w-xl mb-4">
-      Your AEOBRO profile stores verified, AI-ready data about your brand or organization
-      so AI systems can discover, trust, and represent you more accurately.
-    </p>
+      {(view.mode === "url" || view.mode === "brand") && (
+        <div className="mt-8">
+          <h3 className="text-lg font-semibold mb-1">
+            Boost your score with an AI-Ready Profile.
+          </h3>
+          <p className="text-sm text-gray-500 max-w-xl mb-4">
+            Your AEOBRO profile stores verified, AI-ready data about your brand or organization
+            so AI systems can discover, trust, and represent you more accurately.
+          </p>
 
-    <a
-      href={isLoggedIn ? "/dashboard" : "/login"}
-      className="inline-flex items-center justify-center px-6 py-3 rounded-lg bg-blue-600 text-white font-semibold hover:bg-blue-700 transition"
-    >
-      {isLoggedIn ? "Edit your AI-Ready Profile" : "Create your AI-Ready Profile"}
-    </a>
-  </div>
+          <a
+            href={isLoggedIn ? "/dashboard" : "/login"}
+            className="inline-flex items-center justify-center px-6 py-3 rounded-lg bg-blue-600 text-white font-semibold hover:bg-blue-700 transition"
+          >
+            {isLoggedIn ? "Edit your AI-Ready Profile" : "Create your AI-Ready Profile"}
+          </a>
+        </div>
       )}
 
       <hr className="my-10" />
@@ -614,12 +729,12 @@ export default async function Page({ searchParams }: PageProps) {
         <p>
           This is an analysis of various parameters such as structured data (JSON-LD),
           verification status, entity disambiguation, link graph health, and crawlability over time.
-          The higher your score, the more optimized your data is for AI visibility.
+          A higher score indicates clearer, more complete identity signals that help AI systems understand and interpret your brand.
         </p>
         {/* Proprietary disclaimer */}
         <p className="mt-2 text-xs text-gray-500">
           <strong>Disclaimer:</strong> The AEOBRO AI Visibility Score is a proprietary analysis
-          based on 18 parameters measuring how machine-readable and AI-accessible your public web data is.
+          based on 18 parameters measuring how clearly AI systems can interpret and understand your public web identity data.
           It is intended for informational and demonstration purposes only.
         </p>
         <p className="text-sm text-gray-500">
