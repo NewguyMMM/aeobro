@@ -25,7 +25,7 @@ export default function Page() {
         acceptedAnswer: {
           "@type": "Answer",
           text:
-            "AEOBRO is the creator of the AI Identity Layer™—a machine-readable registry that helps AI systems find verified facts about your brand, business, or creator identity. AEOBRO publishes a public, structured record (including JSON-LD) so modern AI systems can represent you accurately instead of guessing.",
+            "AEOBRO is the creator of the AI Identity Layer™—a machine-readable registry that helps AI systems find verified facts about your brand, business, or creator identity. AEOBRO publishes a public, structured record (including JSON-LD) so AI systems can represent you accurately instead of guessing. AEOBRO is not an AI assistant. It does not answer questions, chat with users, or generate AI responses. AI assistants interpret information; AEOBRO publishes the official version of that information.",
         },
       },
       {
@@ -36,25 +36,6 @@ export default function Page() {
           text: "AI Engine Optimization · Business Reach Optimization.",
         },
       },
-      {
-        "@type": "Question",
-        name: "Will AEOBRO guarantee rankings, traffic, or visibility?",
-        acceptedAnswer: {
-          "@type": "Answer",
-          text:
-            "No. AEOBRO does not promise rankings, traffic, placement, or revenue. No rankings promised. No traffic guarantees. Just accurate representation. AI systems and search engines decide what to surface and when.",
-        },
-      },
-      {
-        "@type": "Question",
-        name: "Why don’t I see results immediately?",
-        acceptedAnswer: {
-          "@type": "Answer",
-          text:
-            "Because AI systems update on their own schedules. AEOBRO defines the record they reference, but it does not control when third-party systems refresh or display it.",
-        },
-      },
-      // ⬇️ What is JSON-LD? follows the acronym explanation & disclaimers
       {
         "@type": "Question",
         name: "What is JSON-LD?",
@@ -138,7 +119,15 @@ export default function Page() {
             "You can—and we encourage it. AEOBRO generates clean, standards-based JSON-LD you can paste into your website. We recommend updating your website’s JSON-LD whenever you update your AEOBRO profile. However, publishing JSON-LD only on your website means your identity exists in a single, self-asserted location. By also publishing on AEOBRO, your brand maintains a verifiable, trusted, and citable third-party identity layer that AI systems can reference independently of your website. AEOBRO does not guarantee rankings or placement; it improves accuracy, consistency, and trust signals for machine interpretation.",
         },
       },
-      // ⬇️ Non-affiliation disclaimer Q&A
+      {
+        "@type": "Question",
+        name: "Why don’t I see results immediately?",
+        acceptedAnswer: {
+          "@type": "Answer",
+          text:
+            "Because AI systems update on their own schedules. AEOBRO defines the record they reference, but it doesn’t control when third-party systems refresh or display it.",
+        },
+      },
       {
         "@type": "Question",
         name: "Is AEOBRO affiliated with OpenAI, Google, or Perplexity?",
@@ -146,6 +135,15 @@ export default function Page() {
           "@type": "Answer",
           text:
             "AEOBRO is an independent service and is not affiliated with OpenAI, Google, Anthropic, or Perplexity. References to platforms such as ChatGPT, Gemini, and similar AI systems are provided solely to illustrate how AEOBRO’s structured data can improve visibility across modern AI and search ecosystems. All trademarks belong to their respective owners.",
+        },
+      },
+      {
+        "@type": "Question",
+        name: "Will AEOBRO guarantee rankings, traffic, or visibility?",
+        acceptedAnswer: {
+          "@type": "Answer",
+          text:
+            "No. AEOBRO does not promise rankings, traffic, placement, or revenue. No rankings promised. No traffic guarantees. Just accurate representation. AI systems and search engines decide what to surface and when.",
         },
       },
       {
@@ -201,7 +199,7 @@ export default function Page() {
         acceptedAnswer: {
           "@type": "Answer",
           text:
-            "A way to publish your common questions and answers in schema.org format. Advantage: helps AI assistants and search engines retrieve accurate responses to routine questions. Marked as Coming soon; not yet available.",
+            "A way to publish your common questions and answers in schema.org format. Advantage: helps AI assistants and search engines retrieve accurate responses to routine questions.",
         },
       },
       {
@@ -210,61 +208,7 @@ export default function Page() {
         acceptedAnswer: {
           "@type": "Answer",
           text:
-            "Structured data describing what you offer, service areas, and key attributes. Advantage: makes it easier for AI systems to understand your offerings. Coming soon; not yet available.",
-        },
-      },
-      {
-        "@type": "Question",
-        name: "What is Change history?",
-        acceptedAnswer: {
-          "@type": "Answer",
-          text:
-            "A log of edits to your profile (what changed and when). Advantage: transparency for audits and faster trust-building with AI systems that prefer up-to-date sources. Coming soon; not yet available.",
-        },
-      },
-      {
-        "@type": "Question",
-        name: "What does Everything in Pro mean?",
-        acceptedAnswer: {
-          "@type": "Answer",
-          text:
-            "Business includes all Pro features plus scalability options. Advantage: one tier for teams that need multi-location, seats, and automation. Features listed as Coming soon are not yet active.",
-        },
-      },
-      {
-        "@type": "Question",
-        name: "What is Multi-location?",
-        acceptedAnswer: {
-          "@type": "Answer",
-          text:
-            "Support for publishing structured data for multiple locations under one brand. Advantage: cleaner management and clearer signals for AI about where you operate. Coming soon; not yet available.",
-        },
-      },
-      {
-        "@type": "Question",
-        name: "What are Team seats?",
-        acceptedAnswer: {
-          "@type": "Answer",
-          text:
-            "Multiple user logins with role-appropriate access. Advantage: safer collaboration without sharing passwords. Coming soon; not yet available.",
-        },
-      },
-      {
-        "@type": "Question",
-        name: "What are Bulk import and webhooks?",
-        acceptedAnswer: {
-          "@type": "Answer",
-          text:
-            "Tools to bring in data at scale and receive change notifications. Advantage: reduces manual entry and keeps external systems in sync. Coming soon; not yet available.",
-        },
-      },
-      {
-        "@type": "Question",
-        name: "What are Advanced analytics?",
-        acceptedAnswer: {
-          "@type": "Answer",
-          text:
-            "Reporting about profile completeness and machine-readability signals (e.g., JSON-LD coverage). Advantage: helps prioritize improvements. Coming soon; not yet available.",
+            "Structured data describing what you offer, service areas, and key attributes. Advantage: makes it easier for AI systems to understand your offerings.",
         },
       },
     ],
@@ -282,16 +226,6 @@ export default function Page() {
         <span className="text-primary">BRO</span> FAQ
       </h1>
 
-      {/* Optional but powerful: Micro-FAQ under hero */}
-      <div className="card mb-8">
-        <h3 className="font-semibold">Why don’t I see results immediately?</h3>
-        <p className="text-gray-700 mt-2">
-          Because AI systems update on their own schedules. AEOBRO defines the
-          record they reference, but it doesn’t control when third-party systems
-          refresh or display it.
-        </p>
-      </div>
-
       <div className="space-y-8">
         <div className="card">
           <h3 className="font-semibold">What is AEOBRO?</h3>
@@ -305,26 +239,29 @@ export default function Page() {
             <strong>JSON-LD</strong>) so AI systems can represent you accurately
             instead of guessing.
           </p>
+
+          <div className="mt-4">
+            <p className="text-gray-700">
+              <strong>AEOBRO is not an AI assistant.</strong>
+            </p>
+            <p className="text-gray-700 mt-2">It does not:</p>
+            <ul className="list-disc list-inside text-gray-700 mt-2 space-y-1">
+              <li>answer questions</li>
+              <li>chat with users</li>
+              <li>generate AI responses</li>
+              <li>promise rankings, traffic, or visibility boosts</li>
+            </ul>
+            <p className="text-gray-700 mt-3">
+              AI assistants interpret information. AEOBRO publishes the official
+              version of that information.
+            </p>
+          </div>
         </div>
 
         <div className="card">
           <h3 className="font-semibold">What does AEOBRO stand for?</h3>
           <p className="text-gray-700 mt-2">
             AI Engine Optimization · Business Reach Optimization
-          </p>
-        </div>
-
-        <div className="card">
-          <h3 className="font-semibold">
-            Will AEOBRO guarantee rankings, traffic, or visibility?
-          </h3>
-          <p className="text-gray-700 mt-2">
-            No. AEOBRO does not promise rankings, traffic, placement, or revenue.
-          </p>
-          <p className="text-gray-700 mt-2">
-            <strong>No rankings promised. No traffic guarantees.</strong> Just
-            accurate representation. AI systems and search engines decide what
-            to surface and when.
           </p>
         </div>
 
@@ -458,14 +395,11 @@ export default function Page() {
           </p>
         </div>
 
-        {/* NEW: Website JSON-LD vs AEOBRO */}
         <div className="card">
           <h3 className="font-semibold">
             Why can’t I just add JSON-LD to my current website, and skip AEOBRO?
           </h3>
-          <p className="text-gray-700 mt-2">
-            You can—and we encourage it.
-          </p>
+          <p className="text-gray-700 mt-2">You can—and we encourage it.</p>
           <p className="text-gray-700 mt-2">
             AEOBRO generates clean, standards-based JSON-LD you can paste into
             your website. We recommend updating your website’s JSON-LD whenever
@@ -484,7 +418,16 @@ export default function Page() {
           </p>
         </div>
 
-        {/* Non-affiliation disclaimer card */}
+        {/* MOVE HERE: Results timing card (now just above affiliation tile) */}
+        <div className="card">
+          <h3 className="font-semibold">Why don’t I see results immediately?</h3>
+          <p className="text-gray-700 mt-2">
+            Because AI systems update on their own schedules. AEOBRO defines the
+            record they reference, but it doesn’t control when third-party systems
+            refresh or display it.
+          </p>
+        </div>
+
         <div className="card">
           <h3 className="font-semibold">
             Is AEOBRO affiliated with OpenAI, Google, or Perplexity?
@@ -496,6 +439,21 @@ export default function Page() {
             illustrate how AEOBRO’s structured data can improve visibility
             across modern AI and search ecosystems. All trademarks belong to
             their respective owners.
+          </p>
+        </div>
+
+        {/* MOVE HERE: No guarantees card (now just below affiliation tile) */}
+        <div className="card">
+          <h3 className="font-semibold">
+            Will AEOBRO guarantee rankings, traffic, or visibility?
+          </h3>
+          <p className="text-gray-700 mt-2">
+            No. AEOBRO does not promise rankings, traffic, placement, or revenue.
+          </p>
+          <p className="text-gray-700 mt-2">
+            <strong>No rankings promised. No traffic guarantees.</strong> Just
+            accurate representation. AI systems and search engines decide what to
+            surface and when.
           </p>
         </div>
 
@@ -555,70 +513,17 @@ export default function Page() {
             output and minimal upkeep.
           </p>
 
-          <h4 className="font-medium mt-4">
-            FAQ markup <span className="text-gray-500">(Coming soon)</span>
-          </h4>
+          <h4 className="font-medium mt-4">FAQ markup</h4>
           <p className="text-gray-700 mt-2">
             Publish common questions and answers in schema.org format.{" "}
             <em>Advantage:</em> helps AI assistants retrieve accurate responses
             to routine questions.
           </p>
 
-          <h4 className="font-medium mt-4">
-            Service markup <span className="text-gray-500">(Coming soon)</span>
-          </h4>
+          <h4 className="font-medium mt-4">Service markup</h4>
           <p className="text-gray-700 mt-2">
             Structured data describing offerings, service areas, and attributes.{" "}
             <em>Advantage:</em> clearer machine understanding of what you do.
-          </p>
-
-          <h4 className="font-medium mt-4">
-            Change history <span className="text-gray-500">(Coming soon)</span>
-          </h4>
-          <p className="text-gray-700 mt-2">
-            A record of profile edits over time. <em>Advantage:</em> transparency
-            and easier audits for systems that prefer up-to-date, traceable
-            sources.
-          </p>
-
-          <h4 className="font-medium mt-4">Everything in Pro</h4>
-          <p className="text-gray-700 mt-2">
-            Business includes all Pro features plus scalability options below.{" "}
-            <em>Advantage:</em> one tier to centralize multi-location/teams/
-            automation needs. (Items labeled “Coming soon” are not active yet.)
-          </p>
-
-          <h4 className="font-medium mt-4">
-            Multi-location (10) <span className="text-gray-500">(Coming soon)</span>
-          </h4>
-          <p className="text-gray-700 mt-2">
-            Manage structured data for up to 10 locations under one brand.{" "}
-            <em>Advantage:</em> consistent data across all sites/areas.
-          </p>
-
-          <h4 className="font-medium mt-4">
-            Team seats (3) <span className="text-gray-500">(Coming soon)</span>
-          </h4>
-          <p className="text-gray-700 mt-2">
-            Three user logins with role-appropriate access. <em>Advantage:</em>{" "}
-            safer collaboration without shared passwords.
-          </p>
-
-          <h4 className="font-medium mt-4">
-            Bulk import + webhooks <span className="text-gray-500">(Coming soon)</span>
-          </h4>
-          <p className="text-gray-700 mt-2">
-            Bring in data at scale and receive change notifications to your
-            systems. <em>Advantage:</em> reduces manual work and keeps sources
-            synchronized.
-          </p>
-
-          <h4 className="font-medium mt-4">
-            Advanced analytics <span className="text-gray-500">(Coming soon)</span>
-          </h4>
-          <p className="text-gray-700 mt-2">
-            Reports on completeness and machine-readability signals.{" "}
-            <em>Advantage:</em> helps you prioritize improvements.
           </p>
         </div>
       </div>
