@@ -917,6 +917,9 @@ export default function ProfileEditor({
         </div>
       </div>
 
+      {/* AI drafting helper */}
+       <AIDraftingCallout />
+      
       {/* Identity */}
       <section className="grid gap-4">
         <h3 className="text-lg font-semibold">Identity</h3>
@@ -1054,7 +1057,7 @@ export default function ProfileEditor({
               onChange={(e) => setWebsite(e.target.value)}
               maxLength={200}
             />
-            <small className="text-xs text-gray-500">Optional, but recommended for better AI ranking.</small>
+            <small className="text-xs text-gray-500">Optional, but recommended so AI systems can reliably confirm your official site.</small>
           </div>
           <div className={row}>
             <label className={label + " overflow-visible"} htmlFor="location">
