@@ -1,5 +1,5 @@
 // app/page.tsx
-// 📅 Updated: 2026-02-05 06:41 AM EST
+// 📅 Updated: 2026-02-07 06:05 AM EST
 import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
@@ -44,53 +44,23 @@ export default async function Home() {
       <section className="grid grid-cols-1 md:grid-cols-2 gap-10 items-start">
         <div>
           <h1 className="text-5xl md:text-6xl font-extrabold tracking-tight mb-3">
-            Control how <span className="text-sky-500">AI</span> sees you — so it
-            can find you accurately.
+            The public record designed for <span className="text-sky-500">AI</span>.
           </h1>
 
-          <p className="mt-1 max-w-2xl text-lg leading-snug text-gray-700 font-medium">
-            AEOBRO is the creator of the AI Identity Layer™ and the leader in AI
-            Identity™ for brands and businesses.
-          </p>
-
           <p className="mt-4 max-w-2xl text-base leading-relaxed text-gray-700">
-            Your brand&rsquo;s information is already out there.
+            AI systems already describe your business. They pull from whatever
+            information they can find online — whether it&rsquo;s accurate or not.
           </p>
 
           <p className="mt-2 max-w-2xl text-base leading-relaxed text-gray-700">
-            AEOBRO organizes, verifies, and publishes it in a machine-readable
-            format AI systems trust — so ChatGPT, Gemini, and Perplexity can{" "}
-            <strong>understand and represent your brand correctly</strong>, not
-            guess.
+            AEOBRO publishes the verified public record that defines who you are and
+            what you offer.
           </p>
 
           <p className="mt-3 max-w-2xl text-base leading-relaxed text-gray-700">
-            <strong>Structured </strong>
-            <span
-              className="relative inline-block group align-baseline"
-              tabIndex={0}
-              aria-describedby="jsonld-tip"
-            >
-              <strong className="underline decoration-dotted cursor-help">
-                JSON-LD
-              </strong>
-              <span
-                id="jsonld-tip"
-                role="tooltip"
-                className="absolute z-10 left-1/2 -translate-x-1/2 mt-2 w-80 max-w-xs rounded-xl border bg-white p-3 text-gray-700 text-sm shadow-xl opacity-0 pointer-events-none transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100"
-              >
-                <strong>
-                  JSON-LD (JavaScript Object Notation for Linked Data)
-                </strong>{" "}
-                is a format that organizes your business information so AI
-                systems and search engines can understand it. It&rsquo;s like a
-                digital language that connects your brand to the web of
-                knowledge machines use.
-                <span className="block mt-2 italic">See FAQ for more.</span>
-              </span>
-            </span>{" "}
-            <strong>profiles.</strong> Domain &amp; platform verification. No
-            technical setup required.
+            <strong>Not an assistant.</strong> <strong>Not a chatbot.</strong> A stable
+            public record published in a clear, structured format AI systems can
+            reference instead of guessing.
           </p>
 
           {/* CONDITIONAL CTA SENTENCE */}
@@ -99,7 +69,7 @@ export default async function Home() {
           </p>
 
           <div className="flex flex-wrap gap-6 items-start">
-            {/* PRIMARY CTA + DISCLAIMER */}
+            {/* PRIMARY CTA */}
             <div className="flex flex-col">
               <a
                 href="/dashboard"
@@ -108,11 +78,6 @@ export default async function Home() {
               >
                 {ctaLabel}
               </a>
-
-              <p className="mt-2 text-sm text-gray-400">
-                No rankings promised. No traffic guarantees. Just accurate
-                representation.
-              </p>
             </div>
 
             {/* SECONDARY CTA */}
