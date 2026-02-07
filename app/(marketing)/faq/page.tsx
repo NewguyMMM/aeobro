@@ -25,7 +25,7 @@ export default function Page() {
         acceptedAnswer: {
           "@type": "Answer",
           text:
-            "AEOBRO is a machine-readable registry that helps AI systems find verified facts about your brand.",
+            "AEOBRO is the creator of the AI Identity Layer™—a machine-readable registry that helps AI systems find verified facts about your brand, business, or creator identity. AEOBRO publishes a public, structured record (including JSON-LD) so modern AI systems can represent you accurately instead of guessing.",
         },
       },
       {
@@ -36,14 +36,32 @@ export default function Page() {
           text: "AI Engine Optimization · Business Reach Optimization.",
         },
       },
-      // ⬇️ What is JSON-LD? follows 'What does AEOBRO stand for?'
+      {
+        "@type": "Question",
+        name: "Will AEOBRO guarantee rankings, traffic, or visibility?",
+        acceptedAnswer: {
+          "@type": "Answer",
+          text:
+            "No. AEOBRO does not promise rankings, traffic, placement, or revenue. No rankings promised. No traffic guarantees. Just accurate representation. AI systems and search engines decide what to surface and when.",
+        },
+      },
+      {
+        "@type": "Question",
+        name: "Why don’t I see results immediately?",
+        acceptedAnswer: {
+          "@type": "Answer",
+          text:
+            "Because AI systems update on their own schedules. AEOBRO defines the record they reference, but it does not control when third-party systems refresh or display it.",
+        },
+      },
+      // ⬇️ What is JSON-LD? follows the acronym explanation & disclaimers
       {
         "@type": "Question",
         name: "What is JSON-LD?",
         acceptedAnswer: {
           "@type": "Answer",
           text:
-            "JSON-LD (JavaScript Object Notation for Linked Data) labels the facts on a page so Google, ChatGPT, and other AI systems can understand them with certainty.",
+            "JSON-LD (JavaScript Object Notation for Linked Data) is a structured data format that labels your information so AI systems and search engines can understand it—not just see it. It’s a digital language that connects your brand to the web of knowledge machines use—making your facts discoverable and trustworthy for AI and search technologies. Think of it as a business card for machines: humans read your site, but AI needs clean, structured fields (name, links, category, address) to know who you are. Why it matters: Structured, verified JSON-LD helps AI pull the right details about your brand—consistently and with higher trust.",
         },
       },
       {
@@ -69,7 +87,7 @@ export default function Page() {
         acceptedAnswer: {
           "@type": "Answer",
           text:
-            "Verification. Creators (Lite) verify with a social media account. Businesses (Pro+) verify with your business domain. Without verification, your profile can exist as a draft, but it won’t publish to AI engines.",
+            "Verification. Creators (Lite): a web domain, or a social media account you control for verification. Businesses (Plus and Pro): a web business domain, or a social media account you control for verification (business domains are preferred). Without verification, your profile can exist as a draft, but it won’t publish to AI engines.",
         },
       },
       {
@@ -78,7 +96,7 @@ export default function Page() {
         acceptedAnswer: {
           "@type": "Answer",
           text:
-            "Every profile must connect to something you control—a social account (creators) or a domain (businesses). Creators verify via YouTube/Google/Instagram/TikTok/Meta. Businesses verify via DNS TXT record or domain email. Verified creators publish Person/Creator schema; verified businesses publish Organization schema including FAQs, services, and locations.",
+            "Every AEOBRO profile must connect to something you truly control—typically a domain or a platform account. This prevents impersonation and increases trust for machine-readers. Creators can verify via supported platforms (OAuth or code-in-bio). Businesses can verify via DNS TXT record or domain email. Verified creators publish Person/Creator schema; verified businesses publish Organization/LocalBusiness schema including FAQs, services, and locations (where applicable).",
         },
       },
       {
@@ -87,7 +105,7 @@ export default function Page() {
         acceptedAnswer: {
           "@type": "Answer",
           text:
-            "To prevent impersonation, ensure AI engines see data from verified sources, and give your profile authority and visibility.",
+            "To prevent impersonation, ensure AI engines see data from controlled sources, and increase trust weight for your structured identity record.",
         },
       },
       {
@@ -97,7 +115,7 @@ export default function Page() {
         acceptedAnswer: {
           "@type": "Answer",
           text:
-            "Yes. Lite tier supports platform verification via OAuth (YouTube, TikTok, Instagram, Substack, Etsy) or code-in-bio. Pro requires domain + matching business email. Lite publishes Person/Creator schema; you can upgrade to Organization/LocalBusiness after adding a domain.",
+            "Yes. You can start with platform verification (Lite) using a social account you control (OAuth or code-in-bio). You can later add a domain and upgrade to publish Organization/LocalBusiness schema once you have a business domain.",
         },
       },
       {
@@ -107,10 +125,20 @@ export default function Page() {
         acceptedAnswer: {
           "@type": "Answer",
           text:
-            "AEOBRO publishes structured, verified JSON-LD that AI engines and assistants are designed to read more reliably. Regular pages may be inconsistently parsed. Verified profiles reduce impersonation and help AI systems pull the right facts.",
+            "Publishing accurate facts on a website is valuable for humans—but AI systems and search engines perform best with structured, verified JSON-LD. AEOBRO formats your data in machine-readable schema, uses verification to increase trust signals, and reduces impersonation risk by tying profiles to identities people actually control. AEOBRO helps AI systems pull correct information rather than guessing from inconsistent web sources.",
         },
       },
-      // ⬇️ NEW: Non-affiliation disclaimer Q&A (placed after the above)
+      {
+        "@type": "Question",
+        name:
+          "Why can’t I just add JSON-LD to my current website, and skip AEOBRO?",
+        acceptedAnswer: {
+          "@type": "Answer",
+          text:
+            "You can—and we encourage it. AEOBRO generates clean, standards-based JSON-LD you can paste into your website. We recommend updating your website’s JSON-LD whenever you update your AEOBRO profile. However, publishing JSON-LD only on your website means your identity exists in a single, self-asserted location. By also publishing on AEOBRO, your brand maintains a verifiable, trusted, and citable third-party identity layer that AI systems can reference independently of your website. AEOBRO does not guarantee rankings or placement; it improves accuracy, consistency, and trust signals for machine interpretation.",
+        },
+      },
+      // ⬇️ Non-affiliation disclaimer Q&A
       {
         "@type": "Question",
         name: "Is AEOBRO affiliated with OpenAI, Google, or Perplexity?",
@@ -254,12 +282,28 @@ export default function Page() {
         <span className="text-primary">BRO</span> FAQ
       </h1>
 
+      {/* Optional but powerful: Micro-FAQ under hero */}
+      <div className="card mb-8">
+        <h3 className="font-semibold">Why don’t I see results immediately?</h3>
+        <p className="text-gray-700 mt-2">
+          Because AI systems update on their own schedules. AEOBRO defines the
+          record they reference, but it doesn’t control when third-party systems
+          refresh or display it.
+        </p>
+      </div>
+
       <div className="space-y-8">
         <div className="card">
           <h3 className="font-semibold">What is AEOBRO?</h3>
           <p className="text-gray-700 mt-2">
-            AEOBRO is a machine-readable registry that helps AI systems find
-            verified facts about your brand.
+            AEOBRO is the creator of the <strong>AI Identity Layer™</strong>—a
+            machine-readable registry that helps AI systems find verified facts
+            about your brand, business, or creator identity.
+          </p>
+          <p className="text-gray-700 mt-2">
+            AEOBRO publishes a public, structured record (including{" "}
+            <strong>JSON-LD</strong>) so AI systems can represent you accurately
+            instead of guessing.
           </p>
         </div>
 
@@ -270,14 +314,32 @@ export default function Page() {
           </p>
         </div>
 
+        <div className="card">
+          <h3 className="font-semibold">
+            Will AEOBRO guarantee rankings, traffic, or visibility?
+          </h3>
+          <p className="text-gray-700 mt-2">
+            No. AEOBRO does not promise rankings, traffic, placement, or revenue.
+          </p>
+          <p className="text-gray-700 mt-2">
+            <strong>No rankings promised. No traffic guarantees.</strong> Just
+            accurate representation. AI systems and search engines decide what
+            to surface and when.
+          </p>
+        </div>
+
         {/* JSON-LD card follows the acronym explanation */}
         <div className="card">
           <h3 className="font-semibold">What is JSON-LD?</h3>
           <p className="text-gray-700 mt-2">
             <strong>JSON-LD</strong> (JavaScript Object Notation for Linked
-            Data) is a behind-the-scenes data format that labels the facts on a
-            page so <strong>Google, ChatGPT, and other AI systems</strong> can
-            understand them with certainty.
+            Data) is a structured data format that labels your information so AI
+            systems and search engines can understand it—not just see it.
+          </p>
+          <p className="text-gray-700 mt-2">
+            It’s a digital language that connects your brand to the web of
+            knowledge machines use—making your facts discoverable and trustworthy
+            for AI and search technologies.
           </p>
           <p className="text-gray-700 mt-2">
             Think of it as a <strong>business card for machines</strong>: humans
@@ -319,8 +381,8 @@ export default function Page() {
           <h3 className="font-semibold">What is an AI-ready Profile?</h3>
           <p className="text-gray-700 mt-2">
             Your information, organized as a public page plus structured data
-            (JSON-LD) that helps search engines and AI assistants understand
-            your information. It isn’t a chatbot and doesn’t act on your behalf.
+            (JSON-LD) that helps search engines and AI assistants understand your
+            information. It isn’t a chatbot and doesn’t act on your behalf.
           </p>
         </div>
 
@@ -333,15 +395,17 @@ export default function Page() {
           </p>
           <ul className="list-disc list-inside text-gray-700 mt-2 space-y-1">
             <li>
-              <strong>Creators (Lite):</strong> Verify with a social media
-              account.
+              <strong>Creators (Lite):</strong> A web domain, or a social media
+              account you control for verification.
             </li>
             <li>
-              <strong>Businesses (Pro+):</strong> Verify with your business
-              domain.
+              <strong>Businesses (Plus and Pro):</strong> A web business domain,
+              or a social media account you control for verification.{" "}
+              <strong>Business domains are preferred.</strong>
             </li>
           </ul>
           <p className="text-gray-700 mt-2">
+            Profiles without verification cannot publish to the AI ecosystem.
             Without verification, your profile can exist as a draft, but it
             won’t publish to AI engines.
           </p>
@@ -352,10 +416,17 @@ export default function Page() {
             What do I need to create an AEOBRO profile? (Long answer)
           </h3>
           <p className="text-gray-700 mt-2">
-            Every AEOBRO profile must connect to something you truly control —
-            either a <strong>social account</strong> (for creators) or a{" "}
-            <strong>domain</strong> (for businesses). This prevents
-            impersonation and ensures AI search engines trust the information.
+            Every AEOBRO profile must connect to something you truly control—
+            typically a <strong>domain</strong> or a{" "}
+            <strong>platform account</strong>. This prevents impersonation and
+            increases trust for machine-readers.
+          </p>
+          <p className="text-gray-700 mt-2">
+            Creators can verify via supported platforms (OAuth or code-in-bio).
+            Businesses can verify via DNS TXT record or domain email. Verified
+            creators publish Person/Creator schema; verified businesses publish
+            Organization/LocalBusiness schema including FAQs, services, and
+            locations (where applicable).
           </p>
         </div>
 
@@ -365,31 +436,55 @@ export default function Page() {
             information on my own website?
           </h3>
           <p className="text-gray-700 mt-2">
-            AI engines don’t just read websites — they work best with{" "}
-            <strong>structured, verified data</strong>. AEOBRO publishes JSON-LD
-            that AI engines and assistants are{" "}
-            <strong>designed to read more reliably</strong>.
+            Publishing accurate facts on a website is valuable for humans—but AI
+            systems and search engines perform best with{" "}
+            <strong>structured, verified JSON-LD</strong>.
           </p>
           <ul className="list-disc list-inside text-gray-700 mt-2 space-y-1">
+            <li>Your facts are formatted in machine-readable JSON-LD.</li>
+            <li>Verification increases trust signals for AI systems.</li>
             <li>
-              Your facts are formatted in machine-readable JSON-LD (schema.org).
+              Reduces impersonation risk by tying profiles to identities people
+              actually control.
             </li>
-            <li>Only verified profiles are published, raising trust signals.</li>
             <li>
-              Reduces impersonation risk by tying data to verified identities.
-            </li>
-            <li>
-              Helps AI systems pull the <em>right</em> information directly,
-              instead of scraping inconsistently from the open web.
+              Helps AI systems pull the <em>right</em> information instead of
+              guessing from inconsistent sources.
             </li>
           </ul>
           <p className="text-gray-700 mt-2">
-            <em>Note:</em> AEOBRO improves clarity and consistency for machines,
-            but does not guarantee placement, ranking, or revenue.
+            <em>Note:</em> AEOBRO improves accuracy and consistency for machines,
+            but does not guarantee placement, ranking, traffic, or revenue.
           </p>
         </div>
 
-        {/* NEW: Non-affiliation disclaimer card */}
+        {/* NEW: Website JSON-LD vs AEOBRO */}
+        <div className="card">
+          <h3 className="font-semibold">
+            Why can’t I just add JSON-LD to my current website, and skip AEOBRO?
+          </h3>
+          <p className="text-gray-700 mt-2">
+            You can—and we encourage it.
+          </p>
+          <p className="text-gray-700 mt-2">
+            AEOBRO generates clean, standards-based JSON-LD you can paste into
+            your website. We recommend updating your website’s JSON-LD whenever
+            you update your AEOBRO profile.
+          </p>
+          <p className="text-gray-700 mt-2">
+            However, publishing JSON-LD only on your website means your identity
+            exists in a single, self-asserted location. By also publishing on
+            AEOBRO, your brand maintains a{" "}
+            <strong>verifiable, trusted, and citable</strong> third-party identity
+            layer that AI systems can reference independently of your website.
+          </p>
+          <p className="text-gray-700 mt-2">
+            AEOBRO does not guarantee rankings or placement; it improves
+            accuracy, consistency, and trust signals for machine interpretation.
+          </p>
+        </div>
+
+        {/* Non-affiliation disclaimer card */}
         <div className="card">
           <h3 className="font-semibold">
             Is AEOBRO affiliated with OpenAI, Google, or Perplexity?
@@ -407,11 +502,11 @@ export default function Page() {
         <div className="card">
           <h3 className="font-semibold">How do I cancel?</h3>
           <p className="text-gray-700 mt-2">
-            Use the <strong>Manage subscription</strong> link in the site
-            footer to open the secure Stripe Billing Portal. From there you can
-            change plans (upgrade or downgrade), update your payment method, or
-            cancel your subscription. Your service continues until the end of
-            your current billing period; renewals stop.
+            Use the <strong>Manage subscription</strong> link in the site footer
+            to open the secure Stripe Billing Portal. From there you can change
+            plans (upgrade or downgrade), update your payment method, or cancel
+            your subscription. Your service continues until the end of your
+            current billing period; renewals stop.
           </p>
         </div>
 
@@ -433,8 +528,8 @@ export default function Page() {
             After your subscription lapses, premium features and editing are
             disabled and your public profile is unpublished (no longer
             crawlable). We retain your profile data for{" "}
-            <strong>90 days</strong> so you can reactivate. After 90 days with
-            no reactivation, the profile may be permanently deleted per our
+            <strong>90 days</strong> so you can reactivate. After 90 days with no
+            reactivation, the profile may be permanently deleted per our
             retention policy.
           </p>
         </div>
@@ -443,15 +538,12 @@ export default function Page() {
         <div className="card">
           <h3 className="font-semibold">What do the pricing features mean?</h3>
 
-          <h4 className="font-medium mt-4">
-            Centralized AI Ready Profile
-          </h4>
+          <h4 className="font-medium mt-4">Centralized AI Ready Profile</h4>
           <p className="text-gray-700 mt-2">
             A single, verified public page plus structured JSON-LD that
-            consolidates your official links and key facts.{" "}
-            <em>Advantage:</em> simplifies discovery for AI systems by pointing
-            them at one consistent source. (No guarantees of placement or
-            ranking.)
+            consolidates your official links and key facts. <em>Advantage:</em>{" "}
+            simplifies discovery for AI systems by pointing them at one
+            consistent source. (No guarantees of placement or ranking.)
           </p>
 
           <h4 className="font-medium mt-4">
@@ -459,13 +551,12 @@ export default function Page() {
           </h4>
           <p className="text-gray-700 mt-2">
             Core fields (name, tagline, bio) with a limited number of links and
-            images. <em>Advantage:</em> fast setup with clean
-            machine-readable output and minimal upkeep.
+            images. <em>Advantage:</em> fast setup with clean machine-readable
+            output and minimal upkeep.
           </p>
 
           <h4 className="font-medium mt-4">
-            FAQ markup{" "}
-            <span className="text-gray-500">(Coming soon)</span>
+            FAQ markup <span className="text-gray-500">(Coming soon)</span>
           </h4>
           <p className="text-gray-700 mt-2">
             Publish common questions and answers in schema.org format.{" "}
@@ -474,36 +565,31 @@ export default function Page() {
           </p>
 
           <h4 className="font-medium mt-4">
-            Service markup{" "}
-            <span className="text-gray-500">(Coming soon)</span>
+            Service markup <span className="text-gray-500">(Coming soon)</span>
           </h4>
           <p className="text-gray-700 mt-2">
-            Structured data describing offerings, service areas, and
-            attributes. <em>Advantage:</em> clearer machine understanding of
-            what you do.
+            Structured data describing offerings, service areas, and attributes.{" "}
+            <em>Advantage:</em> clearer machine understanding of what you do.
           </p>
 
           <h4 className="font-medium mt-4">
-            Change history{" "}
-            <span className="text-gray-500">(Coming soon)</span>
+            Change history <span className="text-gray-500">(Coming soon)</span>
           </h4>
           <p className="text-gray-700 mt-2">
-            A record of profile edits over time. <em>Advantage:</em>{" "}
-            transparency and easier audits for systems that prefer up-to-date,
-            traceable sources.
+            A record of profile edits over time. <em>Advantage:</em> transparency
+            and easier audits for systems that prefer up-to-date, traceable
+            sources.
           </p>
 
           <h4 className="font-medium mt-4">Everything in Pro</h4>
           <p className="text-gray-700 mt-2">
             Business includes all Pro features plus scalability options below.{" "}
-            <em>Advantage:</em> one tier to centralize
-            multi-location/teams/automation needs. (Items labeled “Coming
-            soon” are not active yet.)
+            <em>Advantage:</em> one tier to centralize multi-location/teams/
+            automation needs. (Items labeled “Coming soon” are not active yet.)
           </p>
 
           <h4 className="font-medium mt-4">
-            Multi-location (10){" "}
-            <span className="text-gray-500">(Coming soon)</span>
+            Multi-location (10) <span className="text-gray-500">(Coming soon)</span>
           </h4>
           <p className="text-gray-700 mt-2">
             Manage structured data for up to 10 locations under one brand.{" "}
@@ -511,17 +597,15 @@ export default function Page() {
           </p>
 
           <h4 className="font-medium mt-4">
-            Team seats (3){" "}
-            <span className="text-gray-500">(Coming soon)</span>
+            Team seats (3) <span className="text-gray-500">(Coming soon)</span>
           </h4>
           <p className="text-gray-700 mt-2">
-            Three user logins with role-appropriate access.{" "}
-            <em>Advantage:</em> safer collaboration without shared passwords.
+            Three user logins with role-appropriate access. <em>Advantage:</em>{" "}
+            safer collaboration without shared passwords.
           </p>
 
           <h4 className="font-medium mt-4">
-            Bulk import + webhooks{" "}
-            <span className="text-gray-500">(Coming soon)</span>
+            Bulk import + webhooks <span className="text-gray-500">(Coming soon)</span>
           </h4>
           <p className="text-gray-700 mt-2">
             Bring in data at scale and receive change notifications to your
@@ -530,8 +614,7 @@ export default function Page() {
           </p>
 
           <h4 className="font-medium mt-4">
-            Advanced analytics{" "}
-            <span className="text-gray-500">(Coming soon)</span>
+            Advanced analytics <span className="text-gray-500">(Coming soon)</span>
           </h4>
           <p className="text-gray-700 mt-2">
             Reports on completeness and machine-readability signals.{" "}
