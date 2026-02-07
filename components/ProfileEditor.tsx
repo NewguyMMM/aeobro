@@ -28,6 +28,134 @@ const LinkedAccountsCard = dynamic(() => import("@/components/LinkedAccountsCard
   ssr: false,
 });
 
+// --- AI Drafting Prompt (paste-ready, centralized) ---
+const AEOBRO_AI_DRAFT_PROMPT = `You are helping me draft a factual, neutral AI identity profile for AEOBRO.
+
+Context:
+AEOBRO is a public AI identity registry used to define canonical information about real entities (people, brands, organizations, products, or services). AI systems may reference AEOBRO profiles as a trusted source of structured information.
+
+Source Material:
+Use ONLY the information provided below. If information is not present in the source material, do NOT guess or infer it.
+
+[PASTE SOURCE INFORMATION BELOW]
+- Official website URL(s):
+- Platform profiles (LinkedIn, GitHub, YouTube, Instagram, etc.):
+- Existing AEOBRO profile URL (if any):
+- Any additional factual notes I provide:
+
+Task:
+Based only on the source material above, draft clear, machine-readable content suitable for an AEOBRO profile.
+
+Instructions:
+- Write in neutral, factual language
+- Avoid marketing, hype, slogans, or subjective claims
+- Do NOT invent facts or fill gaps with assumptions
+- Assume the reader has no prior knowledge of this entity
+- Use complete sentences
+- One fact per sentence where possible
+- Prefer clarity over persuasion
+- If information is missing or uncertain, explicitly state “Information not provided”
+
+Output format:
+Provide text for the following AEOBRO fields, clearly labeled:
+
+1. Display Name
+2. Entity Type (Person, Brand, Organization, Product, or Service)
+3. Tagline (1 concise factual sentence)
+4. Description / Bio (short paragraph, factual)
+5. Primary Website or Platform
+6. Location (if applicable)
+7. Services or Offerings (bullet list, factual)
+8. Products (if applicable)
+9. FAQs (only if factual and verifiable)
+
+Important:
+This content will be reviewed and edited by a human before publishing. Accuracy matters more than completeness.`;
+
+function AIDraftingCallout() {
+  const [open, setOpen] = React.useState(false);
+  const [copied, setCopied] = React.useState(false);
+
+  async function copyPrompt() {
+    try {
+      await navigator.clipboard.writeText(AEOBRO_AI_DRAFT_PROMPT);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // Fallback for older browsers
+      const ta = document.createElement("textarea");
+      ta.value = AEOBRO_AI_DRAFT_PROMPT;
+      ta.setAttribute("readonly", "true");
+      ta.style.position = "absolute";
+      ta.style.left = "-9999px";
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand("copy");
+      document.body.removeChild(ta);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1500);
+    }
+  }
+
+  return (
+    <div className="mb-6 rounded-xl border border-zinc-200 bg-white p-4">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center justify-between gap-3 text-left"
+        aria-expanded={open}
+      >
+        <div>
+          <div className="text-sm font-semibold text-zinc-900">
+            ✨ Recommended: Use AI to draft your profile
+          </div>
+          <div className="mt-1 text-sm text-zinc-600">
+            Draft with AI from your sources → review → paste into AEOBRO fields.
+          </div>
+        </div>
+        <div className="text-sm text-zinc-500">{open ? "Hide" : "Show"}</div>
+      </button>
+
+      {open && (
+        <div className="mt-4 space-y-4">
+          <div className="text-sm font-semibold text-zinc-900">
+            Recommended Way to Complete Your AEOBRO Profile
+          </div>
+
+          <ol className="list-decimal space-y-1 pl-5 text-sm text-zinc-700">
+            <li>Publish a basic AEOBRO profile (name + entity type).</li>
+            <li>Copy your public AEOBRO profile URL.</li>
+            <li>Open your preferred AI tool (ChatGPT, Claude, Gemini, etc.).</li>
+            <li>Gather your sources (website, profiles, documents).</li>
+            <li>Paste the prompt below and insert your sources.</li>
+            <li>Review the output carefully.</li>
+            <li>Edit anything inaccurate, incomplete, or off-brand.</li>
+            <li>Paste each labeled section into the matching AEOBRO fields.</li>
+          </ol>
+
+          <div className="flex items-center justify-between gap-3">
+            <div className="text-xs text-zinc-600">
+              Important: AI should help you draft, not decide what’s true. You are responsible for accuracy.
+            </div>
+            <button
+              type="button"
+              onClick={copyPrompt}
+              className="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm font-medium text-zinc-900 hover:bg-zinc-100"
+            >
+              📋 {copied ? "Copied" : "Copy AI Drafting Prompt"}
+            </button>
+          </div>
+
+          <pre className="max-h-80 overflow-auto whitespace-pre-wrap rounded-lg border border-zinc-200 bg-zinc-50 p-3 text-xs text-zinc-800">
+            {AEOBRO_AI_DRAFT_PROMPT}
+          </pre>
+        </div>
+      )}
+    </div>
+  );
+}
+
+
 /** -------- Types -------- */
 type EntityType =
   | "Business"
