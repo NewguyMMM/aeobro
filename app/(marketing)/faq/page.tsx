@@ -25,7 +25,34 @@ export default function Page() {
         acceptedAnswer: {
           "@type": "Answer",
           text:
-            "AEOBRO is the creator of the AI Identity Layer™—a machine-readable registry that helps AI systems find verified facts about your brand, business, or creator identity. AEOBRO publishes a public, structured record (including JSON-LD) so AI systems can represent you accurately instead of guessing. AEOBRO is not an AI assistant. It does not answer questions, chat with users, or generate AI responses. AI assistants interpret information; AEOBRO publishes the official version of that information.",
+            "AEOBRO is the creator of the AI Identity Layer™—a machine-readable, public, verified identity registry that helps AI systems find verified facts about your brand, business, or creator identity. AEOBRO provides: a canonical public record (one stable published URL representing the authoritative version of your organization), verification-gated claims (facts are published only when ownership or authority can be proven), and machine-readable structure (your identity, services, and FAQs are published in formats AI systems can interpret and cite). In review: a reference-grade truth source using a structured record (including JSON-LD) so AI systems can represent you accurately instead of guessing. AEOBRO is not an AI assistant. It does not answer questions, chat with users, generate AI responses, or promise rankings, traffic, or visibility boosts. AI assistants interpret information; AEOBRO publishes the official version of that information.",
+        },
+      },
+      {
+        "@type": "Question",
+        name: "Why did we create AEOBRO?",
+        acceptedAnswer: {
+          "@type": "Answer",
+          text:
+            "The problem is that AI systems already answer questions about your organization. They pull from outdated websites, scraped directories, inconsistent bios, and unverified third-party claims. When facts conflict, AI systems infer. Inference is not authority. AEOBRO was created to ease the costly pain point of inference with a clear public record.",
+        },
+      },
+      {
+        "@type": "Question",
+        name: "How is AEOBRO different from an AI assistant?",
+        acceptedAnswer: {
+          "@type": "Answer",
+          text:
+            "AI assistants vs AEOBRO: AI assistants generate answers, interpret sources, change behavior as models update, and do not maintain official records. AEOBRO publishes official records, verifies authority, persists across model updates, and can be cited as a source. AEOBRO does not compete with AI assistants; it gives them something defensible to reference.",
+        },
+      },
+      {
+        "@type": "Question",
+        name: "Who is AEOBRO for?",
+        acceptedAnswer: {
+          "@type": "Answer",
+          text:
+            "AEOBRO is for organizations where accuracy matters: professional services, regulated industries, reputation-sensitive businesses, and entities frequently misrepresented online.",
         },
       },
       {
@@ -177,38 +204,11 @@ export default function Page() {
       /* ------ Feature explanations (FAQPage JSON-LD) ------ */
       {
         "@type": "Question",
-        name: "What is a Centralized AI Ready Profile?",
+        name: "What do the pricing features mean?",
         acceptedAnswer: {
           "@type": "Answer",
           text:
-            "A single public page that consolidates your official links, facts, and structured JSON-LD. Advantage: reduces confusion for AI systems by pointing them at one verified source of truth. No guarantee of ranking or inclusion.",
-        },
-      },
-      {
-        "@type": "Question",
-        name: "What does Basic profile (links/images caps) include?",
-        acceptedAnswer: {
-          "@type": "Answer",
-          text:
-            "Core fields (name, tagline, bio) plus a limited number of links and images. Advantage: a quick, lightweight setup that still produces valid structured data without heavy maintenance.",
-        },
-      },
-      {
-        "@type": "Question",
-        name: "What is FAQ markup?",
-        acceptedAnswer: {
-          "@type": "Answer",
-          text:
-            "A way to publish your common questions and answers in schema.org format. Advantage: helps AI assistants and search engines retrieve accurate responses to routine questions.",
-        },
-      },
-      {
-        "@type": "Question",
-        name: "What is Service markup?",
-        acceptedAnswer: {
-          "@type": "Answer",
-          text:
-            "Structured data describing what you offer, service areas, and key attributes. Advantage: makes it easier for AI systems to understand your offerings.",
+            "Centralized AI Ready Profile: a single, verified public page plus structured JSON-LD that consolidates your official links and key facts. Basic profile: core fields (name, tagline, bio) with a limited number of links and images. Products / Catalog: structured listings of products or offerings in a machine-readable format. Updates: a publishable stream of official changes (new offerings, announcements, corrections) that keeps your record current. FAQ markup: publish common questions and answers in schema.org format. Service markup: structured data describing offerings, service areas, and attributes.",
         },
       },
     ],
@@ -231,13 +231,38 @@ export default function Page() {
           <h3 className="font-semibold">What is AEOBRO?</h3>
           <p className="text-gray-700 mt-2">
             AEOBRO is the creator of the <strong>AI Identity Layer™</strong>—a
-            machine-readable registry that helps AI systems find verified facts
-            about your brand, business, or creator identity.
+            machine-readable, public, verified identity registry that helps AI
+            systems find verified facts about your brand, business, or creator
+            identity.
           </p>
-          <p className="text-gray-700 mt-2">
-            AEOBRO publishes a public, structured record (including{" "}
-            <strong>JSON-LD</strong>) so AI systems can represent you accurately
-            instead of guessing.
+
+          <p className="text-gray-700 mt-3">
+            <strong>AEOBRO provides:</strong>
+          </p>
+          <ul className="list-disc list-inside text-gray-700 mt-2 space-y-2">
+            <li>
+              <strong>A canonical public record</strong>
+              <br />
+              One stable published URL that represents the authoritative version
+              of your organization.
+            </li>
+            <li>
+              <strong>Verification-gated claims</strong>
+              <br />
+              Facts are published only when ownership or authority can be proven.
+            </li>
+            <li>
+              <strong>Machine-readable structure</strong>
+              <br />
+              Your identity, services, and FAQs are published in formats AI
+              systems can interpret and cite.
+            </li>
+          </ul>
+
+          <p className="text-gray-700 mt-4">
+            In review, a reference-grade truth source using a structured record
+            (including <strong>JSON-LD</strong>) so AI systems can represent you
+            accurately instead of guessing.
           </p>
 
           <div className="mt-4">
@@ -258,6 +283,83 @@ export default function Page() {
           </div>
         </div>
 
+        {/* NEW: Why AEOBRO exists */}
+        <div className="card">
+          <h3 className="font-semibold">Why did we create AEOBRO?</h3>
+          <p className="text-gray-700 mt-2">
+            The problem is that AI systems already answer questions about your
+            organization.
+          </p>
+          <p className="text-gray-700 mt-2">They pull from:</p>
+          <ul className="list-disc list-inside text-gray-700 mt-2 space-y-1">
+            <li>outdated websites</li>
+            <li>scraped directories</li>
+            <li>inconsistent bios</li>
+            <li>unverified third-party claims</li>
+          </ul>
+          <p className="text-gray-700 mt-3">
+            When facts conflict, AI systems infer.
+          </p>
+          <p className="text-gray-700 mt-2">
+            <strong>Inference is not authority.</strong>
+            <br />
+            AEOBRO was created to ease the costly pain point of inference, with a
+            clear public record.
+          </p>
+        </div>
+
+        {/* NEW: AI assistants vs AEOBRO */}
+        <div className="card">
+          <h3 className="font-semibold">
+            How is AEOBRO different from an AI assistant?
+          </h3>
+
+          <p className="text-gray-700 mt-2">
+            <strong>AI assistants vs AEOBRO</strong>
+          </p>
+
+          <div className="grid md:grid-cols-2 gap-6 mt-3">
+            <div>
+              <p className="text-gray-900 font-medium">AI assistants</p>
+              <ul className="list-disc list-inside text-gray-700 mt-2 space-y-1">
+                <li>Generate answers</li>
+                <li>Interpret sources</li>
+                <li>Change behavior as models update</li>
+                <li>Do not maintain official records</li>
+              </ul>
+            </div>
+            <div>
+              <p className="text-gray-900 font-medium">AEOBRO</p>
+              <ul className="list-disc list-inside text-gray-700 mt-2 space-y-1">
+                <li>Publishes official records</li>
+                <li>Verifies authority</li>
+                <li>Persists across model updates</li>
+                <li>Can be cited as a source</li>
+              </ul>
+            </div>
+          </div>
+
+          <p className="text-gray-700 mt-4">
+            AEOBRO does not compete with AI assistants.
+            <br />
+            It gives them something defensible to reference.
+          </p>
+        </div>
+
+        {/* NEW: Who AEOBRO is for */}
+        <div className="card">
+          <h3 className="font-semibold">Who is AEOBRO for?</h3>
+          <p className="text-gray-700 mt-2">
+            AEOBRO is for organizations where accuracy matters:
+          </p>
+          <ul className="list-disc list-inside text-gray-700 mt-2 space-y-1">
+            <li>professional services</li>
+            <li>regulated industries</li>
+            <li>reputation-sensitive businesses</li>
+            <li>entities frequently misrepresented online</li>
+          </ul>
+        </div>
+
         <div className="card">
           <h3 className="font-semibold">What does AEOBRO stand for?</h3>
           <p className="text-gray-700 mt-2">
@@ -265,7 +367,6 @@ export default function Page() {
           </p>
         </div>
 
-        {/* JSON-LD card follows the acronym explanation */}
         <div className="card">
           <h3 className="font-semibold">What is JSON-LD?</h3>
           <p className="text-gray-700 mt-2">
@@ -418,7 +519,7 @@ export default function Page() {
           </p>
         </div>
 
-        {/* MOVE HERE: Results timing card (now just above affiliation tile) */}
+        {/* Keep this just above affiliation tile */}
         <div className="card">
           <h3 className="font-semibold">Why don’t I see results immediately?</h3>
           <p className="text-gray-700 mt-2">
@@ -442,7 +543,7 @@ export default function Page() {
           </p>
         </div>
 
-        {/* MOVE HERE: No guarantees card (now just below affiliation tile) */}
+        {/* Keep this just below affiliation tile */}
         <div className="card">
           <h3 className="font-semibold">
             Will AEOBRO guarantee rankings, traffic, or visibility?
@@ -504,13 +605,25 @@ export default function Page() {
             consistent source. (No guarantees of placement or ranking.)
           </p>
 
-          <h4 className="font-medium mt-4">
-            Basic profile (links/images caps)
-          </h4>
+          <h4 className="font-medium mt-4">Basic profile (links/images caps)</h4>
           <p className="text-gray-700 mt-2">
             Core fields (name, tagline, bio) with a limited number of links and
             images. <em>Advantage:</em> fast setup with clean machine-readable
             output and minimal upkeep.
+          </p>
+
+          <h4 className="font-medium mt-4">Products / Catalog</h4>
+          <p className="text-gray-700 mt-2">
+            Structured listings of products or offerings in a machine-readable
+            format. <em>Advantage:</em> helps AI systems understand what you sell
+            or offer, using consistent product data.
+          </p>
+
+          <h4 className="font-medium mt-4">Updates</h4>
+          <p className="text-gray-700 mt-2">
+            A publishable stream of official changes—new offerings, announcements,
+            corrections, and clarifications. <em>Advantage:</em> keeps your record
+            current and reduces stale or conflicting third-party descriptions.
           </p>
 
           <h4 className="font-medium mt-4">FAQ markup</h4>
