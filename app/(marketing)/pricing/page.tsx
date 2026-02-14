@@ -4,6 +4,30 @@
 import { useEffect, useMemo, useState, useCallback } from "react";
 import ManageBillingButton from "@/components/stripe/ManageBillingButton";
 
+/**
+ * ✅ IMPORTANT
+ * These are Stripe TEST mode Price IDs you provided.
+ * Price IDs are not secret, but you should still prefer env vars.
+ *
+ * If you later switch to LIVE billing, replace these with LIVE price IDs
+ * (or just rely on env vars and remove fallbacks).
+ */
+const FALLBACK_TEST_PRICES = {
+  LITE: "price_1T0l7WBWc0vqeQejEjQ4t8ts",
+  PLUS: "price_1T0l7qBWc0vqeQejYB3IThkA",
+} as const;
+
+/**
+ * We prefer env vars. If they’re missing at runtime (common when set in the wrong Vercel scope),
+ * we fall back so the page still functions and we can diagnose.
+ */
+const PRICES = {
+  LITE: process.env.NEXT_PUBLIC_STRIPE_PRICE_LITE || FALLBACK_TEST_PRICES.LITE,
+  PLUS: process.env.NEXT_PUBLIC_STRIPE_PRICE_PLUS || FALLBACK_TEST_PRICES.PLUS,
+  // PRO intentionally retained for backend/hidden tier use (not shown in UI)
+  PRO: process.env.NEXT_PUBLIC_STRIPE_PRICE_PRO ?? "",
+} as const;
+
 type PlanTitle = "Lite" | "Plus";
 
 function cx(...parts: Array<string | false | null | undefined>) {
@@ -17,9 +41,12 @@ function normalizePlanForUi(raw?: string | null): PlanTitle {
   switch (v) {
     case "PLUS":
       return "Plus";
-    // PRO users show as Plus in UI
+    // ✅ Pro users are classified as Plus (UI)
     case "PRO":
       return "Plus";
+    // Treat FREE, LITE, and unknown as Lite
+    case "LITE":
+    case "FREE":
     default:
       return "Lite";
   }
@@ -30,7 +57,8 @@ function formatStatusLabel(status?: string | null) {
 
   if (v === "TRIALING") return "Trialing";
   if (v === "PAST_DUE") return "Past due";
-  if (v === "INCOMPLETE" || v === "INCOMPLETE_EXPIRED") return "Payment incomplete";
+  if (v === "INCOMPLETE" || v === "INCOMPLETE_EXPIRED")
+    return "Payment incomplete";
   if (v === "UNPAID") return "Unpaid";
   if (v === "CANCELED") return "Canceled";
   if (v === "ACTIVE" || !v) return "Active";
@@ -113,19 +141,6 @@ export default function PricingPage() {
   const [planStatus, setPlanStatus] = useState<string | null>(null);
   const [planLoading, setPlanLoading] = useState(true);
 
-  // ✅ IMPORTANT: do NOT hardcode fallbacks.
-  // If env is missing, buttons should disable (prevents wrong pricing).
-  const PRICES = useMemo(
-    () =>
-      ({
-        LITE: process.env.NEXT_PUBLIC_STRIPE_PRICE_LITE ?? "",
-        PLUS: process.env.NEXT_PUBLIC_STRIPE_PRICE_PLUS ?? "",
-        // PRO retained for backend/hidden tier use (not shown in UI)
-        PRO: process.env.NEXT_PUBLIC_STRIPE_PRICE_PRO ?? "",
-      }) as const,
-    []
-  );
-
   // Fetch plan for logged-in users
   useEffect(() => {
     let cancelled = false;
@@ -133,8 +148,10 @@ export default function PricingPage() {
     (async () => {
       try {
         const res = await fetch("/api/account", { cache: "no-store" });
-        if (!res.ok) return; // 401 when logged out, etc.
-
+        if (!res.ok) {
+          // 401 when logged out, or other errors – silently ignore
+          return;
+        }
         const data = await res.json();
         const rawPlan = data?.plan as string | undefined;
         const rawStatus = data?.planStatus as string | undefined;
@@ -142,7 +159,7 @@ export default function PricingPage() {
         if (!cancelled && rawPlan) setCurrentPlan(normalizePlanForUi(rawPlan));
         if (!cancelled && rawStatus) setPlanStatus(rawStatus);
       } catch {
-        // ignore; pricing still works without this
+        // ignore; pricing still works fine without this
       } finally {
         if (!cancelled) setPlanLoading(false);
       }
@@ -163,7 +180,8 @@ export default function PricingPage() {
       url.searchParams.delete("start");
       url.searchParams.delete("plan");
       const clean =
-        url.pathname + (url.searchParams.toString() ? `?${url.searchParams}` : "");
+        url.pathname +
+        (url.searchParams.toString() ? `?${url.searchParams}` : "");
       window.history.replaceState({}, "", clean);
       startCheckout(priceId, plan);
     }
@@ -218,40 +236,38 @@ export default function PricingPage() {
     }
   }, []);
 
-  const missingKeys = useMemo(() => {
-    const missing: string[] = [];
-    if (!PRICES.LITE) missing.push("NEXT_PUBLIC_STRIPE_PRICE_LITE");
-    if (!PRICES.PLUS) missing.push("NEXT_PUBLIC_STRIPE_PRICE_PLUS");
-    return missing;
-  }, [PRICES.LITE, PRICES.PLUS]);
-
-  const showConfigHint = useMemo(() => {
-    // show hint in prod too (you want to see this when it's broken)
-    return missingKeys.length > 0;
-  }, [missingKeys.length]);
+  const usingFallback = useMemo(() => {
+    const liteEnv = process.env.NEXT_PUBLIC_STRIPE_PRICE_LITE;
+    const plusEnv = process.env.NEXT_PUBLIC_STRIPE_PRICE_PLUS;
+    return !liteEnv || !plusEnv;
+  }, []);
 
   const Button = ({
     children,
     onClick,
     disabled,
     title,
+    variant = "primary",
   }: {
     children: React.ReactNode;
     onClick?: () => void;
     disabled?: boolean;
     title?: string;
+    variant?: "primary" | "disabled";
   }) => {
     const base =
       "mt-auto inline-flex h-10 items-center justify-center rounded-xl px-4 py-2 text-center font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-sky-500";
     const enabled = "bg-black text-white hover:bg-sky-600";
     const disabledCls = "bg-neutral-200 text-neutral-500 cursor-not-allowed";
 
+    const isDisabled = disabled || variant === "disabled";
+
     return (
       <button
-        className={cx(base, disabled ? disabledCls : enabled)}
-        disabled={disabled}
+        className={cx(base, isDisabled ? disabledCls : enabled)}
+        disabled={isDisabled}
         title={title}
-        onClick={disabled ? undefined : onClick}
+        onClick={isDisabled ? undefined : onClick}
       >
         {children}
       </button>
@@ -295,20 +311,26 @@ export default function PricingPage() {
         <h3 className="text-xl font-semibold">{title}</h3>
         <div className="text-3xl font-bold">{price}</div>
 
+        {/* Best for … */}
         <p className="text-sm text-gray-700 -mt-2">
           <span className="font-medium">Best for:</span> {bestFor}
         </p>
 
         <ul className="space-y-1">
           {features.map((f) => (
-            <FeatureLine key={f.label} label={f.label} tooltip={f.tooltip} variant="check" />
+            <FeatureLine
+              key={f.label}
+              label={f.label}
+              tooltip={f.tooltip}
+              variant="check"
+            />
           ))}
         </ul>
 
         <Button
-          disabled={disabled}
-          title={disabled ? `Missing Stripe Price ID for ${title}.` : undefined}
-          onClick={disabled ? undefined : () => startCheckout(priceId, title)}
+          disabled={!priceId}
+          title={!priceId ? `Missing Stripe Price ID for ${title}.` : undefined}
+          onClick={!priceId ? undefined : () => startCheckout(priceId, title)}
         >
           {loading === title ? "Redirecting…" : btnText}
         </Button>
@@ -355,6 +377,22 @@ export default function PricingPage() {
         </section>
       )}
 
+      {usingFallback && (
+        <div className="mb-6 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+          Some pricing configuration is missing in the <strong>Vercel Project</strong>{" "}
+          environment variables. The page is using fallback Price IDs so you can keep testing.
+          <div className="mt-1 text-xs text-amber-800/80">
+            Missing:{" "}
+            {!process.env.NEXT_PUBLIC_STRIPE_PRICE_LITE
+              ? "NEXT_PUBLIC_STRIPE_PRICE_LITE "
+              : ""}
+            {!process.env.NEXT_PUBLIC_STRIPE_PRICE_PLUS
+              ? "NEXT_PUBLIC_STRIPE_PRICE_PLUS"
+              : ""}
+          </div>
+        </div>
+      )}
+
       {err && (
         <div className="mb-6 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
           {err}
@@ -363,17 +401,22 @@ export default function PricingPage() {
 
       {/* Two cards (Lite, Plus) */}
       <div className="grid gap-6 md:grid-cols-2 mt-2">
+        {/* Lite */}
         <PlanCard
           title="Lite"
           price="$9.99/mo"
           bestFor="individuals, creators, or small teams who want a simple, AI-ready profile."
           features={[
-            { label: "Centralized AI Ready Profile", tooltip: CENTRALIZED_TOOLTIP },
+            {
+              label: "Centralized AI Ready Profile",
+              tooltip: CENTRALIZED_TOOLTIP,
+            },
           ]}
           btnText="Get Lite"
           priceId={PRICES.LITE}
         />
 
+        {/* Plus (Most Popular) */}
         <PlanCard
           title="Plus"
           price="$29.99/mo"
@@ -390,14 +433,6 @@ export default function PricingPage() {
           featured
         />
       </div>
-
-      {showConfigHint && (
-        <p className="mt-4 text-sm text-gray-600">
-          Some pricing configuration is missing:{" "}
-          <span className="font-mono">{missingKeys.join(", ")}</span>. Update the
-          environment variables in the Vercel <b>Project</b> settings and redeploy.
-        </p>
-      )}
     </div>
   );
 }
