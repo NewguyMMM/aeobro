@@ -4,14 +4,14 @@
 import { useEffect, useMemo, useState, useCallback } from "react";
 import ManageBillingButton from "@/components/stripe/ManageBillingButton";
 
-// ✅ Belt-and-suspenders: if env is missing, still use the known Plus price ID
-const PLUS_PRICE_ID =
-  process.env.NEXT_PUBLIC_STRIPE_PRICE_PLUS ||
-  "price_1SUQ2lB1vvKzOrheks1KGG6J";
-
+/**
+ * ✅ IMPORTANT:
+ * Do NOT hardcode fallback Stripe price IDs here.
+ * If env vars are missing, we surface a clear UI hint + disable buttons.
+ */
 const PRICES = {
   LITE: process.env.NEXT_PUBLIC_STRIPE_PRICE_LITE ?? "",
-  PLUS: PLUS_PRICE_ID,
+  PLUS: process.env.NEXT_PUBLIC_STRIPE_PRICE_PLUS ?? "",
   // PRO intentionally retained for backend/hidden tier use (not shown in UI)
   PRO: process.env.NEXT_PUBLIC_STRIPE_PRICE_PRO ?? "",
 } as const;
@@ -142,7 +142,9 @@ export default function PricingPage() {
         }
         const data = await res.json();
         const rawPlan = data?.plan as string | undefined;
-        const rawStatus = data?.planStatus as string | undefined;
+        const rawStatus =
+          (data?.planStatus as string | undefined) ??
+          (data?.subscriptionStatus as string | undefined);
 
         if (!cancelled && rawPlan) {
           setCurrentPlan(normalizePlanForUi(rawPlan));
@@ -172,8 +174,7 @@ export default function PricingPage() {
       url.searchParams.delete("start");
       url.searchParams.delete("plan");
       const clean =
-        url.pathname +
-        (url.searchParams.toString() ? `?${url.searchParams}` : "");
+        url.pathname + (url.searchParams.toString() ? `?${url.searchParams}` : "");
       window.history.replaceState({}, "", clean);
       startCheckout(priceId, plan);
     }
@@ -302,7 +303,6 @@ export default function PricingPage() {
         <h3 className="text-xl font-semibold">{title}</h3>
         <div className="text-3xl font-bold">{price}</div>
 
-        {/* Best for … */}
         <p className="text-sm text-gray-700 -mt-2">
           <span className="font-medium">Best for:</span> {bestFor}
         </p>
@@ -348,7 +348,6 @@ export default function PricingPage() {
 
   return (
     <div className="container pt-24 pb-16">
-      {/* Current plan & Manage subscription bar (logged-in users only) */}
       {!planLoading && currentPlan && (
         <section className="mb-6 rounded-2xl border border-sky-100 bg-sky-50 px-4 py-3 flex flex-col gap-2 md:flex-row md:items-center md:justify-between md:gap-4">
           <div>
@@ -374,24 +373,18 @@ export default function PricingPage() {
         </div>
       )}
 
-      {/* Two cards (Lite, Plus) */}
       <div className="grid gap-6 md:grid-cols-2 mt-2">
-        {/* Lite */}
         <PlanCard
           title="Lite"
           price="$9.99/mo"
           bestFor="individuals, creators, or small teams who want a simple, AI-ready profile."
           features={[
-            {
-              label: "Centralized AI Ready Profile",
-              tooltip: CENTRALIZED_TOOLTIP,
-            },
+            { label: "Centralized AI Ready Profile", tooltip: CENTRALIZED_TOOLTIP },
           ]}
           btnText="Get Lite"
           priceId={PRICES.LITE}
         />
 
-        {/* Plus (Most Popular) */}
         <PlanCard
           title="Plus"
           price="$29.99/mo"
@@ -419,4 +412,3 @@ export default function PricingPage() {
     </div>
   );
 }
-
