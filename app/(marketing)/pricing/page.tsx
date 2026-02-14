@@ -6,13 +6,6 @@ import ManageBillingButton from "@/components/stripe/ManageBillingButton";
 
 type PlanTitle = "Lite" | "Plus";
 
-const PRICES = {
-  LITE: process.env.NEXT_PUBLIC_STRIPE_PRICE_LITE ?? "",
-  PLUS: process.env.NEXT_PUBLIC_STRIPE_PRICE_PLUS ?? "",
-  // PRO intentionally retained for backend/hidden tier use (not shown in UI)
-  PRO: process.env.NEXT_PUBLIC_STRIPE_PRICE_PRO ?? "",
-} as const;
-
 function cx(...parts: Array<string | false | null | undefined>) {
   return parts.filter(Boolean).join(" ");
 }
@@ -24,12 +17,9 @@ function normalizePlanForUi(raw?: string | null): PlanTitle {
   switch (v) {
     case "PLUS":
       return "Plus";
-    // Pro users are classified as Plus (UI)
+    // PRO users show as Plus in UI
     case "PRO":
       return "Plus";
-    // Treat FREE, LITE, and unknown as Lite
-    case "LITE":
-    case "FREE":
     default:
       return "Lite";
   }
@@ -123,6 +113,19 @@ export default function PricingPage() {
   const [planStatus, setPlanStatus] = useState<string | null>(null);
   const [planLoading, setPlanLoading] = useState(true);
 
+  // ✅ IMPORTANT: do NOT hardcode fallbacks.
+  // If env is missing, buttons should disable (prevents wrong pricing).
+  const PRICES = useMemo(
+    () =>
+      ({
+        LITE: process.env.NEXT_PUBLIC_STRIPE_PRICE_LITE ?? "",
+        PLUS: process.env.NEXT_PUBLIC_STRIPE_PRICE_PLUS ?? "",
+        // PRO retained for backend/hidden tier use (not shown in UI)
+        PRO: process.env.NEXT_PUBLIC_STRIPE_PRICE_PRO ?? "",
+      }) as const,
+    []
+  );
+
   // Fetch plan for logged-in users
   useEffect(() => {
     let cancelled = false;
@@ -130,10 +133,8 @@ export default function PricingPage() {
     (async () => {
       try {
         const res = await fetch("/api/account", { cache: "no-store" });
-        if (!res.ok) {
-          // 401 when logged out, or other errors – silently ignore
-          return;
-        }
+        if (!res.ok) return; // 401 when logged out, etc.
+
         const data = await res.json();
         const rawPlan = data?.plan as string | undefined;
         const rawStatus = data?.planStatus as string | undefined;
@@ -141,7 +142,7 @@ export default function PricingPage() {
         if (!cancelled && rawPlan) setCurrentPlan(normalizePlanForUi(rawPlan));
         if (!cancelled && rawStatus) setPlanStatus(rawStatus);
       } catch {
-        // ignore; pricing still works fine without this
+        // ignore; pricing still works without this
       } finally {
         if (!cancelled) setPlanLoading(false);
       }
@@ -189,6 +190,7 @@ export default function PricingPage() {
 
     try {
       setLoading(plan);
+
       const res = await fetch("/api/stripe/create-checkout-session", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -216,46 +218,40 @@ export default function PricingPage() {
     }
   }, []);
 
-  const showConfigHint = useMemo(() => {
-    // Only require Lite + Plus for the UI
-    const missing = !PRICES.LITE || !PRICES.PLUS;
-    return process.env.NODE_ENV !== "production" && missing;
-  }, []);
-
-  // Helpful in ANY env if something is missing (but keep it subtle)
-  const missingSummary = useMemo(() => {
+  const missingKeys = useMemo(() => {
     const missing: string[] = [];
     if (!PRICES.LITE) missing.push("NEXT_PUBLIC_STRIPE_PRICE_LITE");
     if (!PRICES.PLUS) missing.push("NEXT_PUBLIC_STRIPE_PRICE_PLUS");
     return missing;
-  }, []);
+  }, [PRICES.LITE, PRICES.PLUS]);
+
+  const showConfigHint = useMemo(() => {
+    // show hint in prod too (you want to see this when it's broken)
+    return missingKeys.length > 0;
+  }, [missingKeys.length]);
 
   const Button = ({
     children,
     onClick,
     disabled,
     title,
-    variant = "primary",
   }: {
     children: React.ReactNode;
     onClick?: () => void;
     disabled?: boolean;
     title?: string;
-    variant?: "primary" | "disabled";
   }) => {
     const base =
       "mt-auto inline-flex h-10 items-center justify-center rounded-xl px-4 py-2 text-center font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-sky-500";
     const enabled = "bg-black text-white hover:bg-sky-600";
     const disabledCls = "bg-neutral-200 text-neutral-500 cursor-not-allowed";
 
-    const isDisabled = disabled || variant === "disabled";
-
     return (
       <button
-        className={cx(base, isDisabled ? disabledCls : enabled)}
-        disabled={isDisabled}
+        className={cx(base, disabled ? disabledCls : enabled)}
+        disabled={disabled}
         title={title}
-        onClick={isDisabled ? undefined : onClick}
+        onClick={disabled ? undefined : onClick}
       >
         {children}
       </button>
@@ -305,12 +301,7 @@ export default function PricingPage() {
 
         <ul className="space-y-1">
           {features.map((f) => (
-            <FeatureLine
-              key={f.label}
-              label={f.label}
-              tooltip={f.tooltip}
-              variant="check"
-            />
+            <FeatureLine key={f.label} label={f.label} tooltip={f.tooltip} variant="check" />
           ))}
         </ul>
 
@@ -344,6 +335,7 @@ export default function PricingPage() {
 
   return (
     <div className="container pt-24 pb-16">
+      {/* Current plan & Manage subscription bar (logged-in users only) */}
       {!planLoading && currentPlan && (
         <section className="mb-6 rounded-2xl border border-sky-100 bg-sky-50 px-4 py-3 flex flex-col gap-2 md:flex-row md:items-center md:justify-between md:gap-4">
           <div>
@@ -369,6 +361,7 @@ export default function PricingPage() {
         </div>
       )}
 
+      {/* Two cards (Lite, Plus) */}
       <div className="grid gap-6 md:grid-cols-2 mt-2">
         <PlanCard
           title="Lite"
@@ -398,19 +391,11 @@ export default function PricingPage() {
         />
       </div>
 
-      {/* Minimal hint if something is missing */}
-      {missingSummary.length > 0 && (
-        <p className="mt-4 text-sm text-gray-500">
-          Some pricing configuration is missing:{" "}
-          <span className="font-mono">{missingSummary.join(", ")}</span>. Update
-          the environment variables and redeploy.
-        </p>
-      )}
-
       {showConfigHint && (
-        <p className="mt-2 text-sm text-gray-500">
-          Dev hint: NEXT_PUBLIC Stripe Price IDs are inlined at build time. After changing them,
-          redeploy to refresh the client bundle.
+        <p className="mt-4 text-sm text-gray-600">
+          Some pricing configuration is missing:{" "}
+          <span className="font-mono">{missingKeys.join(", ")}</span>. Update the
+          environment variables in the Vercel <b>Project</b> settings and redeploy.
         </p>
       )}
     </div>
