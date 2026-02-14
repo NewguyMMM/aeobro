@@ -4,19 +4,14 @@
 import { useEffect, useMemo, useState, useCallback } from "react";
 import ManageBillingButton from "@/components/stripe/ManageBillingButton";
 
-/**
- * ✅ IMPORTANT:
- * Do NOT hardcode fallback Stripe price IDs here.
- * If env vars are missing, we surface a clear UI hint + disable buttons.
- */
+type PlanTitle = "Lite" | "Plus";
+
 const PRICES = {
   LITE: process.env.NEXT_PUBLIC_STRIPE_PRICE_LITE ?? "",
   PLUS: process.env.NEXT_PUBLIC_STRIPE_PRICE_PLUS ?? "",
   // PRO intentionally retained for backend/hidden tier use (not shown in UI)
   PRO: process.env.NEXT_PUBLIC_STRIPE_PRICE_PRO ?? "",
 } as const;
-
-type PlanTitle = "Lite" | "Plus";
 
 function cx(...parts: Array<string | false | null | undefined>) {
   return parts.filter(Boolean).join(" ");
@@ -29,7 +24,7 @@ function normalizePlanForUi(raw?: string | null): PlanTitle {
   switch (v) {
     case "PLUS":
       return "Plus";
-    // ✅ Pro users are classified as Plus (UI)
+    // Pro users are classified as Plus (UI)
     case "PRO":
       return "Plus";
     // Treat FREE, LITE, and unknown as Lite
@@ -45,8 +40,7 @@ function formatStatusLabel(status?: string | null) {
 
   if (v === "TRIALING") return "Trialing";
   if (v === "PAST_DUE") return "Past due";
-  if (v === "INCOMPLETE" || v === "INCOMPLETE_EXPIRED")
-    return "Payment incomplete";
+  if (v === "INCOMPLETE" || v === "INCOMPLETE_EXPIRED") return "Payment incomplete";
   if (v === "UNPAID") return "Unpaid";
   if (v === "CANCELED") return "Canceled";
   if (v === "ACTIVE" || !v) return "Active";
@@ -142,16 +136,10 @@ export default function PricingPage() {
         }
         const data = await res.json();
         const rawPlan = data?.plan as string | undefined;
-        const rawStatus =
-          (data?.planStatus as string | undefined) ??
-          (data?.subscriptionStatus as string | undefined);
+        const rawStatus = data?.planStatus as string | undefined;
 
-        if (!cancelled && rawPlan) {
-          setCurrentPlan(normalizePlanForUi(rawPlan));
-        }
-        if (!cancelled && rawStatus) {
-          setPlanStatus(rawStatus);
-        }
+        if (!cancelled && rawPlan) setCurrentPlan(normalizePlanForUi(rawPlan));
+        if (!cancelled && rawStatus) setPlanStatus(rawStatus);
       } catch {
         // ignore; pricing still works fine without this
       } finally {
@@ -229,9 +217,17 @@ export default function PricingPage() {
   }, []);
 
   const showConfigHint = useMemo(() => {
-    // ✅ Only require Lite + Plus for dev hint
+    // Only require Lite + Plus for the UI
     const missing = !PRICES.LITE || !PRICES.PLUS;
     return process.env.NODE_ENV !== "production" && missing;
+  }, []);
+
+  // Helpful in ANY env if something is missing (but keep it subtle)
+  const missingSummary = useMemo(() => {
+    const missing: string[] = [];
+    if (!PRICES.LITE) missing.push("NEXT_PUBLIC_STRIPE_PRICE_LITE");
+    if (!PRICES.PLUS) missing.push("NEXT_PUBLIC_STRIPE_PRICE_PLUS");
+    return missing;
   }, []);
 
   const Button = ({
@@ -319,9 +315,9 @@ export default function PricingPage() {
         </ul>
 
         <Button
-          disabled={!priceId}
-          title={!priceId ? `Missing Stripe Price ID for ${title}.` : undefined}
-          onClick={!priceId ? undefined : () => startCheckout(priceId, title)}
+          disabled={disabled}
+          title={disabled ? `Missing Stripe Price ID for ${title}.` : undefined}
+          onClick={disabled ? undefined : () => startCheckout(priceId, title)}
         >
           {loading === title ? "Redirecting…" : btnText}
         </Button>
@@ -402,11 +398,19 @@ export default function PricingPage() {
         />
       </div>
 
-      {showConfigHint && (
+      {/* Minimal hint if something is missing */}
+      {missingSummary.length > 0 && (
         <p className="mt-4 text-sm text-gray-500">
-          If a plan button is disabled due to configuration, add the corresponding
-          Stripe Price ID to your environment variables. (Note: some tiers may be
-          intentionally hidden.)
+          Some pricing configuration is missing:{" "}
+          <span className="font-mono">{missingSummary.join(", ")}</span>. Update
+          the environment variables and redeploy.
+        </p>
+      )}
+
+      {showConfigHint && (
+        <p className="mt-2 text-sm text-gray-500">
+          Dev hint: NEXT_PUBLIC Stripe Price IDs are inlined at build time. After changing them,
+          redeploy to refresh the client bundle.
         </p>
       )}
     </div>
