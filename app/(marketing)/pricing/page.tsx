@@ -12,11 +12,11 @@ const PLUS_PRICE_ID =
 const PRICES = {
   LITE: process.env.NEXT_PUBLIC_STRIPE_PRICE_LITE ?? "",
   PLUS: PLUS_PRICE_ID,
+  // PRO intentionally retained for backend/hidden tier use (not shown in UI)
   PRO: process.env.NEXT_PUBLIC_STRIPE_PRICE_PRO ?? "",
-  BUSINESS: process.env.NEXT_PUBLIC_STRIPE_PRICE_BUSINESS ?? "",
 } as const;
 
-type PlanTitle = "Lite" | "Plus" | "Pro" | "Business";
+type PlanTitle = "Lite" | "Plus";
 
 function cx(...parts: Array<string | false | null | undefined>) {
   return parts.filter(Boolean).join(" ");
@@ -29,10 +29,9 @@ function normalizePlanForUi(raw?: string | null): PlanTitle {
   switch (v) {
     case "PLUS":
       return "Plus";
+    // ✅ Pro users are classified as Plus (UI)
     case "PRO":
-      return "Pro";
-    case "BUSINESS":
-      return "Business";
+      return "Plus";
     // Treat FREE, LITE, and unknown as Lite
     case "LITE":
     case "FREE":
@@ -173,7 +172,8 @@ export default function PricingPage() {
       url.searchParams.delete("start");
       url.searchParams.delete("plan");
       const clean =
-        url.pathname + (url.searchParams.toString() ? `?${url.searchParams}` : "");
+        url.pathname +
+        (url.searchParams.toString() ? `?${url.searchParams}` : "");
       window.history.replaceState({}, "", clean);
       startCheckout(priceId, plan);
     }
@@ -228,8 +228,8 @@ export default function PricingPage() {
   }, []);
 
   const showConfigHint = useMemo(() => {
-    // ✅ Only require Lite, Plus, Pro for dev hint (Business is hidden from UI)
-    const missing = !PRICES.LITE || !PRICES.PLUS || !PRICES.PRO;
+    // ✅ Only require Lite + Plus for dev hint
+    const missing = !PRICES.LITE || !PRICES.PLUS;
     return process.env.NODE_ENV !== "production" && missing;
   }, []);
 
@@ -272,30 +272,25 @@ export default function PricingPage() {
     price,
     bestFor,
     features,
-    soon = [],
     btnText,
     priceId,
     featured = false,
-    comingSoon = false, // forces disabled + gray highlight
   }: {
     title: PlanTitle;
     price: string;
     bestFor: string;
     features: FeatureSpec[];
-    soon?: FeatureSpec[];
     btnText: string;
     priceId: string;
     featured?: boolean;
-    comingSoon?: boolean;
   }) => {
-    const disabled = comingSoon || !priceId;
+    const disabled = !priceId;
 
     return (
       <div
         className={cx(
-          "relative flex flex-col gap-4 rounded-2xl p-6 shadow-sm border",
-          featured && "border-sky-500/40 shadow-md",
-          comingSoon ? "bg-neutral-50 border-neutral-200" : "bg-white"
+          "relative flex flex-col gap-4 rounded-2xl p-6 shadow-sm border bg-white",
+          featured && "border-sky-500/40 shadow-md"
         )}
       >
         {featured && (
@@ -321,32 +316,14 @@ export default function PricingPage() {
               variant="check"
             />
           ))}
-          {soon.map((f) => (
-            <FeatureLine
-              key={f.label}
-              label={f.label}
-              tooltip={f.tooltip}
-              variant="wrench"
-              comingSoon
-            />
-          ))}
         </ul>
 
         <Button
-          disabled={!comingSoon && !priceId ? true : false}
-          variant={comingSoon ? "disabled" : "primary"}
-          title={
-            comingSoon
-              ? "This tier is coming soon."
-              : !priceId
-              ? `Missing Stripe Price ID for ${title}.`
-              : undefined
-          }
-          onClick={
-            comingSoon || !priceId ? undefined : () => startCheckout(priceId, title)
-          }
+          disabled={!priceId}
+          title={!priceId ? `Missing Stripe Price ID for ${title}.` : undefined}
+          onClick={!priceId ? undefined : () => startCheckout(priceId, title)}
         >
-          {loading === title ? "Redirecting…" : comingSoon ? "Coming soon" : btnText}
+          {loading === title ? "Redirecting…" : btnText}
         </Button>
       </div>
     );
@@ -355,7 +332,7 @@ export default function PricingPage() {
   /* ------------------------ Feature content ------------------------ */
 
   const CENTRALIZED_TOOLTIP =
-    "You get a basic, centralized AI-ready profile with your business/creator name, logo, links, and a capped number of images/links. This is like having a business card for machines — enough for AI and search engines to know who you are and where to find you. But: no advanced schema types (FAQ, Services, Reviews, etc.) and no audit trail.";
+    "You get a basic, centralized AI-ready profile with your business/creator name, logo, links, and a capped number of images/links. This is like having a business card for machines — enough for AI and search engines to know who you are and where to find you.";
 
   const UPDATES_TOOLTIP =
     "Publish quick, structured updates (e.g., posts, announcements, listings, events) that AI can index — ideal for frequent changes like new inventory, listings, or promos.";
@@ -364,22 +341,10 @@ export default function PricingPage() {
     "Products/Catalog turns what you sell into structured data — not just a link — so AI can interpret details like name, price, category, and availability, then compare and surface your offerings more accurately.";
 
   const FAQ_TOOLTIP =
-    "Beyond just listing a tagline, you can build a structured Q&A section AI can read.";
+    "Publish common questions and answers in schema.org format. This helps AI assistants retrieve accurate responses to routine questions.";
 
   const SERVICE_TOOLTIP =
-    "Not just “We do photography,” but “We offer wedding packages, family sessions, pricing ranges, etc.” in schema format.";
-
-  const MULTI_LOCATION_TOOLTIP =
-    "Manage up to 10 locations under one account—each with its own hours, address, and phone—published in structured data.";
-
-  const TEAM_SEATS_TOOLTIP =
-    "Invite up to 3 teammates to edit and publish without sharing a login.";
-
-  const BULK_WEBHOOKS_TOOLTIP =
-    "Upload many items at once and notify your other apps automatically when you publish or update.";
-
-  const ANALYTICS_TOOLTIP =
-    "See how often your structured data appears in AI answers/search and which items drive visibility.";
+    "Structured data describing offerings, service areas, and attributes. This helps AI systems understand what you do in a more precise way.";
 
   return (
     <div className="container pt-24 pb-16">
@@ -409,14 +374,19 @@ export default function PricingPage() {
         </div>
       )}
 
-      {/* Three cards (Lite, Plus, Pro) */}
-      <div className="grid gap-6 md:grid-cols-3 mt-2">
+      {/* Two cards (Lite, Plus) */}
+      <div className="grid gap-6 md:grid-cols-2 mt-2">
         {/* Lite */}
         <PlanCard
           title="Lite"
-          price="$4.99/mo"
-          bestFor="individuals, creators, or small teams who want a simple, AI-ready profile without extras."
-          features={[{ label: "Centralized AI Ready Profile", tooltip: CENTRALIZED_TOOLTIP }]}
+          price="$9.99/mo"
+          bestFor="individuals, creators, or small teams who want a simple, AI-ready profile."
+          features={[
+            {
+              label: "Centralized AI Ready Profile",
+              tooltip: CENTRALIZED_TOOLTIP,
+            },
+          ]}
           btnText="Get Lite"
           priceId={PRICES.LITE}
         />
@@ -424,23 +394,8 @@ export default function PricingPage() {
         {/* Plus (Most Popular) */}
         <PlanCard
           title="Plus"
-          price="$19.99/mo"
-          bestFor="For brands that are growing and already engage in frequent updates to social media, have calendar updates, retailers with upcoming sales promotions."
-          features={[
-            { label: "Centralized AI Ready Profile", tooltip: CENTRALIZED_TOOLTIP },
-            { label: "Products / Catalog", tooltip: PRODUCTS_TOOLTIP },
-            { label: "Updates", tooltip: UPDATES_TOOLTIP },
-          ]}
-          btnText="Get Plus"
-          priceId={PRICES.PLUS}
-          featured
-        />
-
-        {/* Pro */}
-        <PlanCard
-          title="Pro"
-          price="$49/mo"
-          bestFor="professionals, small businesses, and product brands looking for richer AI visibility with FAQs, services, and updates."
+          price="$29.99/mo"
+          bestFor="brands and businesses that want richer AI understanding with structured products, updates, FAQs, and services."
           features={[
             { label: "Centralized AI Ready Profile", tooltip: CENTRALIZED_TOOLTIP },
             { label: "Products / Catalog", tooltip: PRODUCTS_TOOLTIP },
@@ -448,45 +403,20 @@ export default function PricingPage() {
             { label: "FAQ markup", tooltip: FAQ_TOOLTIP },
             { label: "Service markup", tooltip: SERVICE_TOOLTIP },
           ]}
-          soon={[]}
-          btnText="Get Pro"
-          priceId={PRICES.PRO}
+          btnText="Get Plus"
+          priceId={PRICES.PLUS}
+          featured
         />
-
-        {/*
-        ─────────────────────────────────────────────────────────────
-        Business tier UI (intentionally hidden for now)
-
-        To re-enable later, move this block above, switch grid back to
-        md:grid-cols-4, and optionally update showConfigHint to include
-        PRICES.BUSINESS again.
-        ─────────────────────────────────────────────────────────────
-
-        <PlanCard
-          title="Business"
-          price="$199/mo"
-          bestFor="agencies, multi-location companies, or organizations that need collaboration, scale, and advanced tools."
-          features={[{ label: "Everything in Pro", tooltip: "Includes all Pro features." }]}
-          soon={[
-            { label: "Multi-location (10)", tooltip: MULTI_LOCATION_TOOLTIP },
-            { label: "Team seats (3)", tooltip: TEAM_SEATS_TOOLTIP },
-            { label: "Bulk import + webhooks", tooltip: BULK_WEBHOOKS_TOOLTIP },
-            { label: "Advanced analytics", tooltip: ANALYTICS_TOOLTIP },
-          ]}
-          btnText="Coming soon"
-          priceId="" // intentionally blank; tier disabled
-          comingSoon
-        />
-        */}
       </div>
 
       {showConfigHint && (
         <p className="mt-4 text-sm text-gray-500">
-          If a plan button is disabled due to configuration, add the corresponding Stripe
-          Price ID to your environment variables. (Note: some tiers may be intentionally
-          disabled or hidden.)
+          If a plan button is disabled due to configuration, add the corresponding
+          Stripe Price ID to your environment variables. (Note: some tiers may be
+          intentionally hidden.)
         </p>
       )}
     </div>
   );
 }
+
