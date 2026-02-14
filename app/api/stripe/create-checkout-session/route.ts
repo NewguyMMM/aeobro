@@ -1,9 +1,10 @@
 // app/api/stripe/create-checkout-session/route.ts
-// ✅ Updated: 2025-11-30
-// - Works with webhook PRICE_TO_PLAN mapping via metadata.plan_price_id
+// ✅ Updated: 2026-02-14
+// - Server-authoritative plan -> price mapping (prevents wrong $4.99 price)
+// - Still supports legacy { priceId } but blocks unknown/old priceIds
+// - Accepts { plan } or { plan, priceId } from client
+// - Keeps webhook metadata.plan_price_id
 // - Reuses & stores stripeCustomerId on the User
-// - Adds useful metadata (user_id, user_email) and client_reference_id
-// - Keeps existing external API: expects { priceId } in POST body
 
 import Stripe from "stripe";
 import { NextResponse } from "next/server";
@@ -24,21 +25,29 @@ const stripe = new Stripe(STRIPE_SECRET_KEY, {
 });
 
 /**
- * Allow only the prices you’ve exposed via env.
- * We normalize & trim so stray spaces don’t break equality.
+ * Stripe TEST price IDs you gave me.
+ * These are NOT secrets (Price IDs are public identifiers).
+ * We use them only as fallbacks if env vars are missing.
  */
-const RAW_ALLOWED = [
-  process.env.NEXT_PUBLIC_STRIPE_PRICE_LITE,
-  process.env.NEXT_PUBLIC_STRIPE_PRICE_PLUS, // Plus tier
-  process.env.NEXT_PUBLIC_STRIPE_PRICE_PRO,
-  process.env.NEXT_PUBLIC_STRIPE_PRICE_BUSINESS,
-  process.env.NEXT_PUBLIC_STRIPE_PRICE_ENTERPRISE,
-];
+const FALLBACK_TEST_PRICES = {
+  LITE: "price_1T0l7WBWc0vqeQejEjQ4t8ts",
+  PLUS: "price_1T0l7qBWc0vqeQejYB3IThkA",
+} as const;
 
-const ALLOWED_PRICE_IDS: string[] = RAW_ALLOWED
-  .filter((v): v is string => typeof v === "string")
-  .map((v) => v.trim())
-  .filter(Boolean);
+type PlanKey = "LITE" | "PLUS" | "PRO" | "BUSINESS" | "ENTERPRISE";
+
+const PRICE_BY_PLAN: Record<PlanKey, string> = {
+  LITE: (process.env.NEXT_PUBLIC_STRIPE_PRICE_LITE || FALLBACK_TEST_PRICES.LITE).trim(),
+  PLUS: (process.env.NEXT_PUBLIC_STRIPE_PRICE_PLUS || FALLBACK_TEST_PRICES.PLUS).trim(),
+  PRO: (process.env.NEXT_PUBLIC_STRIPE_PRICE_PRO || "").trim(),
+  BUSINESS: (process.env.NEXT_PUBLIC_STRIPE_PRICE_BUSINESS || "").trim(),
+  ENTERPRISE: (process.env.NEXT_PUBLIC_STRIPE_PRICE_ENTERPRISE || "").trim(),
+};
+
+// Hard allow-list (ONLY these price IDs are allowed)
+const ALLOWED_PRICE_IDS = Array.from(
+  new Set(Object.values(PRICE_BY_PLAN).filter(Boolean).map((v) => v.trim()))
+);
 
 function appBaseUrl() {
   const u =
@@ -53,7 +62,6 @@ function appBaseUrl() {
 
 export async function POST(req: Request) {
   try {
-    // Require auth so we can associate the purchase with a user
     const session = await getServerSession(authOptions);
     if (!session?.user?.email) {
       return NextResponse.json(
@@ -64,31 +72,60 @@ export async function POST(req: Request) {
 
     const body = (await req.json().catch(() => ({}))) as {
       priceId?: string;
+      plan?: string;
     };
 
-    const priceId = body.priceId;
-    if (!priceId) {
+    const planRaw = (body.plan ?? "").toString().trim().toUpperCase();
+    const plan = (["LITE", "PLUS", "PRO", "BUSINESS", "ENTERPRISE"].includes(planRaw)
+      ? (planRaw as PlanKey)
+      : null);
+
+    const requested = (body.priceId ?? "").toString().trim();
+
+    /**
+     * ✅ Server-authoritative selection:
+     * If plan is provided, we ignore any wrong/old client priceId.
+     */
+    let normalizedPriceId = "";
+    if (plan) {
+      normalizedPriceId = PRICE_BY_PLAN[plan];
+    } else {
+      // Legacy mode: client sends priceId
+      normalizedPriceId = requested;
+    }
+
+    if (!normalizedPriceId) {
       return NextResponse.json(
-        { ok: false, message: "Missing priceId" },
+        {
+          ok: false,
+          message: plan
+            ? `Missing configured Price ID for plan ${plan}. Set NEXT_PUBLIC_STRIPE_PRICE_${plan} in Vercel Project env.`
+            : "Missing priceId",
+        },
         { status: 400 }
       );
     }
 
-    const normalizedPriceId = priceId.trim();
-
-    // 🔎 Soft allow-list: log if it doesn’t match, but don’t block.
-    if (
-      ALLOWED_PRICE_IDS.length > 0 &&
-      !ALLOWED_PRICE_IDS.includes(normalizedPriceId)
-    ) {
-      console.warn("[checkout] priceId not in ALLOWED_PRICE_IDS", {
-        received: normalizedPriceId,
+    // ✅ HARD BLOCK: prevents charging stale/unknown $4.99 prices
+    if (!ALLOWED_PRICE_IDS.includes(normalizedPriceId)) {
+      console.warn("[checkout] BLOCKED priceId (not allowed)", {
+        plan,
+        received: requested,
+        resolved: normalizedPriceId,
         allowed: ALLOWED_PRICE_IDS,
       });
-      // We still proceed and let Stripe validate the ID.
+
+      return NextResponse.json(
+        {
+          ok: false,
+          message:
+            "Invalid priceId. Your deployment is likely using stale pricing configuration. Redeploy after updating Vercel Project env vars.",
+        },
+        { status: 400 }
+      );
     }
 
-    // Ensure a User row exists (covers DB resets)
+    // Ensure a User row exists
     let user = await prisma.user.findUnique({
       where: { email: session.user.email },
       select: {
@@ -117,14 +154,10 @@ export async function POST(req: Request) {
     const email: string = user.email ?? session.user.email;
     let stripeCustomerId = user.stripeCustomerId ?? undefined;
 
-    // Prefer the stored customerId; if missing, fall back to Stripe lookup by email,
-    // and finally create a new customer if needed.
     if (!stripeCustomerId) {
       if (email) {
         const existing = await stripe.customers.list({ email, limit: 1 });
-        if (existing.data[0]?.id) {
-          stripeCustomerId = existing.data[0].id;
-        }
+        if (existing.data[0]?.id) stripeCustomerId = existing.data[0].id;
       }
 
       if (!stripeCustomerId) {
@@ -135,7 +168,6 @@ export async function POST(req: Request) {
         stripeCustomerId = customer.id;
       }
 
-      // Persist the customerId so future flows/webhooks can match quickly.
       await prisma.user.update({
         where: { id: user.id },
         data: { stripeCustomerId },
@@ -143,6 +175,15 @@ export async function POST(req: Request) {
     }
 
     const base = appBaseUrl();
+
+    // Helpful server log (you can remove later)
+    console.log("[checkout] create session", {
+      plan,
+      priceId: normalizedPriceId,
+      base,
+      email,
+      userId: user.id,
+    });
 
     const checkout = await stripe.checkout.sessions.create({
       mode: "subscription",
@@ -154,13 +195,11 @@ export async function POST(req: Request) {
       success_url: `${base}/dashboard?checkout=success`,
       cancel_url: `${base}/pricing?checkout=cancel`,
       client_reference_id: user.id,
-      // 🔴 Critical: webhook reads metadata.plan_price_id
       metadata: {
         plan_price_id: normalizedPriceId,
         user_email: email,
         user_id: user.id,
       },
-      // Optional but nice: mirror metadata onto the subscription itself
       subscription_data: {
         metadata: {
           plan_price_id: normalizedPriceId,
@@ -177,7 +216,6 @@ export async function POST(req: Request) {
       );
     }
 
-    // IMPORTANT: return JSON (client will navigate)
     return NextResponse.json({ ok: true, url: checkout.url });
   } catch (err: any) {
     console.error("checkout error:", err);
