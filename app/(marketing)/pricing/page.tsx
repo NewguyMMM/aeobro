@@ -29,6 +29,7 @@ const PRICES = {
 } as const;
 
 type PlanTitle = "Lite" | "Plus";
+type ApiPlanKey = "LITE" | "PLUS";
 
 function cx(...parts: Array<string | false | null | undefined>) {
   return parts.filter(Boolean).join(" ");
@@ -50,6 +51,10 @@ function normalizePlanForUi(raw?: string | null): PlanTitle {
     default:
       return "Lite";
   }
+}
+
+function toApiPlanKey(plan: PlanTitle): ApiPlanKey {
+  return plan.toUpperCase() as ApiPlanKey; // "Lite" -> "LITE", "Plus" -> "PLUS"
 }
 
 function formatStatusLabel(status?: string | null) {
@@ -209,10 +214,12 @@ export default function PricingPage() {
     try {
       setLoading(plan);
 
+      // ✅ CRITICAL CHANGE:
+      // Send { priceId, plan } so the server can be authoritative and prevent stale $4.99 pricing.
       const res = await fetch("/api/stripe/create-checkout-session", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ priceId }),
+        body: JSON.stringify({ priceId, plan: toApiPlanKey(plan) }),
       });
 
       if (res.status === 401) {
