@@ -122,86 +122,9 @@ export default function PricingPage() {
   const [planStatus, setPlanStatus] = useState<string | null>(null);
   const [planLoading, setPlanLoading] = useState(true);
 
-  // Fetch plan for logged-in users
-  useEffect(() => {
-    let cancelled = false;
-
-    (async () => {
-      try {
-        const res = await fetch("/api/account", { cache: "no-store" });
-        if (!res.ok) {
-          // 401 when logged out, or other errors – silently ignore
-          return;
-        }
-        const data = await res.json();
-        const rawPlan = data?.plan as string | undefined;
-        const rawStatus = data?.planStatus as string | undefined;
-
-        if (!cancelled && rawPlan) setCurrentPlan(normalizePlanForUi(rawPlan));
-        if (!cancelled && rawStatus) setPlanStatus(rawStatus);
-      } catch {
-        // ignore; pricing still works fine without this
-      } finally {
-        if (!cancelled) setPlanLoading(false);
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
   /**
-   * ✅ IMPORTANT CHANGE
-   * Resume checkout after sign-in using ONLY plan (not priceId).
-   * Old version used: ?start=<priceId>&plan=<PlanTitle>
-   * New version uses: ?startPlan=<LITE|PLUS>
-   */
-  useEffect(() => {
-    const url = new URL(window.location.href);
-    const startPlan = url.searchParams.get("startPlan") as ApiPlanKey | null;
-
-    if (startPlan === "LITE" || startPlan === "PLUS") {
-      url.searchParams.delete("startPlan");
-      const clean =
-        url.pathname +
-        (url.searchParams.toString() ? `?${url.searchParams}` : "");
-      window.history.replaceState({}, "", clean);
-
-      const uiPlan: PlanTitle = startPlan === "PLUS" ? "Plus" : "Lite";
-      startCheckout(uiPlan);
-    }
-
-    // Back-compat: if old params exist, convert them to plan-only flow.
-    const oldPriceId = url.searchParams.get("start");
-    const oldPlan = url.searchParams.get("plan") as PlanTitle | null;
-    if (oldPriceId && oldPlan) {
-      url.searchParams.delete("start");
-      url.searchParams.delete("plan");
-      const clean =
-        url.pathname +
-        (url.searchParams.toString() ? `?${url.searchParams}` : "");
-      window.history.replaceState({}, "", clean);
-
-      // ignore oldPriceId entirely; plan-only
-      startCheckout(oldPlan);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [startCheckout]);
-
-  useEffect(() => {
-    const reset = () => setLoading(null);
-    window.addEventListener("pageshow", reset);
-    window.addEventListener("focus", reset);
-    return () => {
-      window.removeEventListener("pageshow", reset);
-      window.removeEventListener("focus", reset);
-    };
-  }, []);
-
-  /**
-   * ✅ CRITICAL CHANGE:
-   * startCheckout now accepts ONLY plan.
+   * ✅ CRITICAL:
+   * startCheckout accepts ONLY plan.
    * It does NOT accept or send priceId. Server is authoritative.
    */
   const startCheckout = useCallback(async (plan: PlanTitle) => {
@@ -239,6 +162,83 @@ export default function PricingPage() {
       setErr(e?.message || "Something went wrong.");
       setLoading(null);
     }
+  }, []);
+
+  // Fetch plan for logged-in users
+  useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const res = await fetch("/api/account", { cache: "no-store" });
+        if (!res.ok) {
+          // 401 when logged out, or other errors – silently ignore
+          return;
+        }
+        const data = await res.json();
+        const rawPlan = data?.plan as string | undefined;
+        const rawStatus = data?.planStatus as string | undefined;
+
+        if (!cancelled && rawPlan) setCurrentPlan(normalizePlanForUi(rawPlan));
+        if (!cancelled && rawStatus) setPlanStatus(rawStatus);
+      } catch {
+        // ignore; pricing still works fine without this
+      } finally {
+        if (!cancelled) setPlanLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  /**
+   * ✅ IMPORTANT:
+   * Resume checkout after sign-in using ONLY plan (not priceId).
+   * Old version used: ?start=<priceId>&plan=<PlanTitle>
+   * New version uses: ?startPlan=<LITE|PLUS>
+   */
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    const startPlan = url.searchParams.get("startPlan") as ApiPlanKey | null;
+
+    if (startPlan === "LITE" || startPlan === "PLUS") {
+      url.searchParams.delete("startPlan");
+      const clean =
+        url.pathname +
+        (url.searchParams.toString() ? `?${url.searchParams}` : "");
+      window.history.replaceState({}, "", clean);
+
+      const uiPlan: PlanTitle = startPlan === "PLUS" ? "Plus" : "Lite";
+      startCheckout(uiPlan);
+      return;
+    }
+
+    // Back-compat: if old params exist, convert them to plan-only flow.
+    const oldPriceId = url.searchParams.get("start");
+    const oldPlan = url.searchParams.get("plan") as PlanTitle | null;
+    if (oldPriceId && oldPlan) {
+      url.searchParams.delete("start");
+      url.searchParams.delete("plan");
+      const clean =
+        url.pathname +
+        (url.searchParams.toString() ? `?${url.searchParams}` : "");
+      window.history.replaceState({}, "", clean);
+
+      // ignore oldPriceId entirely; plan-only
+      startCheckout(oldPlan);
+    }
+  }, [startCheckout]);
+
+  useEffect(() => {
+    const reset = () => setLoading(null);
+    window.addEventListener("pageshow", reset);
+    window.addEventListener("focus", reset);
+    return () => {
+      window.removeEventListener("pageshow", reset);
+      window.removeEventListener("focus", reset);
+    };
   }, []);
 
   const Button = ({
@@ -290,8 +290,6 @@ export default function PricingPage() {
     btnText: string;
     featured?: boolean;
   }) => {
-    // ✅ No disabled buttons due to “missing priceId”.
-    // The server maps plan -> priceId.
     return (
       <div
         className={cx(
@@ -308,7 +306,6 @@ export default function PricingPage() {
         <h3 className="text-xl font-semibold">{title}</h3>
         <div className="text-3xl font-bold">{price}</div>
 
-        {/* Best for … */}
         <p className="text-sm text-gray-700 -mt-2">
           <span className="font-medium">Best for:</span> {bestFor}
         </p>
@@ -370,7 +367,7 @@ export default function PricingPage() {
         </section>
       )}
 
-      {/* ✅ Removed the "Billing is server-authoritative..." debug banner (Option A) */}
+      {/* ✅ Option A: Debug banner removed. Debug endpoint still exists, but is not linked in the UI. */}
 
       {err && (
         <div className="mb-6 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
@@ -380,7 +377,6 @@ export default function PricingPage() {
 
       {/* Two cards (Lite, Plus) */}
       <div className="grid gap-6 md:grid-cols-2 mt-2">
-        {/* Lite */}
         <PlanCard
           title="Lite"
           price="$9.99/mo"
@@ -394,16 +390,12 @@ export default function PricingPage() {
           btnText="Get Lite"
         />
 
-        {/* Plus (Most Popular) */}
         <PlanCard
           title="Plus"
           price="$29.99/mo"
           bestFor="brands and businesses that want richer AI understanding with structured products, updates, FAQs, and services."
           features={[
-            {
-              label: "Centralized AI Ready Profile",
-              tooltip: CENTRALIZED_TOOLTIP,
-            },
+            { label: "Centralized AI Ready Profile", tooltip: CENTRALIZED_TOOLTIP },
             { label: "Products / Catalog", tooltip: PRODUCTS_TOOLTIP },
             { label: "Updates", tooltip: UPDATES_TOOLTIP },
             { label: "FAQ markup", tooltip: FAQ_TOOLTIP },
