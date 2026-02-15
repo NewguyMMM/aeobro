@@ -1,23 +1,18 @@
 // app/api/stripe/create-portal-session/route.ts
 import { NextResponse } from "next/server";
 import Stripe from "stripe";
-import { getServerSession } from "next-auth/next"; // ✅ IMPORTANT for App Router route handlers
+import { getServerSession } from "next-auth/next"; // ✅ App Router correct import
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-/**
- * Standard JSON error helper.
- * Keeps responses consistent for the client and makes debugging easier.
- */
 function jsonError(status: number, message: string, extra?: Record<string, any>) {
   return NextResponse.json({ ok: false, message, ...(extra ?? {}) }, { status });
 }
 
 function isStripeMissingResource(err: any) {
-  // Covers "No such customer" / resource_missing cases
   return (
     err?.type === "StripeInvalidRequestError" &&
     (err?.code === "resource_missing" ||
@@ -35,54 +30,88 @@ export async function POST(request: Request) {
 
     const email = session.user.email;
 
-    // 🔎 2) Look up user and existing Stripe customer id in Prisma
+    // 🔎 2) Load user billing identifiers (customer + subscription)
     const user = await prisma.user.findUnique({
       where: { email },
-      select: { id: true, stripeCustomerId: true },
+      // IMPORTANT: make sure your Prisma User model has stripeSubscriptionId
+      select: { id: true, stripeCustomerId: true, stripeSubscriptionId: true },
     });
 
     if (!user) {
       return jsonError(404, "User not found");
     }
 
-    // ✅ Ensure Stripe secret key exists
+    // ✅ Stripe secret key
     const secret = process.env.STRIPE_SECRET_KEY;
     if (!secret) {
       return jsonError(500, "Stripe secret key missing");
     }
 
-    // Helpful, non-sensitive logging: confirms which key-mode this route is using
     console.log("[portal] key_mode", { looksLive: secret.startsWith("sk_live_") });
 
-    // ✅ Create Stripe client from the same secret used in production
     const stripe = new Stripe(secret, {
       apiVersion: "2024-06-20" as any,
     });
 
-    // 🌐 3) Determine a safe return URL origin (always correct for the request)
-    // This avoids env drift and avoids relying on Origin header presence.
-    const requestOrigin = new URL(request.url).origin;
-
-    // If you want to force a canonical return origin, set NEXT_PUBLIC_APP_URL and use it here:
-    // const origin = process.env.NEXT_PUBLIC_APP_URL || requestOrigin;
-    const origin = requestOrigin;
+    // 🌐 3) Return origin derived from request (no env guessing)
+    const origin = new URL(request.url).origin;
+    const returnUrl = `${origin}/billing`;
 
     if (!origin.startsWith("https://")) {
       console.warn("[portal] Non-https origin detected:", origin);
     }
 
-    // 4) Ensure we have a Stripe customer ID in the CURRENT mode.
-    // If the stored ID is from TEST (or deleted), Stripe LIVE will throw "No such customer".
     let stripeCustomerId = user.stripeCustomerId || undefined;
 
+    /**
+     * ✅ 4) Never-drift logic:
+     * If we have a subscription id, Stripe is the source of truth for customer.
+     * This guarantees the billing portal always opens for the customer that owns the active subscription.
+     */
+    if (user.stripeSubscriptionId) {
+      try {
+        const sub = await stripe.subscriptions.retrieve(user.stripeSubscriptionId);
+
+        // sub.customer can be string or object depending on expand; normalize to string
+        const subCustomerId =
+          typeof sub.customer === "string" ? sub.customer : sub.customer?.id;
+
+        if (subCustomerId && subCustomerId !== stripeCustomerId) {
+          console.log("[portal] syncing customer from subscription", {
+            userId: user.id,
+            hadCustomerId: !!stripeCustomerId,
+            changed: true,
+          });
+
+          stripeCustomerId = subCustomerId;
+
+          await prisma.user.update({
+            where: { id: user.id },
+            data: { stripeCustomerId },
+          });
+        }
+      } catch (err: any) {
+        // If subscription is missing/wrong-mode, don't explode silently; surface it.
+        if (isStripeMissingResource(err)) {
+          return jsonError(409, "Stored subscription id is invalid in current Stripe mode", {
+            stripeMessage: err?.message,
+            stripeCode: err?.code,
+            stripeType: err?.type,
+            hint:
+              "Your DB may contain a TEST subscription id. Update stripeSubscriptionId to the LIVE sub_... or clear it and re-checkout in LIVE.",
+          });
+        }
+        throw err;
+      }
+    }
+
+    // 🧪 5) If we still don't have a customer id, ensure one exists in this mode
     if (stripeCustomerId) {
       try {
         await stripe.customers.retrieve(stripeCustomerId);
       } catch (err: any) {
         if (isStripeMissingResource(err)) {
-          console.warn("[portal] stored_customer_missing_recreating", {
-            userId: user.id,
-          });
+          console.warn("[portal] stored_customer_missing_recreating", { userId: user.id });
           stripeCustomerId = undefined;
         } else {
           throw err;
@@ -90,7 +119,6 @@ export async function POST(request: Request) {
       }
     }
 
-    // 🆕 5) If no Stripe customer yet, create one and persist it
     if (!stripeCustomerId) {
       const customer = await stripe.customers.create({
         email,
@@ -106,8 +134,6 @@ export async function POST(request: Request) {
     }
 
     // 6) Create Stripe Billing Portal session
-    const returnUrl = `${origin}/billing`;
-
     const portalSession = await stripe.billingPortal.sessions.create({
       customer: stripeCustomerId,
       return_url: returnUrl,
@@ -115,7 +141,6 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ ok: true, url: portalSession.url });
   } catch (err: any) {
-    // 🔎 Production-safe logging (no secrets)
     console.error("[portal] create session failed", {
       message: err?.message,
       type: err?.type,
@@ -123,7 +148,6 @@ export async function POST(request: Request) {
       statusCode: err?.statusCode,
     });
 
-    // Return structured info so the client console shows something actionable
     return jsonError(500, "Unable to create billing portal session", {
       stripeMessage: err?.message,
       stripeCode: err?.code,
