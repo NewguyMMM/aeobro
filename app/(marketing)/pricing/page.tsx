@@ -1,7 +1,7 @@
 // app/(marketing)/pricing/page.tsx
 "use client";
 
-import { useEffect, useMemo, useState, useCallback } from "react";
+import { useEffect, useState, useCallback } from "react";
 import ManageBillingButton from "@/components/stripe/ManageBillingButton";
 
 type PlanTitle = "Lite" | "Plus";
@@ -187,7 +187,7 @@ export default function PricingPage() {
       startCheckout(oldPlan);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [startCheckout]);
 
   useEffect(() => {
     const reset = () => setLoading(null);
@@ -228,7 +228,10 @@ export default function PricingPage() {
       }
 
       const data = await res.json();
-      if (!res.ok) throw new Error(data?.error || data?.message || "Failed to start checkout.");
+      if (!res.ok)
+        throw new Error(
+          data?.error || data?.message || "Failed to start checkout."
+        );
       if (!data?.url) throw new Error("Server did not return a checkout URL.");
 
       window.location.assign(data.url as string);
@@ -237,16 +240,6 @@ export default function PricingPage() {
       setLoading(null);
     }
   }, []);
-
-  /**
-   * ✅ IMPORTANT CHANGE:
-   * We no longer rely on NEXT_PUBLIC_STRIPE_PRICE_* for correctness.
-   * So this banner should reference server vars + debug endpoint instead.
-   *
-   * We can’t read server env vars in a client component, so:
-   * - Show a simple “if billing fails, open /api/debug/stripe” message.
-   */
-  const showConfigHelp = useMemo(() => true, []);
 
   const Button = ({
     children,
@@ -377,36 +370,11 @@ export default function PricingPage() {
         </section>
       )}
 
-      {showConfigHelp && (
-        <div className="mb-6 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
-          Billing is server-authoritative (plan → price mapping happens on the server). If checkout
-          fails or shows the wrong amount, open{" "}
-          <a
-            className="underline font-medium"
-            href="/api/debug/stripe"
-            target="_blank"
-            rel="noreferrer"
-          >
-            /api/debug/stripe
-          </a>{" "}
-          and confirm:
-          <div className="mt-1 text-xs text-amber-800/80">
-            STRIPE_SECRET_KEY mode is <strong>test</strong>, and both prices retrieve with unit_amount 999 and 2999.
-          </div>
-        </div>
-      )}
+      {/* ✅ Removed the "Billing is server-authoritative..." debug banner (Option A) */}
 
       {err && (
         <div className="mb-6 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-          {err}{" "}
-          <a
-            className="underline font-medium"
-            href="/api/debug/stripe"
-            target="_blank"
-            rel="noreferrer"
-          >
-            Open debug
-          </a>
+          {err}
         </div>
       )}
 
@@ -432,7 +400,10 @@ export default function PricingPage() {
           price="$29.99/mo"
           bestFor="brands and businesses that want richer AI understanding with structured products, updates, FAQs, and services."
           features={[
-            { label: "Centralized AI Ready Profile", tooltip: CENTRALIZED_TOOLTIP },
+            {
+              label: "Centralized AI Ready Profile",
+              tooltip: CENTRALIZED_TOOLTIP,
+            },
             { label: "Products / Catalog", tooltip: PRODUCTS_TOOLTIP },
             { label: "Updates", tooltip: UPDATES_TOOLTIP },
             { label: "FAQ markup", tooltip: FAQ_TOOLTIP },
