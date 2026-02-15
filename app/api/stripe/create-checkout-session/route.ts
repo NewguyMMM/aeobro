@@ -1,226 +1,147 @@
 // app/api/stripe/create-checkout-session/route.ts
-// ✅ Updated: 2026-02-14
-// - Server-authoritative plan -> price mapping (prevents wrong $4.99 price)
-// - Still supports legacy { priceId } but blocks unknown/old priceIds
-// - Accepts { plan } or { plan, priceId } from client
-// - Keeps webhook metadata.plan_price_id
-// - Reuses & stores stripeCustomerId on the User
-
 import Stripe from "stripe";
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
 
 export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
 
-const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY as string;
-if (!STRIPE_SECRET_KEY) {
-  throw new Error("Missing STRIPE_SECRET_KEY in environment");
+type Plan = "lite" | "plus";
+
+function isPlan(x: any): x is Plan {
+  return x === "lite" || x === "plus";
 }
 
-const stripe = new Stripe(STRIPE_SECRET_KEY, {
-  apiVersion: "2024-06-20",
-});
+function keyMode(secretKey: string | undefined) {
+  if (!secretKey) return "missing";
+  if (secretKey.startsWith("sk_test_")) return "test";
+  if (secretKey.startsWith("sk_live_")) return "live";
+  return "unknown";
+}
 
-/**
- * Stripe TEST price IDs you gave me.
- * These are NOT secrets (Price IDs are public identifiers).
- * We use them only as fallbacks if env vars are missing.
- */
-const FALLBACK_TEST_PRICES = {
-  LITE: "price_1T0l7WBWc0vqeQejEjQ4t8ts",
-  PLUS: "price_1T0l7qBWc0vqeQejYB3IThkA",
-} as const;
+function redactKey(secretKey: string | undefined) {
+  if (!secretKey) return "missing";
+  return `${secretKey.slice(0, 10)}…${secretKey.slice(-6)}`;
+}
 
-type PlanKey = "LITE" | "PLUS" | "PRO" | "BUSINESS" | "ENTERPRISE";
+function getAuthoritativePriceId(plan: Plan): string {
+  // Server-authoritative mapping ONLY.
+  // Set these in Vercel env. Do NOT use NEXT_PUBLIC vars for pricing correctness.
+  const LITE = process.env.STRIPE_PRICE_LITE;
+  const PLUS = process.env.STRIPE_PRICE_PLUS;
 
-const PRICE_BY_PLAN: Record<PlanKey, string> = {
-  LITE: (process.env.NEXT_PUBLIC_STRIPE_PRICE_LITE || FALLBACK_TEST_PRICES.LITE).trim(),
-  PLUS: (process.env.NEXT_PUBLIC_STRIPE_PRICE_PLUS || FALLBACK_TEST_PRICES.PLUS).trim(),
-  PRO: (process.env.NEXT_PUBLIC_STRIPE_PRICE_PRO || "").trim(),
-  BUSINESS: (process.env.NEXT_PUBLIC_STRIPE_PRICE_BUSINESS || "").trim(),
-  ENTERPRISE: (process.env.NEXT_PUBLIC_STRIPE_PRICE_ENTERPRISE || "").trim(),
-};
+  if (!LITE || !PLUS) {
+    throw new Error(
+      "Missing STRIPE_PRICE_LITE and/or STRIPE_PRICE_PLUS environment variables."
+    );
+  }
 
-// Hard allow-list (ONLY these price IDs are allowed)
-const ALLOWED_PRICE_IDS = Array.from(
-  new Set(Object.values(PRICE_BY_PLAN).filter(Boolean).map((v) => v.trim()))
-);
-
-function appBaseUrl() {
-  const u =
-    process.env.NEXTAUTH_URL ||
-    process.env.VERCEL_URL ||
-    process.env.NEXT_PUBLIC_APP_URL ||
-    process.env.SITE_URL ||
-    "http://localhost:3000";
-
-  return u.startsWith("http") ? u : `https://${u}`;
+  if (plan === "lite") return LITE;
+  return PLUS;
 }
 
 export async function POST(req: Request) {
+  const stripeSecretKey = process.env.STRIPE_SECRET_KEY;
+  const mode = keyMode(stripeSecretKey);
+
+  // Tight request parsing
+  let body: any = null;
   try {
-    const session = await getServerSession(authOptions);
-    if (!session?.user?.email) {
-      return NextResponse.json(
-        { ok: false, message: "Unauthorized" },
-        { status: 401 }
-      );
-    }
+    body = await req.json();
+  } catch {
+    body = null;
+  }
 
-    const body = (await req.json().catch(() => ({}))) as {
-      priceId?: string;
-      plan?: string;
-    };
+  const origin = req.headers.get("origin") || process.env.APP_URL || "http://localhost:3000";
 
-    const planRaw = (body.plan ?? "").toString().trim().toUpperCase();
-    const plan = (["LITE", "PLUS", "PRO", "BUSINESS", "ENTERPRISE"].includes(planRaw)
-      ? (planRaw as PlanKey)
-      : null);
+  // Debug logging (temporary; keep until stable)
+  console.log("[stripe][create-checkout-session] incoming payload:", body);
+  console.log("[stripe][create-checkout-session] origin:", origin);
+  console.log("[stripe][create-checkout-session] STRIPE_SECRET_KEY mode:", mode, "key:", redactKey(stripeSecretKey));
 
-    const requested = (body.priceId ?? "").toString().trim();
+  if (!stripeSecretKey) {
+    console.error("[stripe][create-checkout-session] STRIPE_SECRET_KEY is missing");
+    return NextResponse.json({ error: "Server misconfigured: STRIPE_SECRET_KEY missing" }, { status: 500 });
+  }
 
-    /**
-     * ✅ Server-authoritative selection:
-     * If plan is provided, we ignore any wrong/old client priceId.
-     */
-    let normalizedPriceId = "";
-    if (plan) {
-      normalizedPriceId = PRICE_BY_PLAN[plan];
-    } else {
-      // Legacy mode: client sends priceId
-      normalizedPriceId = requested;
-    }
+  const planRaw = body?.plan;
+  if (!isPlan(planRaw)) {
+    console.warn("[stripe][create-checkout-session] invalid plan:", planRaw);
+    return NextResponse.json({ error: "Invalid plan. Must be 'lite' or 'plus'." }, { status: 400 });
+  }
 
-    if (!normalizedPriceId) {
-      return NextResponse.json(
-        {
-          ok: false,
-          message: plan
-            ? `Missing configured Price ID for plan ${plan}. Set NEXT_PUBLIC_STRIPE_PRICE_${plan} in Vercel Project env.`
-            : "Missing priceId",
-        },
-        { status: 400 }
-      );
-    }
+  // IMPORTANT: ignore any client-provided priceId completely
+  const resolvedPlan: Plan = planRaw;
+  let priceId: string;
+  try {
+    priceId = getAuthoritativePriceId(resolvedPlan);
+  } catch (e: any) {
+    console.error("[stripe][create-checkout-session] price mapping error:", e?.message || e);
+    return NextResponse.json({ error: e?.message || "Server misconfigured: price mapping missing" }, { status: 500 });
+  }
 
-    // ✅ HARD BLOCK: prevents charging stale/unknown $4.99 prices
-    if (!ALLOWED_PRICE_IDS.includes(normalizedPriceId)) {
-      console.warn("[checkout] BLOCKED priceId (not allowed)", {
-        plan,
-        received: requested,
-        resolved: normalizedPriceId,
-        allowed: ALLOWED_PRICE_IDS,
-      });
+  console.log("[stripe][create-checkout-session] resolved plan:", resolvedPlan);
+  console.log("[stripe][create-checkout-session] using priceId:", priceId);
 
-      return NextResponse.json(
-        {
-          ok: false,
-          message:
-            "Invalid priceId. Your deployment is likely using stale pricing configuration. Redeploy after updating Vercel Project env vars.",
-        },
-        { status: 400 }
-      );
-    }
+  const stripe = new Stripe(stripeSecretKey, {
+    apiVersion: "2024-06-20",
+  });
 
-    // Ensure a User row exists
-    let user = await prisma.user.findUnique({
-      where: { email: session.user.email },
-      select: {
-        id: true,
-        email: true,
-        name: true,
-        stripeCustomerId: true,
-      },
+  // Optional: fail-fast if Stripe cannot retrieve the price with this key
+  // This directly catches "No such price" due to key/account mismatch.
+  try {
+    const p = await stripe.prices.retrieve(priceId);
+    console.log("[stripe][create-checkout-session] price retrieve OK:", {
+      id: p.id,
+      currency: p.currency,
+      unit_amount: p.unit_amount,
+      product: p.product,
+      livemode: p.livemode,
     });
-
-    if (!user) {
-      user = await prisma.user.create({
-        data: {
-          email: session.user.email,
-          name: session.user.name ?? null,
-        },
-        select: {
-          id: true,
-          email: true,
-          name: true,
-          stripeCustomerId: true,
-        },
-      });
-    }
-
-    const email: string = user.email ?? session.user.email;
-    let stripeCustomerId = user.stripeCustomerId ?? undefined;
-
-    if (!stripeCustomerId) {
-      if (email) {
-        const existing = await stripe.customers.list({ email, limit: 1 });
-        if (existing.data[0]?.id) stripeCustomerId = existing.data[0].id;
-      }
-
-      if (!stripeCustomerId) {
-        const customer = await stripe.customers.create({
-          email,
-          name: user.name ?? undefined,
-        });
-        stripeCustomerId = customer.id;
-      }
-
-      await prisma.user.update({
-        where: { id: user.id },
-        data: { stripeCustomerId },
-      });
-    }
-
-    const base = appBaseUrl();
-
-    // Helpful server log (you can remove later)
-    console.log("[checkout] create session", {
-      plan,
-      priceId: normalizedPriceId,
-      base,
-      email,
-      userId: user.id,
-    });
-
-    const checkout = await stripe.checkout.sessions.create({
-      mode: "subscription",
-      customer: stripeCustomerId,
-      line_items: [{ price: normalizedPriceId, quantity: 1 }],
-      allow_promotion_codes: true,
-      billing_address_collection: "auto",
-      automatic_tax: { enabled: false },
-      success_url: `${base}/dashboard?checkout=success`,
-      cancel_url: `${base}/pricing?checkout=cancel`,
-      client_reference_id: user.id,
-      metadata: {
-        plan_price_id: normalizedPriceId,
-        user_email: email,
-        user_id: user.id,
-      },
-      subscription_data: {
-        metadata: {
-          plan_price_id: normalizedPriceId,
-          user_email: email,
-          user_id: user.id,
-        },
-      },
-    });
-
-    if (!checkout.url) {
-      return NextResponse.json(
-        { ok: false, message: "Stripe did not return a Checkout URL" },
-        { status: 500 }
-      );
-    }
-
-    return NextResponse.json({ ok: true, url: checkout.url });
   } catch (err: any) {
-    console.error("checkout error:", err);
+    console.error("[stripe][create-checkout-session] price retrieve FAILED:", err?.message || err);
     return NextResponse.json(
-      { ok: false, message: err?.message || "Checkout error" },
+      {
+        error:
+          "Stripe price lookup failed. This usually means your STRIPE_SECRET_KEY does not match the account/mode that owns this price ID.",
+        details: err?.message || String(err),
+        resolvedPlan,
+        priceId,
+        secretKeyMode: mode,
+      },
+      { status: 500 }
+    );
+  }
+
+  const successUrl = `${origin}/billing/success?plan=${encodeURIComponent(resolvedPlan)}`;
+  const cancelUrl = `${origin}/pricing?canceled=1`;
+
+  try {
+    const session = await stripe.checkout.sessions.create({
+      mode: "subscription",
+      line_items: [{ price: priceId, quantity: 1 }],
+      success_url: successUrl,
+      cancel_url: cancelUrl,
+      // You can wire auth later; for now keep it simple.
+      metadata: {
+        plan: resolvedPlan,
+        price_id: priceId,
+        env: process.env.VERCEL_ENV || "unknown",
+        key_mode: mode,
+      },
+      // Optional but useful:
+      // allow_promotion_codes: true,
+    });
+
+    console.log("[stripe][create-checkout-session] created session:", {
+      id: session.id,
+      url: session.url,
+      mode: session.mode,
+    });
+
+    return NextResponse.json({ url: session.url, plan: resolvedPlan, priceId }, { status: 200 });
+  } catch (err: any) {
+    console.error("[stripe][create-checkout-session] session create FAILED:", err?.message || err);
+    return NextResponse.json(
+      { error: "Failed to create Stripe Checkout session", details: err?.message || String(err) },
       { status: 500 }
     );
   }
