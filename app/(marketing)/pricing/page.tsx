@@ -4,30 +4,6 @@
 import { useEffect, useMemo, useState, useCallback } from "react";
 import ManageBillingButton from "@/components/stripe/ManageBillingButton";
 
-/**
- * ✅ IMPORTANT
- * These are Stripe TEST mode Price IDs you provided.
- * Price IDs are not secret, but you should still prefer env vars.
- *
- * If you later switch to LIVE billing, replace these with LIVE price IDs
- * (or just rely on env vars and remove fallbacks).
- */
-const FALLBACK_TEST_PRICES = {
-  LITE: "price_1T0l7WBWc0vqeQejEjQ4t8ts",
-  PLUS: "price_1T0l7qBWc0vqeQejYB3IThkA",
-} as const;
-
-/**
- * We prefer env vars. If they’re missing at runtime (common when set in the wrong Vercel scope),
- * we fall back so the page still functions and we can diagnose.
- */
-const PRICES = {
-  LITE: process.env.NEXT_PUBLIC_STRIPE_PRICE_LITE || FALLBACK_TEST_PRICES.LITE,
-  PLUS: process.env.NEXT_PUBLIC_STRIPE_PRICE_PLUS || FALLBACK_TEST_PRICES.PLUS,
-  // PRO intentionally retained for backend/hidden tier use (not shown in UI)
-  PRO: process.env.NEXT_PUBLIC_STRIPE_PRICE_PRO ?? "",
-} as const;
-
 type PlanTitle = "Lite" | "Plus";
 type ApiPlanKey = "LITE" | "PLUS";
 
@@ -175,20 +151,40 @@ export default function PricingPage() {
     };
   }, []);
 
-  // Auto-resume checkout after sign-in if URL has ?start=<priceId>&plan=<PlanTitle>
+  /**
+   * ✅ IMPORTANT CHANGE
+   * Resume checkout after sign-in using ONLY plan (not priceId).
+   * Old version used: ?start=<priceId>&plan=<PlanTitle>
+   * New version uses: ?startPlan=<LITE|PLUS>
+   */
   useEffect(() => {
     const url = new URL(window.location.href);
-    const priceId = url.searchParams.get("start");
-    const plan = url.searchParams.get("plan") as PlanTitle | null;
+    const startPlan = url.searchParams.get("startPlan") as ApiPlanKey | null;
 
-    if (priceId && plan) {
+    if (startPlan === "LITE" || startPlan === "PLUS") {
+      url.searchParams.delete("startPlan");
+      const clean =
+        url.pathname +
+        (url.searchParams.toString() ? `?${url.searchParams}` : "");
+      window.history.replaceState({}, "", clean);
+
+      const uiPlan: PlanTitle = startPlan === "PLUS" ? "Plus" : "Lite";
+      startCheckout(uiPlan);
+    }
+
+    // Back-compat: if old params exist, convert them to plan-only flow.
+    const oldPriceId = url.searchParams.get("start");
+    const oldPlan = url.searchParams.get("plan") as PlanTitle | null;
+    if (oldPriceId && oldPlan) {
       url.searchParams.delete("start");
       url.searchParams.delete("plan");
       const clean =
         url.pathname +
         (url.searchParams.toString() ? `?${url.searchParams}` : "");
       window.history.replaceState({}, "", clean);
-      startCheckout(priceId, plan);
+
+      // ignore oldPriceId entirely; plan-only
+      startCheckout(oldPlan);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -203,29 +199,28 @@ export default function PricingPage() {
     };
   }, []);
 
-  const startCheckout = useCallback(async (priceId: string, plan: PlanTitle) => {
+  /**
+   * ✅ CRITICAL CHANGE:
+   * startCheckout now accepts ONLY plan.
+   * It does NOT accept or send priceId. Server is authoritative.
+   */
+  const startCheckout = useCallback(async (plan: PlanTitle) => {
     setErr(null);
-
-    if (!priceId) {
-      setErr(`Missing Stripe Price ID for ${plan}.`);
-      return;
-    }
 
     try {
       setLoading(plan);
 
-      // ✅ CRITICAL CHANGE:
-      // Send { priceId, plan } so the server can be authoritative and prevent stale $4.99 pricing.
       const res = await fetch("/api/stripe/create-checkout-session", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ priceId, plan: toApiPlanKey(plan) }),
+        // Send ONLY plan. Server resolves priceId.
+        body: JSON.stringify({ plan: plan.toLowerCase() }), // "Lite"->"lite", "Plus"->"plus"
       });
 
       if (res.status === 401) {
         const callbackUrl = new URL(window.location.href);
-        callbackUrl.searchParams.set("start", priceId);
-        callbackUrl.searchParams.set("plan", plan);
+        callbackUrl.searchParams.set("startPlan", toApiPlanKey(plan));
+
         const signin = new URL("/api/auth/signin", window.location.origin);
         signin.searchParams.set("callbackUrl", callbackUrl.toString());
         window.location.assign(signin.toString());
@@ -233,7 +228,7 @@ export default function PricingPage() {
       }
 
       const data = await res.json();
-      if (!res.ok) throw new Error(data?.message || "Failed to start checkout.");
+      if (!res.ok) throw new Error(data?.error || data?.message || "Failed to start checkout.");
       if (!data?.url) throw new Error("Server did not return a checkout URL.");
 
       window.location.assign(data.url as string);
@@ -243,11 +238,15 @@ export default function PricingPage() {
     }
   }, []);
 
-  const usingFallback = useMemo(() => {
-    const liteEnv = process.env.NEXT_PUBLIC_STRIPE_PRICE_LITE;
-    const plusEnv = process.env.NEXT_PUBLIC_STRIPE_PRICE_PLUS;
-    return !liteEnv || !plusEnv;
-  }, []);
+  /**
+   * ✅ IMPORTANT CHANGE:
+   * We no longer rely on NEXT_PUBLIC_STRIPE_PRICE_* for correctness.
+   * So this banner should reference server vars + debug endpoint instead.
+   *
+   * We can’t read server env vars in a client component, so:
+   * - Show a simple “if billing fails, open /api/debug/stripe” message.
+   */
+  const showConfigHelp = useMemo(() => true, []);
 
   const Button = ({
     children,
@@ -289,7 +288,6 @@ export default function PricingPage() {
     bestFor,
     features,
     btnText,
-    priceId,
     featured = false,
   }: {
     title: PlanTitle;
@@ -297,11 +295,10 @@ export default function PricingPage() {
     bestFor: string;
     features: FeatureSpec[];
     btnText: string;
-    priceId: string;
     featured?: boolean;
   }) => {
-    const disabled = !priceId;
-
+    // ✅ No disabled buttons due to “missing priceId”.
+    // The server maps plan -> priceId.
     return (
       <div
         className={cx(
@@ -334,11 +331,7 @@ export default function PricingPage() {
           ))}
         </ul>
 
-        <Button
-          disabled={!priceId}
-          title={!priceId ? `Missing Stripe Price ID for ${title}.` : undefined}
-          onClick={!priceId ? undefined : () => startCheckout(priceId, title)}
-        >
+        <Button onClick={() => startCheckout(title)}>
           {loading === title ? "Redirecting…" : btnText}
         </Button>
       </div>
@@ -384,25 +377,36 @@ export default function PricingPage() {
         </section>
       )}
 
-      {usingFallback && (
+      {showConfigHelp && (
         <div className="mb-6 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
-          Some pricing configuration is missing in the <strong>Vercel Project</strong>{" "}
-          environment variables. The page is using fallback Price IDs so you can keep testing.
+          Billing is server-authoritative (plan → price mapping happens on the server). If checkout
+          fails or shows the wrong amount, open{" "}
+          <a
+            className="underline font-medium"
+            href="/api/debug/stripe"
+            target="_blank"
+            rel="noreferrer"
+          >
+            /api/debug/stripe
+          </a>{" "}
+          and confirm:
           <div className="mt-1 text-xs text-amber-800/80">
-            Missing:{" "}
-            {!process.env.NEXT_PUBLIC_STRIPE_PRICE_LITE
-              ? "NEXT_PUBLIC_STRIPE_PRICE_LITE "
-              : ""}
-            {!process.env.NEXT_PUBLIC_STRIPE_PRICE_PLUS
-              ? "NEXT_PUBLIC_STRIPE_PRICE_PLUS"
-              : ""}
+            STRIPE_SECRET_KEY mode is <strong>test</strong>, and both prices retrieve with unit_amount 999 and 2999.
           </div>
         </div>
       )}
 
       {err && (
         <div className="mb-6 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-          {err}
+          {err}{" "}
+          <a
+            className="underline font-medium"
+            href="/api/debug/stripe"
+            target="_blank"
+            rel="noreferrer"
+          >
+            Open debug
+          </a>
         </div>
       )}
 
@@ -420,7 +424,6 @@ export default function PricingPage() {
             },
           ]}
           btnText="Get Lite"
-          priceId={PRICES.LITE}
         />
 
         {/* Plus (Most Popular) */}
@@ -436,7 +439,6 @@ export default function PricingPage() {
             { label: "Service markup", tooltip: SERVICE_TOOLTIP },
           ]}
           btnText="Get Plus"
-          priceId={PRICES.PLUS}
           featured
         />
       </div>
