@@ -1,10 +1,9 @@
 // app/api/stripe/create-portal-session/route.ts
 import { NextResponse } from "next/server";
 import Stripe from "stripe";
-import { getServerSession } from "next-auth";
+import { getServerSession } from "next-auth/next"; // ✅ IMPORTANT for App Router route handlers
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { headers } from "next/headers";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -17,7 +16,16 @@ function jsonError(status: number, message: string, extra?: Record<string, any>)
   return NextResponse.json({ ok: false, message, ...(extra ?? {}) }, { status });
 }
 
-export async function POST() {
+function isStripeMissingResource(err: any) {
+  // Covers "No such customer" / resource_missing cases
+  return (
+    err?.type === "StripeInvalidRequestError" &&
+    (err?.code === "resource_missing" ||
+      (typeof err?.message === "string" && err.message.toLowerCase().includes("no such")))
+  );
+}
+
+export async function POST(request: Request) {
   try {
     // 🔒 1) Require a logged-in user
     const session = await getServerSession(authOptions);
@@ -43,34 +51,46 @@ export async function POST() {
       return jsonError(500, "Stripe secret key missing");
     }
 
+    // Helpful, non-sensitive logging: confirms which key-mode this route is using
+    console.log("[portal] key_mode", { looksLive: secret.startsWith("sk_live_") });
+
     // ✅ Create Stripe client from the same secret used in production
     const stripe = new Stripe(secret, {
       apiVersion: "2024-06-20" as any,
     });
 
-    // 🌐 3) Determine a safe return URL origin
-    // Prefer request origin in production; fall back to envs; never silently use localhost in prod.
-    const h = headers();
-    const origin =
-      h.get("origin") ||
-      process.env.NEXT_PUBLIC_APP_URL ||
-      process.env.SITE_URL ||
-      "";
+    // 🌐 3) Determine a safe return URL origin (always correct for the request)
+    // This avoids env drift and avoids relying on Origin header presence.
+    const requestOrigin = new URL(request.url).origin;
 
-    if (!origin) {
-      return jsonError(500, "Missing origin/base URL for billing portal return_url", {
-        hint: "Set NEXT_PUBLIC_APP_URL (recommended) or SITE_URL in production env.",
-      });
-    }
+    // If you want to force a canonical return origin, set NEXT_PUBLIC_APP_URL and use it here:
+    // const origin = process.env.NEXT_PUBLIC_APP_URL || requestOrigin;
+    const origin = requestOrigin;
 
     if (!origin.startsWith("https://")) {
-      // Not fatal in all cases, but Stripe LIVE commonly expects https.
       console.warn("[portal] Non-https origin detected:", origin);
     }
 
+    // 4) Ensure we have a Stripe customer ID in the CURRENT mode.
+    // If the stored ID is from TEST (or deleted), Stripe LIVE will throw "No such customer".
     let stripeCustomerId = user.stripeCustomerId || undefined;
 
-    // 🆕 4) If no Stripe customer yet, create one and persist it
+    if (stripeCustomerId) {
+      try {
+        await stripe.customers.retrieve(stripeCustomerId);
+      } catch (err: any) {
+        if (isStripeMissingResource(err)) {
+          console.warn("[portal] stored_customer_missing_recreating", {
+            userId: user.id,
+          });
+          stripeCustomerId = undefined;
+        } else {
+          throw err;
+        }
+      }
+    }
+
+    // 🆕 5) If no Stripe customer yet, create one and persist it
     if (!stripeCustomerId) {
       const customer = await stripe.customers.create({
         email,
@@ -85,7 +105,7 @@ export async function POST() {
       });
     }
 
-    // 5) Create Stripe Billing Portal session
+    // 6) Create Stripe Billing Portal session
     const returnUrl = `${origin}/billing`;
 
     const portalSession = await stripe.billingPortal.sessions.create({
