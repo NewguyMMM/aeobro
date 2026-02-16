@@ -50,25 +50,41 @@ async function requireUserId() {
 }
 
 /**
- * ✅ Server-side plan gating (permission boundary)
- * We intentionally use (prisma.user as any) so this compiles even if your User model
- * uses a slightly different field shape in Prisma typings.
- *
- * Expected: user.plan (enum/string): FREE/LITE/PLUS/PRO/BUSINESS/ENTERPRISE
- * If missing, we default to LITE.
+ * ✅ Fail-closed plan enforcement (permission boundary)
+ * Required rules:
+ * - If planStatus !== "active" => treat as LITE
+ * - If planStatus missing => treat as LITE
+ * - PLUS (and PRO/BUSINESS/ENTERPRISE for now) behaves like PLUS
+ * - If plan missing => treat as LITE
  */
-async function getUserPlanKey(userId: string): Promise<string> {
+async function getEffectivePlanKey(userId: string): Promise<{
+  planKey: "LITE" | "PLUS";
+  isActive: boolean;
+}> {
   try {
     const u = await (prisma.user as any).findUnique({
       where: { id: userId },
-      select: { plan: true },
+      select: { plan: true, planStatus: true },
     });
-    const raw = (u?.plan ?? "LITE").toString().toUpperCase();
-    // Normalize common variants
-    if (raw === "FREE") return "LITE";
-    return raw;
+
+    const rawPlan = String(u?.plan ?? "LITE").toUpperCase();
+    const rawStatus = String(u?.planStatus ?? "").toLowerCase();
+
+    const isActive = rawStatus === "active"; // fail-closed: missing => false
+    if (!isActive) return { planKey: "LITE", isActive: false };
+
+    const normalizedPlan = rawPlan === "FREE" ? "LITE" : rawPlan;
+
+    // PRO remains hidden; behaves like PLUS for now
+    const isPlusLike =
+      normalizedPlan === "PLUS" ||
+      normalizedPlan === "PRO" ||
+      normalizedPlan === "BUSINESS" ||
+      normalizedPlan === "ENTERPRISE";
+
+    return { planKey: isPlusLike ? "PLUS" : "LITE", isActive: true };
   } catch {
-    return "LITE";
+    return { planKey: "LITE", isActive: false };
   }
 }
 
@@ -297,7 +313,7 @@ const ServiceItem = z.object({
   position: z.number().int().min(1).max(500).optional().nullable(),
 });
 
-/** ✅ NEW: Product schema */
+/** Product schema */
 const Money = z.object({
   amount: z.union([z.number(), z.string()]).optional().nullable(),
   currency: z.string().trim().max(10).optional().nullable(),
@@ -357,7 +373,6 @@ const ProfileSchema = z.object({
 
   faqJson: z.array(FAQItem).optional().nullable().default([]),
   servicesJson: z.array(ServiceItem).optional().nullable().default([]),
-
   productsJson: z.array(ProductItem).optional().nullable().default([]),
 
   updateMessage: z.string().trim().max(500).optional().nullable(),
@@ -427,15 +442,9 @@ export async function PUT(req: Request) {
     // ✅ Sanitize AFTER validation, BEFORE any DB write
     const d = sanitizeProfilePayload(parsed.data as any);
 
-    // ✅ Server-side permission boundary
-    const planKey = await getUserPlanKey(auth.userId);
-    const isProPlan =
-      planKey === "PRO" || planKey === "BUSINESS" || planKey === "ENTERPRISE";
-    const canEditPlus =
-      planKey === "PLUS" || isProPlan; // Plus includes Pro+
-    const canEditProducts = canEditPlus;
-    const canEditUpdates = canEditPlus;
-    const canEditProJson = isProPlan;
+    // ✅ Server-side permission boundary (fail-closed)
+    const { planKey, isActive } = await getEffectivePlanKey(auth.userId);
+    const canEditPlus = isActive && planKey === "PLUS";
 
     // read existing (so we can detect slug changes)
     const existing = await prisma.profile.findUnique({
@@ -477,24 +486,12 @@ export async function PUT(req: Request) {
       handles: d.handles ?? {},
       links: d.links ?? [],
 
-      // ✅ Pro-only fields (server enforced)
-      ...(canEditProJson
+      // ✅ PLUS-only fields (server enforced; fail-closed)
+      ...(canEditPlus
         ? {
             faqJson: d.faqJson ?? [],
             servicesJson: d.servicesJson ?? [],
-          }
-        : {}),
-
-      // ✅ Plus+ products (server enforced)
-      ...(canEditProducts
-        ? {
             productsJson: d.productsJson ?? [],
-          }
-        : {}),
-
-      // ✅ Plus+ updates (server enforced)
-      ...(canEditUpdates
-        ? {
             updateMessage: emptyToNull(d.updateMessage),
           }
         : {}),
