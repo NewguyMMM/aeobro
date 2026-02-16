@@ -1,6 +1,8 @@
 // app/p/[slug]/page.tsx
-// 📅 Updated: 2025-12-28 05:33 ET
-// Adds: visibility guard (PUBLIC only). UNPUBLISHED/DELETED => notFound() => no longer crawlable.
+// 📅 Updated: 2026-02-16 02:27 ET
+// Adds: 2-tier publish gating (LITE vs PLUS) + planStatus enforcement (inactive/missing => LITE)
+// Keeps: visibility guard (PUBLIC only). UNPUBLISHED/DELETED => notFound() => no longer crawlable.
+// Keeps: Schema tools eligibility logic unchanged.
 
 import { prisma } from "@/lib/prisma";
 import {
@@ -85,6 +87,7 @@ const getProfileFullCached = (slug: string) =>
           user: {
             select: {
               plan: true,
+              planStatus: true, // ✅ required for fail-closed gating
             },
           },
           platformAccounts: {
@@ -146,6 +149,17 @@ export async function generateMetadata({
 /*                                Page render                                 */
 /* -------------------------------------------------------------------------- */
 
+function plusPublishingAllowedFrom(planRaw: unknown, planStatusRaw: unknown): boolean {
+  // Fail-closed: missing planStatus => not active
+  const status = String(planStatusRaw ?? "").toLowerCase();
+  if (status !== "active") return false;
+
+  const plan = String(planRaw ?? "LITE").toLowerCase();
+
+  // plan stored as labels in this file ("Plus", "Pro", etc) — keep your current convention
+  return plan === "plus" || plan === "pro" || plan === "business" || plan === "enterprise";
+}
+
 export default async function Page({ params }: PageProps) {
   const slug = decodeURIComponent(params.slug);
   const profile = await getProfileFullCached(slug)();
@@ -175,15 +189,24 @@ export default async function Page({ params }: PageProps) {
     ? (profile.imageUrls as string[])
     : [];
 
-  const updateMessage =
-    (profile.updateMessage && profile.updateMessage.trim()) || null;
-  const updatedDate =
-    profile.updatedAt instanceof Date
-      ? profile.updatedAt.toISOString().slice(0, 10)
-      : null;
-
   const verificationStatus = profile.verificationStatus ?? "UNVERIFIED";
   const plan = (profile.user?.plan as string | null) ?? "Free";
+  const planStatus = (profile.user as any)?.planStatus as string | null;
+
+  // ✅ 2-tier public render/publish gating
+  const plusPublishingAllowed = plusPublishingAllowedFrom(plan, planStatus);
+
+  const updateMessage =
+    plusPublishingAllowed
+      ? ((profile.updateMessage && profile.updateMessage.trim()) || null)
+      : null;
+
+  const updatedDate =
+    plusPublishingAllowed && updateMessage
+      ? profile.updatedAt instanceof Date
+        ? profile.updatedAt.toISOString().slice(0, 10)
+        : null
+      : null;
 
   const isDomainVerified = verificationStatus === "DOMAIN_VERIFIED";
   const hasPlatformVerified =
@@ -199,21 +222,24 @@ export default async function Page({ params }: PageProps) {
       ? "Platform Verified"
       : null;
 
-  // FAQ & Services JSON from profile
-  const faqJson = Array.isArray(profile.faqJson)
-    ? (profile.faqJson as Array<{ question: string; answer: string }>)
-    : [];
-  const servicesJson = Array.isArray(profile.servicesJson)
-    ? (profile.servicesJson as Array<{
-        name: string;
-        description?: string | null;
-        url?: string | null;
-        priceMin?: string | null;
-        priceMax?: string | null;
-        priceUnit?: string | null;
-        currency?: string | null;
-      }>)
-    : [];
+  // FAQ & Services JSON from profile (✅ gated)
+  const faqJson =
+    plusPublishingAllowed && Array.isArray(profile.faqJson)
+      ? (profile.faqJson as Array<{ question: string; answer: string }>)
+      : [];
+
+  const servicesJson =
+    plusPublishingAllowed && Array.isArray(profile.servicesJson)
+      ? (profile.servicesJson as Array<{
+          name: string;
+          description?: string | null;
+          url?: string | null;
+          priceMin?: string | null;
+          priceMax?: string | null;
+          priceUnit?: string | null;
+          currency?: string | null;
+        }>)
+      : [];
 
   // Handles, links, press
   const handles = (profile.handles || {}) as Record<string, any>;
@@ -235,7 +261,7 @@ export default async function Page({ params }: PageProps) {
     ? (profile.press as Array<{ title?: string | null; url?: string | null }>)
     : [];
 
-  // Schema tools gating
+  // Schema tools gating (UNCHANGED)
   const paidPlans = ["Plus", "Pro", "Business", "Enterprise"];
   const isPaidPlan = plan && paidPlans.includes(plan);
   const canUseSchemaTools =
@@ -251,7 +277,12 @@ export default async function Page({ params }: PageProps) {
   let jsonLdPayload: any[] = [];
 
   try {
-    const main = buildProfileSchema(profile as any, baseUrl);
+    // ✅ IMPORTANT: pass null to force-suppress updateMessage for LITE/inactive
+    const main = buildProfileSchema(
+      profile as any,
+      baseUrl,
+      plusPublishingAllowed ? updateMessage : null
+    );
 
     const faq =
       faqJson.length > 0
@@ -325,7 +356,7 @@ export default async function Page({ params }: PageProps) {
             </div>
           </div>
 
-          {/* Latest Update */}
+          {/* Latest Update (✅ gated) */}
           {updateMessage && (
             <section className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
               <div className="flex flex-wrap items-baseline gap-2">
@@ -455,7 +486,7 @@ export default async function Page({ params }: PageProps) {
           </section>
         )}
 
-        {/* Services */}
+        {/* Services (✅ gated) */}
         {servicesJson.length > 0 && (
           <section className="space-y-3">
             <h2 className="text-lg font-semibold">Services</h2>
@@ -495,7 +526,7 @@ export default async function Page({ params }: PageProps) {
           </section>
         )}
 
-        {/* FAQs */}
+        {/* FAQs (✅ gated) */}
         {faqJson.length > 0 && (
           <section className="space-y-3">
             <h2 className="text-lg font-semibold">FAQs</h2>
