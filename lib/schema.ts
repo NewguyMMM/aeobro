@@ -1,5 +1,9 @@
 // lib/schema.ts
-// 📅 Updated: 2025-11-20 07:40 ET
+// 📅 Updated: 2026-02-16 02:19 ET
+// Fix: allow schema endpoint to "force remove" updateMessage by passing null.
+// IMPORTANT:
+// - latestUpdateRaw === null => suppress latestUpdate (used for LITE/inactive publish gating)
+// - latestUpdateRaw === undefined => use profile.updateMessage (backward compatible)
 
 import type { Profile } from "@prisma/client";
 import { sanitizeText, sanitizeUrl } from "@/lib/sanitize";
@@ -167,9 +171,15 @@ export function buildProfileSchema(
   const description =
     sanitizeText(bioRaw ?? "", 5000) || sanitizeText(taglineRaw ?? "", 500) || undefined;
 
-  // 🔹 Latest update (updateMessage) — from argument or from profile
+  // 🔹 Latest update (updateMessage)
+  // IMPORTANT:
+  // - null means "force no update message" (used for LITE/inactive publish gating)
+  // - undefined means "use profile.updateMessage"
   const updateMessageSource =
-    latestUpdateRaw ?? ((profile as any)?.updateMessage as string | null) ?? null;
+    latestUpdateRaw !== undefined
+      ? latestUpdateRaw
+      : (((profile as any)?.updateMessage as string | null) ?? null);
+
   const latestUpdate = updateMessageSource
     ? sanitizeText(updateMessageSource, 500)
     : null;
