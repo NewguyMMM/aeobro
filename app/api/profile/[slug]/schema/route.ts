@@ -1,8 +1,10 @@
 // app/api/profile/[slug]/schema/route.ts
-// 📅 Updated: 2025-12-28 05:44 ET
-// Adds: visibility guard so UNPUBLISHED/DELETED profiles return 404 (no longer crawlable)
+// 📅 Updated: 2026-02-16 02:13 ET
+// Adds: 2-tier publish gating (LITE vs PLUS) + planStatus enforcement (inactive/missing => LITE)
+// Keeps: visibility guard so UNPUBLISHED/DELETED profiles return 404 (no longer crawlable)
 // Keeps: syndication gating via isSyndicationAllowed
-// Keeps: updateMessage in JSON-LD
+// Keeps: caching + headers behavior
+// Result: LITE/inactive cannot publish updateMessage, FAQ, Services (even if stored)
 
 import { NextResponse, NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
@@ -38,6 +40,28 @@ function notFoundJson(message = "Profile not found") {
   );
 }
 
+/**
+ * 2-tier effective publish access:
+ * - planStatus !== "active" => treat as LITE (deny plus publishing)
+ * - planStatus missing => treat as LITE (fail closed)
+ * - PLUS active => allow
+ * - PRO/BUSINESS/ENTERPRISE active => behave like PLUS for now (PRO hidden)
+ */
+function isPlusPublishingAllowed(planRaw: unknown, planStatusRaw: unknown): boolean {
+  const planStatus = String(planStatusRaw ?? "").toLowerCase();
+  if (planStatus !== "active") return false;
+
+  const plan = String(planRaw ?? "LITE").toUpperCase();
+  const normalized = plan === "FREE" ? "LITE" : plan;
+
+  return (
+    normalized === "PLUS" ||
+    normalized === "PRO" ||
+    normalized === "BUSINESS" ||
+    normalized === "ENTERPRISE"
+  );
+}
+
 export async function GET(req: NextRequest, { params }: Params) {
   const { slug } = params;
 
@@ -62,8 +86,6 @@ export async function GET(req: NextRequest, { params }: Params) {
   }
 
   // 2) Visibility guard (airtight with /p/[slug] behavior)
-  // If profile is UNPUBLISHED or DELETED, treat as not found so it is not crawlable.
-  // Note: This assumes schema.prisma now includes `visibility` as recommended.
   const visibility = (profile as any).visibility as
     | "PUBLIC"
     | "UNPUBLISHED"
@@ -77,7 +99,7 @@ export async function GET(req: NextRequest, { params }: Params) {
   const baseUrl = getBaseUrl();
   const humanUrl = `${baseUrl}/p/${encodeURIComponent(profile.slug ?? slug)}`;
 
-  /** Normalize plan */
+  /** Normalize plan (existing behavior for syndication gate) */
   const plan = (profile as any).plan ?? profile.user?.plan ?? null;
 
   const verificationStatus =
@@ -87,7 +109,7 @@ export async function GET(req: NextRequest, { params }: Params) {
       | "DOMAIN_VERIFIED"
       | null) ?? "UNVERIFIED";
 
-  /** Gating — allow PLATFORM_VERIFIED (even Lite) for JSON-LD */
+  /** Existing syndication gate */
   const gate = isSyndicationAllowed(
     { verificationStatus, plan },
     {
@@ -119,12 +141,22 @@ export async function GET(req: NextRequest, { params }: Params) {
     );
   }
 
+  // ✅ NEW: 2-tier publish gating boundary (fail-closed via planStatus)
+  const plusPublishingAllowed = isPlusPublishingAllowed(
+    profile.user?.plan,
+    profile.user?.planStatus
+  );
+
   try {
-    // ⭐ Pass updateMessage (the “latest update” text) into the schema builder
+    // Only include updateMessage for PLUS+ active
+    const updateMessageForSchema = plusPublishingAllowed
+      ? ((profile as any).updateMessage ?? null)
+      : null;
+
     const profileSchema = buildProfileSchema(
       profile,
       baseUrl,
-      (profile as any).updateMessage ?? null
+      updateMessageForSchema
     );
 
     /** Return profile-only schema */
@@ -149,7 +181,30 @@ export async function GET(req: NextRequest, { params }: Params) {
       });
     }
 
-    // ⭐ all=1 → include Services + FAQ
+    // ✅ all=1 extras: Only PLUS+ active can publish Services + FAQ
+    if (!plusPublishingAllowed) {
+      const payload = [profileSchema];
+      const body = pretty
+        ? JSON.stringify(payload, null, 2)
+        : escapeForJsonLd(payload);
+
+      return new NextResponse(body, {
+        status: 200,
+        headers: {
+          "Content-Type": "application/ld+json; charset=utf-8",
+          ...(download
+            ? {
+                "Content-Disposition": `attachment; filename="${slug}-schema-all.json"`,
+              }
+            : {}),
+          "Cache-Control": "public, s-maxage=60, stale-while-revalidate=300",
+          "X-Robots-Tag": "all",
+          Link: `<${humanUrl}>; rel="describes alternate"; type="text/html"`,
+        },
+      });
+    }
+
+    // PLUS+ active: include Services + FAQ
     const [services, faqs] = await Promise.all([
       prisma.serviceItem.findMany({
         where: { profileId: profile.id, isPublic: true },
