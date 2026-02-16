@@ -1,9 +1,11 @@
 // components/ProfileEditor.tsx
-// 📅 Updated: 2026-01-19 21:04
-//  - Move Products / Catalog + Updates immediately after Links (and before FAQs)
-//  - Replace Products tile description copy
-//  - Add Products tooltip explaining why Products > Links
-//  - Preserve Lite read-only products list + Plus/Pro editor behavior
+// 📅 Updated: 2026-02-16 13:00 (EST)
+//  - Align UI gating with 2-tier model + planStatus rule:
+//    * If planStatus !== "active" (or missing) => treat as LITE everywhere (fail closed)
+//    * Lite/inactive cannot edit/publish: faqJson, servicesJson, productsJson, updateMessage
+//    * Plus(active) and Pro(active) can edit/publish: faqJson, servicesJson, productsJson, updateMessage
+//  - Keep sections visible but gated/disabled where required
+//  - No endpoint changes, no Prisma changes, no new abstractions, no architectural refactors
 
 "use client";
 
@@ -154,7 +156,6 @@ function AIDraftingCallout() {
     </div>
   );
 }
-
 
 /** -------- Types -------- */
 type EntityType =
@@ -462,24 +463,32 @@ export default function ProfileEditor({
     planFromServer ? normalizePlanForUi(planFromServer) : null
   );
 
-  React.useEffect(() => {
-    // If server already told us the plan, trust it and skip the fetch
-    if (planFromServer) return;
+  // ---- Plan status (critical global rule: if not active => treat as Lite)
+  const [planStatus, setPlanStatus] = React.useState<string | null>(null);
 
+  React.useEffect(() => {
+    // If server already told us the plan, trust it and skip the fetch for plan (but we still want status)
     let cancelled = false;
+
     (async () => {
       try {
         const r = await fetch("/api/account", { cache: "no-store" });
         if (!r.ok) return;
         const j = await r.json();
-        const raw = j?.plan as string | undefined;
-        if (!cancelled && raw) {
-          setPlan(normalizePlanForUi(raw));
+
+        const rawPlan = (j?.plan as string | undefined) ?? undefined;
+        const rawStatus = (j?.planStatus as string | undefined) ?? undefined;
+
+        if (!cancelled) {
+          if (!planFromServer && rawPlan) setPlan(normalizePlanForUi(rawPlan));
+          if (rawStatus) setPlanStatus(rawStatus);
+          // If status missing, we fail-closed below by treating as not active.
         }
       } catch {
         /* ignore */
       }
     })();
+
     return () => {
       cancelled = true;
     };
@@ -488,14 +497,27 @@ export default function ProfileEditor({
   // Upper-case key for gating logic; default Lite if unknown
   const planKey = (plan ?? "Lite").toUpperCase();
 
-  // Treat PRO/BUSINESS/ENTERPRISE as Pro-level for JSON editors
-  const isProPlan = planKey === "PRO" || planKey === "BUSINESS" || planKey === "ENTERPRISE";
+  // ✅ Critical global rule: if planStatus !== "active" => treat as Lite everywhere (fail closed)
+  const isPlanActive = (planStatus ?? "").toLowerCase() === "active";
 
-  // Updates editor should be available on Plus and Pro+ plans only
-  const canEditUpdates = planKey === "PLUS" || isProPlan;
+  // Effective plan used for feature gating (not for displaying the pill)
+  const effectivePlanKey = isPlanActive ? planKey : "LITE";
 
-  // Products editor should be available on Plus and Pro+ plans (Lite is read-only)
-  const canEditProducts = planKey === "PLUS" || isProPlan;
+  // Pro/Business/Enterprise should behave like Plus for now (but still hidden in UI elsewhere)
+  const isProLike =
+    effectivePlanKey === "PRO" || effectivePlanKey === "BUSINESS" || effectivePlanKey === "ENTERPRISE";
+
+  const isPlusLike = effectivePlanKey === "PLUS" || isProLike;
+
+  // Updates editor should be available on Plus(active) and Pro-like(active) plans only
+  const canEditUpdates = isPlusLike;
+
+  // Products editor should be available on Plus(active) and Pro-like(active) plans (Lite/inactive is read-only)
+  const canEditProducts = isPlusLike;
+
+  // FAQ + Services editor should be available on Plus(active) and Pro-like(active) plans
+  const canEditFaqsAndServices = isPlusLike;
+
   /** ---- Build a normalized payload ---- */
   const buildPayload = React.useCallback((): Profile => {
     const base: Profile = {
@@ -529,11 +551,15 @@ export default function ProfileEditor({
               url: normalizeUrl(l.url || ""),
             }))
           : null,
-      // 🔹 Latest update is now saved with the main profile payload
-      updateMessage: (updateMessage || "").trim() || null,
+      // updateMessage is gated below (do NOT include for Lite/inactive to avoid overwriting)
     };
 
-    // 🔹 Products / Catalog — only send when Plus/Pro+ so Lite users don't wipe
+    // 🔹 Latest update — only send when Plus/Pro-like (active) so Lite users don't overwrite
+    if (canEditUpdates) {
+      base.updateMessage = (updateMessage || "").trim() || null;
+    }
+
+    // 🔹 Products / Catalog — only send when Plus/Pro-like (active) so Lite users don't wipe
     if (canEditProducts) {
       const productsJson = (products ?? [])
         .map((p, index) => {
@@ -571,9 +597,8 @@ export default function ProfileEditor({
       base.productsJson = productsJson;
     }
 
-    // 🔹 Phase 2 JSON editors — only send when Pro/Business/Enterprise so
-    // Lite users don’t accidentally wipe existing structured data.
-    if (isProPlan) {
+    // 🔹 FAQs + Services — only send when Plus/Pro-like (active) so Lite users don’t wipe existing structured data.
+    if (canEditFaqsAndServices) {
       const faqJson = (faqs ?? [])
         .map((f, index) => {
           const q = (f.question || "").trim();
@@ -600,7 +625,7 @@ export default function ProfileEditor({
             priceUnit: (s.priceUnit || "").trim() || null,
             currency: (s.currency || "").trim() || null,
             position: s.position ?? index + 1,
-          };
+          } as ServiceItem;
         })
         .filter(Boolean) as ServiceItem[];
 
@@ -630,11 +655,12 @@ export default function ProfileEditor({
     handles,
     links,
     updateMessage,
+    canEditUpdates,
     products,
     canEditProducts,
     faqs,
     services,
-    isProPlan,
+    canEditFaqsAndServices,
   ]);
 
   /** ---- Prefill from API on mount ---- */
@@ -658,7 +684,7 @@ export default function ProfileEditor({
         if (data.tagline != null) setTagline(data.tagline || "");
         if (data.bio != null) setBio(data.bio || "");
 
-        // Updates
+        // Updates (always prefill; Lite users see gated/read-only)
         if (data.updateMessage != null) setUpdateMessage(data.updateMessage || "");
 
         if (data.website != null) setWebsite(data.website || "");
@@ -683,7 +709,7 @@ export default function ProfileEditor({
         // Products (always prefill; Lite users see read-only)
         if (Array.isArray(data.productsJson)) setProducts(data.productsJson);
 
-        // Phase 2 JSON editors (always prefill; Lite users see read-only)
+        // FAQs/Services (always prefill; Lite users see read-only)
         if (Array.isArray(data.faqJson)) setFaqs(data.faqJson);
         if (Array.isArray(data.servicesJson)) setServices(data.servicesJson);
 
@@ -735,7 +761,7 @@ export default function ProfileEditor({
         }
       }
 
-      // Products validation (URLs only) for Plus/Pro+ where editor is unlocked
+      // Products validation (URLs only) for Plus/Pro-like(active) where editor is unlocked
       if (canEditProducts) {
         for (const p of products) {
           if (p.url && !isValidUrl(normalizeUrl(p.url))) {
@@ -747,9 +773,8 @@ export default function ProfileEditor({
         }
       }
 
-      // Services validation (URLs only; other fields are free-form),
-      // and only for Pro/Business/Enterprise where the editor is unlocked.
-      if (isProPlan) {
+      // Services validation (URLs only) for Plus/Pro-like(active) where editor is unlocked
+      if (canEditFaqsAndServices) {
         for (const s of services) {
           if (s.url && !isValidUrl(normalizeUrl(s.url))) {
             throw new Error("Service URLs must be valid (https://example.com).");
@@ -843,6 +868,7 @@ export default function ProfileEditor({
   const input = "w-full border rounded-lg px-3 py-2";
   const label = "text-sm font-medium text-gray-700";
   const row = "grid gap-2";
+
   return (
     <div className="max-w-2xl grid gap-8">
       {/* Top note + plan pill */}
@@ -918,8 +944,8 @@ export default function ProfileEditor({
       </div>
 
       {/* AI drafting helper */}
-       <AIDraftingCallout />
-      
+      <AIDraftingCallout />
+
       {/* Identity */}
       <section className="grid gap-4">
         <h3 className="text-lg font-semibold">Identity</h3>
@@ -1395,7 +1421,8 @@ export default function ProfileEditor({
           )}
         </div>
       </section>
-      {/* Products / Catalog – Plus & Pro+ only (MOVED: now immediately after Links and before FAQs) */}
+
+      {/* Products / Catalog – Plus(active) & Pro-like(active) only */}
       <section className="grid gap-4">
         <div className="rounded-2xl border bg-white p-6 shadow-sm space-y-3">
           <div className="flex items-start justify-between gap-3">
@@ -1718,7 +1745,9 @@ export default function ProfileEditor({
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <div className="text-sm font-semibold">Your catalog (read-only on Lite)</div>
-                      <div className="text-xs text-gray-600">Your items are saved. Upgrade to Plus to edit your catalog.</div>
+                      <div className="text-xs text-gray-600">
+                        Your items are saved. Upgrade to Plus to edit your catalog.
+                      </div>
                     </div>
                     <a
                       href="/pricing"
@@ -1766,8 +1795,8 @@ export default function ProfileEditor({
                 </div>
               ) : (
                 <div className="rounded-md border border-dashed bg-gray-50 p-3 text-sm text-gray-600">
-                  Products/Catalog is available on <span className="font-medium">Plus</span> and{" "}
-                  <span className="font-medium">Pro</span> plans. Upgrade to add machine-readable product and offer data.
+                  Products/Catalog is available on <span className="font-medium">Plus</span>. Upgrade to add machine-readable
+                  product and offer data.
                   <div className="mt-3">
                     <a
                       href="/pricing"
@@ -1783,7 +1812,7 @@ export default function ProfileEditor({
         </div>
       </section>
 
-      {/* Updates – Plus & Pro+ only (MOVED: now immediately after Links and before FAQs) */}
+      {/* Updates – Plus(active) & Pro-like(active) only */}
       <section className="grid gap-4">
         <div className="rounded-2xl border bg-white p-6 shadow-sm space-y-3">
           <div className="flex items-start justify-between gap-3">
@@ -1816,28 +1845,49 @@ export default function ProfileEditor({
               </p>
             </>
           ) : (
-            <div className="rounded-md border border-dashed bg-gray-50 p-3 text-sm text-gray-600">
-              Latest Updates are available on <span className="font-medium">Plus</span> and{" "}
-              <span className="font-medium">Pro</span> plans. Upgrade to keep AI tools in sync with your newest offers and
-              announcements.
-              <div className="mt-3">
-                <a
-                  href="/pricing"
-                  className="inline-flex items-center rounded-md border border-blue-600 bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700"
-                >
-                  Upgrade on Pricing page
-                </a>
-              </div>
+            <div className="grid gap-3">
+              {updateMessage?.trim() ? (
+                <div className="rounded-xl border bg-white p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="text-sm font-semibold">Latest update (read-only on Lite)</div>
+                      <div className="text-xs text-gray-600">
+                        Your update is saved. Upgrade to Plus to edit updates.
+                      </div>
+                    </div>
+                    <a
+                      href="/pricing"
+                      className="inline-flex items-center rounded-md border border-blue-600 bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 whitespace-nowrap"
+                    >
+                      Upgrade to edit
+                    </a>
+                  </div>
+                  <div className="mt-3 text-sm text-gray-800 whitespace-pre-wrap">{updateMessage}</div>
+                </div>
+              ) : (
+                <div className="rounded-md border border-dashed bg-gray-50 p-3 text-sm text-gray-600">
+                  Latest Updates are available on <span className="font-medium">Plus</span>. Upgrade to keep AI tools in sync
+                  with your newest offers and announcements.
+                  <div className="mt-3">
+                    <a
+                      href="/pricing"
+                      className="inline-flex items-center rounded-md border border-blue-600 bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700"
+                    >
+                      Upgrade on Pricing page
+                    </a>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>
       </section>
 
-      {/* Phase 2: FAQ Builder (Pro gating) */}
+      {/* FAQs (Plus gating) */}
       <section className="grid gap-4">
         <div className="flex items-center justify-between">
           <h3 className="text-lg font-semibold flex items-center gap-2">
-            FAQs (Pro)
+            FAQs
             <span className="relative group cursor-help align-middle">
               <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-gray-200 text-[10px] font-semibold text-gray-700">
                 i
@@ -1848,14 +1898,14 @@ export default function ProfileEditor({
               </span>
             </span>
           </h3>
-          {!isProPlan && (
+          {!canEditFaqsAndServices && (
             <span className="text-xs rounded-full bg-yellow-50 px-2.5 py-1 text-yellow-800 border border-yellow-200">
-              Upgrade to Pro to edit FAQs
+              Upgrade to Plus to edit FAQs
             </span>
           )}
         </div>
 
-        {isProPlan ? (
+        {canEditFaqsAndServices ? (
           <div className="grid gap-3 rounded-2xl border bg-white p-4 shadow-sm">
             <p className="text-sm text-gray-600">
               Add common questions and answers about your brand, services, or policies. AEOBRO turns these into FAQ JSON-LD
@@ -1931,20 +1981,56 @@ export default function ProfileEditor({
                 ))}
               </ul>
             )}
+
+            {faqs.length === 0 && (
+              <div className="rounded-md border border-dashed bg-gray-50 p-3 text-sm text-gray-600">
+                No FAQs yet. Add your most common questions first.
+              </div>
+            )}
           </div>
         ) : (
-          <div className="rounded-2xl border border-dashed bg-gray-50 p-4 text-sm text-gray-600">
-            FAQs are stored as structured JSON-LD for AI and search engines. Upgrade to{" "}
-            <span className="font-medium">Pro</span> to unlock the FAQ editor here.
+          <div className="grid gap-3">
+            {faqs.length > 0 ? (
+              <div className="rounded-2xl border bg-white p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="text-sm font-semibold">FAQs (read-only on Lite)</div>
+                    <div className="text-xs text-gray-600">Your FAQs are saved. Upgrade to Plus to edit.</div>
+                  </div>
+                  <a
+                    href="/pricing"
+                    className="inline-flex items-center rounded-md border border-blue-600 bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 whitespace-nowrap"
+                  >
+                    Upgrade to edit
+                  </a>
+                </div>
+
+                <ul className="mt-3 space-y-3 text-sm">
+                  {faqs.map((f, idx) => (
+                    <li key={idx} className="rounded-lg border bg-gray-50 px-3 py-2">
+                      <div className="font-medium">
+                        {idx + 1}. {f.question}
+                      </div>
+                      <div className="mt-1 text-gray-700 whitespace-pre-wrap">{f.answer}</div>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : (
+              <div className="rounded-2xl border border-dashed bg-gray-50 p-4 text-sm text-gray-600">
+                FAQs are stored as structured JSON-LD for AI and search engines. Upgrade to{" "}
+                <span className="font-medium">Plus</span> to unlock the FAQ editor here.
+              </div>
+            )}
           </div>
         )}
       </section>
 
-      {/* Phase 2: Services Builder (Pro gating) */}
+      {/* Services (Plus gating) */}
       <section className="grid gap-4">
         <div className="flex items-center justify-between">
           <h3 className="text-lg font-semibold flex items-center gap-2">
-            Services (Pro)
+            Services
             <span className="relative group cursor-help align-middle">
               <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-gray-200 text-[10px] font-semibold text-gray-700">
                 i
@@ -1955,14 +2041,14 @@ export default function ProfileEditor({
               </span>
             </span>
           </h3>
-          {!isProPlan && (
+          {!canEditFaqsAndServices && (
             <span className="text-xs rounded-full bg-yellow-50 px-2.5 py-1 text-yellow-800 border border-yellow-200">
-              Upgrade to Pro to edit Services
+              Upgrade to Plus to edit Services
             </span>
           )}
         </div>
 
-        {isProPlan ? (
+        {canEditFaqsAndServices ? (
           <div className="grid gap-3 rounded-2xl border bg-white p-4 shadow-sm">
             <p className="text-sm text-gray-600">
               List your services or offers. AEOBRO exposes these as{" "}
@@ -2055,10 +2141,17 @@ export default function ProfileEditor({
                 onClick={() => {
                   const name = (serviceDraft.name || "").trim();
                   if (!name) return;
+
+                  const url = (serviceDraft.url || "").trim();
+                  if (url && !isValidUrl(normalizeUrl(url))) {
+                    toast("Service URL must be valid (https://...).", "error");
+                    return;
+                  }
+
                   const newItem: ServiceItem = {
                     name,
                     description: (serviceDraft.description || "").trim() || "",
-                    url: serviceDraft.url || "",
+                    url: url ? normalizeUrl(url) : "",
                     priceMin: serviceDraft.priceMin || "",
                     priceMax: serviceDraft.priceMax || "",
                     priceUnit: serviceDraft.priceUnit || "",
@@ -2130,12 +2223,61 @@ export default function ProfileEditor({
                 ))}
               </ul>
             )}
+
+            {services.length === 0 && (
+              <div className="rounded-md border border-dashed bg-gray-50 p-3 text-sm text-gray-600">
+                No services listed yet. Add the top services you want AI to describe and recommend.
+              </div>
+            )}
           </div>
         ) : (
-          <div className="rounded-2xl border border-dashed bg-gray-50 p-4 text-sm text-gray-600">
-            Services are exported as structured{" "}
-            <code className="text-xs bg-gray-100 px-1 py-0.5 rounded">Service</code> entities in JSON-LD, including price
-            ranges when available. Upgrade to <span className="font-medium">Pro</span> to unlock the Services editor here.
+          <div className="grid gap-3">
+            {services.length > 0 ? (
+              <div className="rounded-2xl border bg-white p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="text-sm font-semibold">Services (read-only on Lite)</div>
+                    <div className="text-xs text-gray-600">Your services are saved. Upgrade to Plus to edit.</div>
+                  </div>
+                  <a
+                    href="/pricing"
+                    className="inline-flex items-center rounded-md border border-blue-600 bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 whitespace-nowrap"
+                  >
+                    Upgrade to edit
+                  </a>
+                </div>
+
+                <ul className="mt-3 grid gap-3 text-sm">
+                  {services.map((s, idx) => (
+                    <li key={idx} className="rounded-lg border bg-gray-50 px-3 py-2">
+                      <div className="font-medium">
+                        {idx + 1}. {s.name}
+                      </div>
+                      {s.description ? (
+                        <div className="mt-1 text-gray-700 whitespace-pre-wrap">{s.description}</div>
+                      ) : null}
+                      {s.url ? (
+                        <a
+                          href={normalizeUrl(s.url)}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-xs text-blue-600 underline mt-2 inline-block"
+                        >
+                          View service page
+                        </a>
+                      ) : null}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : (
+              <div className="rounded-2xl border border-dashed bg-gray-50 p-4 text-sm text-gray-600">
+                Services are exported as structured{" "}
+                <code className="text-xs bg-gray-100 px-1 py-0.5 rounded">Service</code> entities in JSON-LD, including
+                price ranges when available. Upgrade to <span className="font-medium">Plus</span> to unlock the Services
+                editor here.
+              </div>
+            )}
           </div>
         )}
       </section>
@@ -2170,11 +2312,7 @@ export default function ProfileEditor({
       {/* JSON-LD Preview */}
       <div className="mt-4">
         {serverSlug || profileId ? (
-          <SchemaPreviewButton
-            slug={(serverSlug as string) || (profileId as string)}
-            includeAll={true}
-            pretty={true}
-          />
+          <SchemaPreviewButton slug={(serverSlug as string) || (profileId as string)} includeAll={true} pretty={true} />
         ) : (
           <button
             className="px-3 py-2 border rounded-lg opacity-60 cursor-not-allowed"
