@@ -100,6 +100,10 @@ export async function POST(request: Request) {
     /**
      * ✅ 4) Never-drift logic:
      * If we have a subscription id, Stripe is the source of truth for customer.
+     *
+     * ✅ Permanent reliability upgrade:
+     * If the stored subscription id is missing/invalid in this Stripe mode,
+     * clear it and continue (do NOT brick the billing portal).
      */
     if (user.stripeSubscriptionId) {
       try {
@@ -131,26 +135,24 @@ export async function POST(request: Request) {
         }
       } catch (err: any) {
         if (isStripeMissingResource(err)) {
-          console.log("[portal] subscription_invalid_in_mode", {
+          // ✅ Self-heal: clear subscription id, keep going.
+          console.warn("[portal] subscription_missing_clearing", {
             origin,
             userId: user.id,
             looksLive,
-            hasSubscriptionId: true,
+            hadCustomerId: !!stripeCustomerId,
           });
 
-          return jsonError(409, "Stored subscription id is invalid in current Stripe mode", {
-            origin,
-            hasSessionEmail,
-            looksLive,
-            hasSubscriptionId: true,
-            stripeMessage: err?.message,
-            stripeCode: err?.code,
-            stripeType: err?.type,
-            hint:
-              "DB may contain a TEST subscription id. Replace with LIVE sub_... or clear and re-checkout in LIVE.",
+          await prisma.user.update({
+            where: { id: user.id },
+            data: { stripeSubscriptionId: null },
           });
+
+          // Continue with customer-based portal flow.
+          // If customerId is also wrong-mode/missing, step 5 will handle it.
+        } else {
+          throw err;
         }
-        throw err;
       }
     }
 
