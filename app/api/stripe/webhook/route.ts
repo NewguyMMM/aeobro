@@ -1,7 +1,9 @@
 // app/api/stripe/webhook/route.ts
-// ✅ Updated: 2025-12-28 05:33 ET
-// Adds: subscription lapse → unpublish profile + start 90-day retention timer
-// Adds: reactivation → republish profile + clear retention
+// ✅ Updated: 2026-02-16 12:55 ET
+// Fix: Prevent wrong-mode (test/live) subscription IDs from poisoning production DB.
+// Strategy: Validate subscriptionId in current Stripe mode before storing to DB.
+// Keeps: subscription lapse → unpublish profile + 90-day retention timer
+// Keeps: reactivation → republish profile + clear retention
 // Keeps: price->plan mapping + logging
 
 import { NextResponse } from "next/server";
@@ -64,15 +66,58 @@ function isLiveCustomer(
   return !("deleted" in (c as any) && (c as any).deleted === true);
 }
 
+/* -------- Helper: prevent wrong-mode subscriptionId poisoning of DB ---------- */
+
+function isStripeMissingResource(err: any) {
+  const msg = (err?.message || "").toLowerCase();
+  return (
+    err?.type === "StripeInvalidRequestError" &&
+    (err?.code === "resource_missing" || msg.includes("no such"))
+  );
+}
+
+/**
+ * Validate a subscriptionId exists in the current Stripe mode (as determined by STRIPE_SECRET_KEY).
+ * - Returns the subscriptionId if valid
+ * - Returns null if missing (wrong mode / deleted / invalid)
+ * - Throws for non-"missing resource" Stripe errors
+ */
+async function validateSubscriptionIdInThisMode(
+  subscriptionId?: string | null
+): Promise<string | null> {
+  if (!subscriptionId) return null;
+  try {
+    await stripe.subscriptions.retrieve(subscriptionId);
+    return subscriptionId;
+  } catch (err: any) {
+    if (isStripeMissingResource(err)) {
+      console.warn(
+        "[stripe webhook] subscriptionId invalid in current Stripe mode, skipping store:",
+        subscriptionId
+      );
+      return null;
+    }
+    throw err;
+  }
+}
+
 /* ------------------------ Lapse/Reactivate helpers ------------------------- */
 
 const DAYS_90_MS = 90 * 24 * 60 * 60 * 1000;
 
-async function applySubscriptionLapseEffects(userId: string, reason = "SUBSCRIPTION_LAPSED") {
+async function applySubscriptionLapseEffects(
+  userId: string,
+  reason = "SUBSCRIPTION_LAPSED"
+) {
   const now = new Date();
   const retentionUntil = new Date(now.getTime() + DAYS_90_MS);
 
-  console.log("[stripe webhook] Applying lapse effects for user:", userId, "retentionUntil:", retentionUntil.toISOString());
+  console.log(
+    "[stripe webhook] Applying lapse effects for user:",
+    userId,
+    "retentionUntil:",
+    retentionUntil.toISOString()
+  );
 
   // 1) Anchor the lapse timestamp (only set once)
   await prisma.user.update({
@@ -245,8 +290,11 @@ export async function POST(req: Request) {
           );
         }
 
+        // ✅ Prevent wrong-mode subscription poisoning
+        const safeSubId = await validateSubscriptionIdInThisMode(subscriptionId ?? null);
+
         const updated = await upsertUserFromCustomerId(customerId ?? "", {
-          stripeSubscriptionId: subscriptionId ?? undefined,
+          stripeSubscriptionId: safeSubId ?? undefined,
           plan: mappedPlan, // if undefined, leave existing plan as-is
           planStatus: mappedPlan ? "active" : undefined,
           currentPeriodEnd: undefined,
@@ -284,8 +332,6 @@ export async function POST(req: Request) {
         const mappedPlan = mapPriceToPlan(priceId);
 
         // Define "active entitlement" strictly.
-        // Past_due can be treated as active-ish for billing grace, but your policy statement
-        // says "after your subscription lapses" — so we only lapse on truly non-active states.
         const entitlementStatuses = ["trialing", "active", "past_due"] as const;
         const isEntitled = entitlementStatuses.includes(sub.status as any);
 
@@ -298,8 +344,11 @@ export async function POST(req: Request) {
           currentPeriodEnd = new Date(sub.current_period_end * 1000);
         }
 
+        // ✅ Prevent wrong-mode subscription poisoning
+        const safeSubId = await validateSubscriptionIdInThisMode(sub.id);
+
         const updated = await upsertUserFromCustomerId(sub.customer as string, {
-          stripeSubscriptionId: sub.id,
+          stripeSubscriptionId: safeSubId, // string | null
           plan,
           planStatus: sub.status,
           currentPeriodEnd,
@@ -307,10 +356,8 @@ export async function POST(req: Request) {
 
         if (updated?.id) {
           if (isEntitled) {
-            // active/trialing/past_due → ensure profile is PUBLIC
             await applySubscriptionReactivationEffects(updated.id);
           } else {
-            // lapsed state (canceled/unpaid/etc.) → unpublish + start retention
             await applySubscriptionLapseEffects(updated.id);
           }
         }
@@ -349,8 +396,11 @@ export async function POST(req: Request) {
           ? new Date(periodEndUnix * 1000)
           : null;
 
+        // ✅ Prevent wrong-mode subscription poisoning
+        const safeSubId = await validateSubscriptionIdInThisMode(subscriptionId ?? null);
+
         const updated = await upsertUserFromCustomerId(customerId, {
-          stripeSubscriptionId: subscriptionId ?? undefined,
+          stripeSubscriptionId: safeSubId ?? undefined,
           // Only set plan if we can map from price ID.
           plan: mappedPlan ?? undefined,
           planStatus: "active",
