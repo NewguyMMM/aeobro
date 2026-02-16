@@ -8,7 +8,9 @@ import { prisma } from "@/lib/prisma";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-function jsonError(status: number, message: string, extra?: Record<string, any>) {
+type JsonExtra = Record<string, any>;
+
+function jsonError(status: number, message: string, extra?: JsonExtra) {
   return NextResponse.json({ ok: false, message, ...(extra ?? {}) }, { status });
 }
 
@@ -16,68 +18,99 @@ function isStripeMissingResource(err: any) {
   return (
     err?.type === "StripeInvalidRequestError" &&
     (err?.code === "resource_missing" ||
-      (typeof err?.message === "string" && err.message.toLowerCase().includes("no such")))
+      (typeof err?.message === "string" &&
+        err.message.toLowerCase().includes("no such")))
   );
 }
 
 export async function POST(request: Request) {
+  // 🌐 Always compute origin from request (no env guessing)
+  const origin = new URL(request.url).origin;
+
+  // ✅ Stripe secret key presence + mode check (no secret logged)
+  const secret = process.env.STRIPE_SECRET_KEY;
+  const looksLive = !!secret && secret.startsWith("sk_live_");
+
   try {
     // 🔒 1) Require a logged-in user
     const session = await getServerSession(authOptions);
-    if (!session?.user?.email) {
-      return jsonError(401, "Unauthorized");
-    }
+    const email = session?.user?.email ?? null;
+    const hasSessionEmail = !!email;
 
-    const email = session.user.email;
+    if (!hasSessionEmail) {
+      console.log("[portal] unauthorized", {
+        origin,
+        hasSessionEmail,
+        looksLive,
+      });
+      return jsonError(401, "Unauthorized", { origin, hasSessionEmail, looksLive });
+    }
 
     // 🔎 2) Load user billing identifiers (customer + subscription)
     const user = await prisma.user.findUnique({
-      where: { email },
-      // IMPORTANT: make sure your Prisma User model has stripeSubscriptionId
+      where: { email: email! },
       select: { id: true, stripeCustomerId: true, stripeSubscriptionId: true },
     });
 
     if (!user) {
-      return jsonError(404, "User not found");
+      console.log("[portal] user_not_found", {
+        origin,
+        hasSessionEmail,
+        looksLive,
+      });
+      return jsonError(404, "User not found", { origin, hasSessionEmail, looksLive });
     }
 
-    // ✅ Stripe secret key
-    const secret = process.env.STRIPE_SECRET_KEY;
     if (!secret) {
-      return jsonError(500, "Stripe secret key missing");
+      console.log("[portal] env_missing_secret", {
+        origin,
+        hasSessionEmail,
+        looksLive: false,
+        userId: user.id,
+      });
+      return jsonError(500, "Stripe secret key missing", {
+        origin,
+        hasSessionEmail,
+        looksLive: false,
+      });
     }
-
-    console.log("[portal] key_mode", { looksLive: secret.startsWith("sk_live_") });
 
     const stripe = new Stripe(secret, {
-      apiVersion: "2024-06-20" as any,
+      apiVersion: "2024-06-20",
     });
 
-    // 🌐 3) Return origin derived from request (no env guessing)
-    const origin = new URL(request.url).origin;
-    const returnUrl = `${origin}/billing`;
+    const returnUrl = `${origin}/billing`; // keep your current return target
 
     if (!origin.startsWith("https://")) {
-      console.warn("[portal] Non-https origin detected:", origin);
+      console.warn("[portal] non_https_origin", { origin, userId: user.id });
     }
 
-    let stripeCustomerId = user.stripeCustomerId || undefined;
+    let stripeCustomerId: string | undefined = user.stripeCustomerId || undefined;
+    const hasSubscriptionId = !!user.stripeSubscriptionId;
+
+    console.log("[portal] start", {
+      origin,
+      hasSessionEmail,
+      looksLive,
+      userId: user.id,
+      hasSubscriptionId,
+      hasCustomerId: !!stripeCustomerId,
+    });
 
     /**
      * ✅ 4) Never-drift logic:
      * If we have a subscription id, Stripe is the source of truth for customer.
-     * This guarantees the billing portal always opens for the customer that owns the active subscription.
      */
     if (user.stripeSubscriptionId) {
       try {
         const sub = await stripe.subscriptions.retrieve(user.stripeSubscriptionId);
 
-        // sub.customer can be string or object depending on expand; normalize to string
         const subCustomerId =
           typeof sub.customer === "string" ? sub.customer : sub.customer?.id;
 
         if (subCustomerId && subCustomerId !== stripeCustomerId) {
-          console.log("[portal] syncing customer from subscription", {
+          console.log("[portal] syncing_customer_from_subscription", {
+            origin,
             userId: user.id,
             hadCustomerId: !!stripeCustomerId,
             changed: true,
@@ -89,29 +122,49 @@ export async function POST(request: Request) {
             where: { id: user.id },
             data: { stripeCustomerId },
           });
+        } else {
+          console.log("[portal] subscription_customer_ok", {
+            origin,
+            userId: user.id,
+            changed: false,
+          });
         }
       } catch (err: any) {
-        // If subscription is missing/wrong-mode, don't explode silently; surface it.
         if (isStripeMissingResource(err)) {
+          console.log("[portal] subscription_invalid_in_mode", {
+            origin,
+            userId: user.id,
+            looksLive,
+            hasSubscriptionId: true,
+          });
+
           return jsonError(409, "Stored subscription id is invalid in current Stripe mode", {
+            origin,
+            hasSessionEmail,
+            looksLive,
+            hasSubscriptionId: true,
             stripeMessage: err?.message,
             stripeCode: err?.code,
             stripeType: err?.type,
             hint:
-              "Your DB may contain a TEST subscription id. Update stripeSubscriptionId to the LIVE sub_... or clear it and re-checkout in LIVE.",
+              "DB may contain a TEST subscription id. Replace with LIVE sub_... or clear and re-checkout in LIVE.",
           });
         }
         throw err;
       }
     }
 
-    // 🧪 5) If we still don't have a customer id, ensure one exists in this mode
+    // 🧪 5) If we still have a customer id, verify it exists in this mode
     if (stripeCustomerId) {
       try {
         await stripe.customers.retrieve(stripeCustomerId);
       } catch (err: any) {
         if (isStripeMissingResource(err)) {
-          console.warn("[portal] stored_customer_missing_recreating", { userId: user.id });
+          console.warn("[portal] stored_customer_missing", {
+            origin,
+            userId: user.id,
+            looksLive,
+          });
           stripeCustomerId = undefined;
         } else {
           throw err;
@@ -119,9 +172,10 @@ export async function POST(request: Request) {
       }
     }
 
+    // If no customer, create one (your existing behavior)
     if (!stripeCustomerId) {
       const customer = await stripe.customers.create({
-        email,
+        email: email!,
         metadata: { aeobroUserId: user.id },
       });
 
@@ -131,6 +185,12 @@ export async function POST(request: Request) {
         where: { id: user.id },
         data: { stripeCustomerId },
       });
+
+      console.log("[portal] customer_created", {
+        origin,
+        userId: user.id,
+        looksLive,
+      });
     }
 
     // 6) Create Stripe Billing Portal session
@@ -139,16 +199,33 @@ export async function POST(request: Request) {
       return_url: returnUrl,
     });
 
-    return NextResponse.json({ ok: true, url: portalSession.url });
+    console.log("[portal] portal_session_created", {
+      origin,
+      userId: user.id,
+      looksLive,
+      hasSubscriptionId,
+    });
+
+    return NextResponse.json(
+      {
+        ok: true,
+        url: portalSession.url,
+      },
+      { status: 200 }
+    );
   } catch (err: any) {
-    console.error("[portal] create session failed", {
+    console.error("[portal] create_session_failed", {
+      origin,
       message: err?.message,
       type: err?.type,
       code: err?.code,
       statusCode: err?.statusCode,
+      looksLive,
     });
 
     return jsonError(500, "Unable to create billing portal session", {
+      origin,
+      looksLive,
       stripeMessage: err?.message,
       stripeCode: err?.code,
       stripeType: err?.type,
