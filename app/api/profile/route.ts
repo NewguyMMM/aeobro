@@ -1,4 +1,13 @@
 // app/api/profile/route.ts
+// 📅 Updated: 2026-02-18 02:15 PM ET
+// Feature: AI_AGENT identity support (Phase 1 / Option E scope - Step 2)
+//
+// Guarantees:
+// - Does NOT modify Prisma schema, Stripe logic, verification gating, or export restrictions.
+// - Adds AI_AGENT support to ProfileSchema validation + DB write.
+// - AI_AGENT core identity fields are allowed on LITE.
+// - Publish fields remain PLUS-active only (fail-closed).
+
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
@@ -86,6 +95,51 @@ async function getEffectivePlanKey(userId: string): Promise<{
   } catch {
     return { planKey: "LITE", isActive: false };
   }
+}
+
+/**
+ * ✅ Prisma-safe payload writer
+ * We only include fields that actually exist on the Prisma Profile model.
+ * This prevents runtime errors if field names ever differ across environments.
+ */
+let __profileFieldSet: Set<string> | null = null;
+
+function getProfileFieldSet(): Set<string> {
+  if (__profileFieldSet) return __profileFieldSet;
+
+  try {
+    const dmmf = (prisma as any)?._dmmf;
+    const models = dmmf?.datamodel?.models;
+    const profileModel = Array.isArray(models)
+      ? models.find((m: any) => m?.name === "Profile")
+      : null;
+
+    const fields = Array.isArray(profileModel?.fields)
+      ? profileModel.fields.map((f: any) => String(f?.name)).filter(Boolean)
+      : [];
+
+    if (fields.length) {
+      __profileFieldSet = new Set(fields);
+      return __profileFieldSet;
+    }
+  } catch {
+    // fall through to empty set
+  }
+
+  __profileFieldSet = new Set<string>();
+  return __profileFieldSet;
+}
+
+function pickKnownProfileFields(data: Record<string, any>): Record<string, any> {
+  const fieldSet = getProfileFieldSet();
+  // If we couldn't discover fields, we still return data as-is (Prisma will validate).
+  // However, we will only use this helper for optional AI fields to avoid unknown-field errors.
+  const out: Record<string, any> = {};
+  for (const [k, v] of Object.entries(data)) {
+    if (fieldSet.size === 0) continue; // fail-closed: don't add unknown optional fields
+    if (fieldSet.has(k)) out[k] = v;
+  }
+  return out;
 }
 
 // URL schema that allows empty, normalizes protocol, and enforces MAX length
@@ -338,6 +392,19 @@ const ProductItem = z.object({
   position: z.number().int().min(1).max(500).optional().nullable(),
 });
 
+/** AI_AGENT fields (Phase 1) — validated but optional */
+const AIAgentFields = z.object({
+  aiAgentProvider: z.string().trim().max(120).optional().nullable(),
+  aiAgentModel: z.string().trim().max(120).optional().nullable(),
+  aiAgentVersion: z.string().trim().max(60).optional().nullable(),
+  aiAgentDocsUrl: urlMaybeEmpty300.optional().nullable(),
+  aiAgentApiUrl: urlMaybeEmpty300.optional().nullable(),
+
+  aiAgentCapabilities: csvOrArray,
+  aiAgentInputModes: csvOrArray,
+  aiAgentOutputModes: csvOrArray,
+});
+
 /** EXTENDED Profile Schema */
 const ProfileSchema = z.object({
   displayName: z.string().trim().max(120).optional().nullable(),
@@ -349,10 +416,31 @@ const ProfileSchema = z.object({
   links: z.array(LinkItem).max(20).optional().nullable().transform((v) => v ?? []),
 
   legalName: z.string().trim().max(160).optional().nullable(),
+
+  // ✅ Expanded to allow AI_AGENT (no assumptions about UI casing)
   entityType: z
-    .enum(["Business", "Local Service", "Organization", "Creator / Person", "Product"])
+    .string()
+    .trim()
+    .max(50)
     .optional()
-    .nullable(),
+    .nullable()
+    .refine(
+      (v) => {
+        if (v === null || v === undefined || v === "") return true;
+        const allowed = new Set([
+          "Business",
+          "Local Service",
+          "Organization",
+          "Creator / Person",
+          "Product",
+          "AI_AGENT",
+          "AI Agent",
+          "AI agent",
+        ]);
+        return allowed.has(v);
+      },
+      { message: "Invalid entityType" }
+    ),
 
   serviceArea: csvOrArray,
   foundedYear: intNullable,
@@ -376,6 +464,9 @@ const ProfileSchema = z.object({
   productsJson: z.array(ProductItem).optional().nullable().default([]),
 
   updateMessage: z.string().trim().max(500).optional().nullable(),
+
+  // ✅ AI agent identity fields
+  ...AIAgentFields.shape,
 });
 
 /* --------------------------------------------------- */
@@ -440,7 +531,20 @@ export async function PUT(req: Request) {
 
   try {
     // ✅ Sanitize AFTER validation, BEFORE any DB write
-    const d = sanitizeProfilePayload(parsed.data as any);
+    const dSan = sanitizeProfilePayload(parsed.data as any);
+
+    // ✅ Preserve validated AI fields even if sanitizeProfilePayload doesn't yet know about them
+    const d = {
+      ...(dSan as any),
+      aiAgentProvider: (parsed.data as any).aiAgentProvider ?? null,
+      aiAgentModel: (parsed.data as any).aiAgentModel ?? null,
+      aiAgentVersion: (parsed.data as any).aiAgentVersion ?? null,
+      aiAgentDocsUrl: (parsed.data as any).aiAgentDocsUrl ?? "",
+      aiAgentApiUrl: (parsed.data as any).aiAgentApiUrl ?? "",
+      aiAgentCapabilities: (parsed.data as any).aiAgentCapabilities ?? [],
+      aiAgentInputModes: (parsed.data as any).aiAgentInputModes ?? [],
+      aiAgentOutputModes: (parsed.data as any).aiAgentOutputModes ?? [],
+    };
 
     // ✅ Server-side permission boundary (fail-closed)
     const { planKey, isActive } = await getEffectivePlanKey(auth.userId);
@@ -460,7 +564,7 @@ export async function PUT(req: Request) {
     });
 
     // Normalize empties to null; arrays to [] so UI and public page are stable
-    const payload = {
+    const payloadBase: Record<string, any> = {
       displayName: emptyToNull(d.displayName),
       legalName: emptyToNull(d.legalName),
       entityType: emptyToNull(d.entityType),
@@ -486,17 +590,37 @@ export async function PUT(req: Request) {
       handles: d.handles ?? {},
       links: d.links ?? [],
 
-      // ✅ PLUS-only fields (server enforced; fail-closed)
-      ...(canEditPlus
-        ? {
-            faqJson: d.faqJson ?? [],
-            servicesJson: d.servicesJson ?? [],
-            productsJson: d.productsJson ?? [],
-            updateMessage: emptyToNull(d.updateMessage),
-          }
-        : {}),
-
+      // slug always written
       slug: finalSlug,
+    };
+
+    // ✅ AI agent identity fields are NOT plan-gated (allowed for LITE).
+    // ✅ Prisma-safe: only include if these columns exist on Profile model.
+    const aiOptional = pickKnownProfileFields({
+      aiAgentProvider: emptyToNull(d.aiAgentProvider),
+      aiAgentModel: emptyToNull(d.aiAgentModel),
+      aiAgentVersion: emptyToNull(d.aiAgentVersion),
+      aiAgentDocsUrl: emptyToNull(d.aiAgentDocsUrl),
+      aiAgentApiUrl: emptyToNull(d.aiAgentApiUrl),
+      aiAgentCapabilities: d.aiAgentCapabilities ?? [],
+      aiAgentInputModes: d.aiAgentInputModes ?? [],
+      aiAgentOutputModes: d.aiAgentOutputModes ?? [],
+    });
+
+    // ✅ PLUS-only fields (server enforced; fail-closed)
+    const plusOnly = canEditPlus
+      ? {
+          faqJson: d.faqJson ?? [],
+          servicesJson: d.servicesJson ?? [],
+          productsJson: d.productsJson ?? [],
+          updateMessage: emptyToNull(d.updateMessage),
+        }
+      : {};
+
+    const payload = {
+      ...payloadBase,
+      ...aiOptional,
+      ...plusOnly,
     };
 
     const saved = await prisma.profile.upsert({
