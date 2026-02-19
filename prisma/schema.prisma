@@ -1,5 +1,5 @@
 // prisma/schema.prisma
-// 📅 Updated: 2025-12-18 06:27 ET – Add publish/unpublish + 90-day retention fields for profile lifecycle
+// 📅 Updated: 2026-02-18 14:55 ET – Add AI_AGENT identity layer (Phase 1)
 
 generator client {
   provider = "prisma-client-js"
@@ -7,9 +7,9 @@ generator client {
 
 datasource db {
   provider          = "postgresql"
-  url               = env("DATABASE_URL")           // pooled URL for app runtime
-  directUrl         = env("DIRECT_URL")             // direct (non-pooler) URL for migrations
-  shadowDatabaseUrl = env("SHADOW_DATABASE_URL")    // Neon shadow branch/DB for migrate dev
+  url               = env("DATABASE_URL")
+  directUrl         = env("DIRECT_URL")
+  shadowDatabaseUrl = env("SHADOW_DATABASE_URL")
 }
 
 /* ===============================
@@ -32,13 +32,12 @@ enum VerifyStatus {
 enum Plan {
   FREE
   LITE
-  PLUS        // restored to avoid destructive enum change
+  PLUS
   PRO
   BUSINESS
-  ENTERPRISE  // safe addition; non-destructive
+  ENTERPRISE
 }
 
-/* Change-history entities */
 enum ChangeEntity {
   PROFILE
   FAQ
@@ -51,14 +50,12 @@ enum ChangeAction {
   DELETE
 }
 
-/* Profile-level verification status for gating & badge */
 enum VerificationLevel {
   UNVERIFIED
   PLATFORM_VERIFIED
   DOMAIN_VERIFIED
 }
 
-/* Support ticket enums */
 enum SupportCategory {
   BILLING
   VERIFICATION
@@ -73,10 +70,6 @@ enum SupportStatus {
   RESOLVED
   CLOSED
 }
-
-/* ===============================
-   NEW: Publish + retention enums
-   =============================== */
 
 enum ProfileVisibility {
   PUBLIC
@@ -93,6 +86,18 @@ enum UnpublishReason {
 }
 
 /* ===============================
+   NEW: EntityType (Phase 1)
+   =============================== */
+
+enum EntityType {
+  PERSON
+  ORGANIZATION
+  LOCAL_BUSINESS
+  CREATOR
+  AI_AGENT
+}
+
+/* ===============================
    Models
    =============================== */
 
@@ -104,33 +109,23 @@ model User {
   image               String?
   welcomeSentAt       DateTime?
 
-  // Billing / Paywall
   plan                 Plan     @default(LITE)
-  planStatus           String   @default("inactive") // active | trialing | past_due | canceled
+  planStatus           String   @default("inactive")
   stripeCustomerId     String?  @unique
   stripeSubscriptionId String?  @unique
   currentPeriodEnd     DateTime?
 
-  // NEW: retention anchor timestamps (90-day window starts at lapse)
   subscriptionLapsedAt      DateTime?
   subscriptionReactivatedAt DateTime?
 
-  // Auth relations
   accounts      Account[]
   sessions      Session[]
-
-  // Optional 1:1 Profile
   profile       Profile?
 
-  // Verification back-relations
   domainClaims      DomainClaim[]
   platformAccounts  PlatformAccount[]
   bioCodes          BioCode[]
-
-  // Change history
   changeLogs        ChangeLog[]
-
-  // Support tickets
   supportTickets    SupportTicket[]
 }
 
@@ -177,37 +172,31 @@ model Profile {
   userId      String   @unique
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade)
 
-  // Routing / Public URL
   slug        String   @unique
 
-  // NEW: publish + crawl controls
   visibility        ProfileVisibility @default(PUBLIC)
   unpublishedAt     DateTime?
   unpublishReason   UnpublishReason   @default(NONE)
 
-  // NEW: 90-day retention + deletion lifecycle
   retentionUntil        DateTime?
   deletedAt             DateTime?
   deletionJobLockedAt   DateTime?
 
-  // Core identity
   displayName String?
   legalName   String?
-  entityType  String?
 
-  // Story
+  // 🔄 CHANGED from String? → EntityType?
+  entityType  EntityType?
+
   tagline     String?
   bio         String?
 
-  // 🔔 Pro feature: single public “Latest Update” message (nullable)
   updateMessage String? @db.Text
 
-  // Anchors
   website     String?
   location    String?
   serviceArea String[]  @default([])
 
-  // Trust & authority
   foundedYear   Int?
   teamSize      Int?
   languages     String[]  @default([])
@@ -215,40 +204,51 @@ model Profile {
   hours         String?
   certifications String?
 
-  // Media & authority signals
-  press      Json?      // [{ title, url }]
+  press      Json?
   logoUrl    String?
   imageUrls  String[]   @default([])
 
-  // Platforms & extra links
-  handles    Json?      // { youtube, tiktok, ... }
-  links      Json?      // [{ label, url }]
+  handles    Json?
+  links      Json?
 
-  // Aggregated FAQ/Services JSON blobs for markup (Pro/Business only)
   faqJson      Json?
   servicesJson Json?
-
-  // ✅ NEW: Products/Catalog JSON blob (initial iteration)
   productsJson Json?
 
-  // --- Verified Badge & gating state (existing) ---
   verificationStatus  VerificationLevel @default(UNVERIFIED)
   verificationToken   String?  @unique
   domainVerifiedAt    DateTime?
   platformVerifiedAt  DateTime?
-  verifiedPlatforms   Json?    // e.g. {"google": {"channelId":"...", "connectedAt":"..."}
+  verifiedPlatforms   Json?
 
-  // --- NEW: Verification workflow fields used by UI/API ---
-  verifyMethod        String?   // "DNS" | "PLATFORM"
-  verifyToken         String?   // per-flow token (distinct from verificationToken)
-  verifyDomain        String?   // current domain under verification (DNS flow)
-  verifyMarker        String?   // current marker for platform bio flow
-  verifyCheckedAt     DateTime? // last time we checked verification state
+  verifyMethod        String?
+  verifyToken         String?
+  verifyDomain        String?
+  verifyMarker        String?
+  verifyCheckedAt     DateTime?
+
+  /* ===============================
+     AI_AGENT Identity Fields
+     =============================== */
+
+  agentName         String?
+  operatorName      String?
+  publicEndpoint    String?
+  modelBase         String?
+  multiModel        Boolean   @default(false)
+  launchDate        DateTime?
+  version           String?
+
+  autonomyLevel     String?
+  memoryPolicy      String?
+  capabilities      Json?
+  toolAccess        Json?
+  restrictedActions Json?
+  riskCategory      String?
 
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  // Relations
   faqItems          FAQItem[]
   serviceItems      ServiceItem[]
   changeLogs        ChangeLog[]
@@ -259,9 +259,9 @@ model Profile {
   @@index([deletedAt])
 }
 
-// ===============================
-// Verification models
-// ===============================
+/* ===============================
+   Verification Models
+   =============================== */
 
 model DomainClaim {
   id             String      @id @default(cuid())
