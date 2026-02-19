@@ -1,6 +1,7 @@
 // app/api/profile/[slug]/schema/route.ts
-// 📅 Updated: 2026-02-16 02:13 ET
-// Adds: 2-tier publish gating (LITE vs PLUS) + planStatus enforcement (inactive/missing => LITE)
+// 📅 Updated: 2026-02-18 02:23 PM ET
+// Adds: AI_AGENT schema support end-to-end (SoftwareApplication JSON-LD emitted by lib/schema.ts)
+// Keeps: 2-tier publish gating (LITE vs PLUS) + planStatus enforcement (inactive/missing => LITE)
 // Keeps: visibility guard so UNPUBLISHED/DELETED profiles return 404 (no longer crawlable)
 // Keeps: syndication gating via isSyndicationAllowed
 // Keeps: caching + headers behavior
@@ -8,11 +9,7 @@
 
 import { NextResponse, NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
-import {
-  buildProfileSchema,
-  buildFAQJsonLd,
-  buildServiceJsonLd,
-} from "@/lib/schema";
+import { buildProfileSchema, buildFAQJsonLd, buildServiceJsonLd } from "@/lib/schema";
 import { getBaseUrl } from "@/lib/getBaseUrl";
 import { isSyndicationAllowed } from "@/lib/isSyndicationAllowed";
 
@@ -60,6 +57,32 @@ function isPlusPublishingAllowed(planRaw: unknown, planStatusRaw: unknown): bool
     normalized === "BUSINESS" ||
     normalized === "ENTERPRISE"
   );
+}
+
+/**
+ * Ensure AI agent fields are present on the object passed to buildProfileSchema.
+ * This is a no-op if fields don't exist; it simply copies them if present.
+ * (No Prisma changes, no extra DB calls.)
+ */
+function attachAIAgentFieldsIfPresent(profile: any) {
+  const keys = [
+    "aiAgentProvider",
+    "aiAgentModel",
+    "aiAgentVersion",
+    "aiAgentDocsUrl",
+    "aiAgentApiUrl",
+    "aiAgentCapabilities",
+    "aiAgentInputModes",
+    "aiAgentOutputModes",
+  ];
+
+  const out: any = { ...profile };
+  for (const k of keys) {
+    if (profile && Object.prototype.hasOwnProperty.call(profile, k)) {
+      out[k] = (profile as any)[k];
+    }
+  }
+  return out;
 }
 
 export async function GET(req: NextRequest, { params }: Params) {
@@ -141,7 +164,7 @@ export async function GET(req: NextRequest, { params }: Params) {
     );
   }
 
-  // ✅ NEW: 2-tier publish gating boundary (fail-closed via planStatus)
+  // ✅ 2-tier publish gating boundary (fail-closed via planStatus)
   const plusPublishingAllowed = isPlusPublishingAllowed(
     profile.user?.plan,
     profile.user?.planStatus
@@ -153,8 +176,11 @@ export async function GET(req: NextRequest, { params }: Params) {
       ? ((profile as any).updateMessage ?? null)
       : null;
 
+    // Ensure AI agent fields are passed through if present on profile
+    const profileForSchema = attachAIAgentFieldsIfPresent(profile as any);
+
     const profileSchema = buildProfileSchema(
-      profile,
+      profileForSchema,
       baseUrl,
       updateMessageForSchema
     );
