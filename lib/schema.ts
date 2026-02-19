@@ -1,16 +1,85 @@
 // lib/schema.ts
-// 📅 Updated: 2026-02-16 02:19 ET
-// Fix: allow schema endpoint to "force remove" updateMessage by passing null.
-// IMPORTANT:
+// 📅 Updated: 2026-02-18 02:07 PM ET
+// Feature: AI_AGENT JSON-LD emission (Phase 1 / Option E scope - Step 1)
+//
+// Guarantees:
+// - Does NOT modify Prisma, Stripe, or export restrictions.
+// - Does NOT weaken verification gating for Organization/LocalBusiness.
+// - Adds AI_AGENT => SoftwareApplication with safe additive extensions.
+// - AI agent "core identity" does NOT require Plus; publishing gates remain elsewhere.
+//
+// IMPORTANT (existing behavior preserved):
 // - latestUpdateRaw === null => suppress latestUpdate (used for LITE/inactive publish gating)
 // - latestUpdateRaw === undefined => use profile.updateMessage (backward compatible)
 
 import type { Profile } from "@prisma/client";
 import { sanitizeText, sanitizeUrl } from "@/lib/sanitize";
 
+/** Internal AEOBRO classifier for AI agents (stable + deterministic for consumers). */
+const AEOBRO_AI_AGENT_ADDITIONAL_TYPE = "https://aeobro.com/schema/AI_AGENT";
+
+/** Utility: first non-empty string among multiple possible keys on profile */
+function firstString(profile: any, keys: string[], maxLen: number): string | null {
+  for (const k of keys) {
+    const v = profile?.[k];
+    if (typeof v === "string") {
+      const s = sanitizeText(v, maxLen);
+      if (s) return s;
+    }
+  }
+  return null;
+}
+
+/** Utility: first valid URL among multiple possible keys on profile */
+function firstUrl(profile: any, keys: string[]): string | null {
+  for (const k of keys) {
+    const v = profile?.[k];
+    if (typeof v === "string") {
+      const u = sanitizeUrl(v);
+      if (u) return u;
+    }
+  }
+  return null;
+}
+
+/** Utility: normalize array-ish to string[] (sanitized) */
+function stringArray(profile: any, keys: string[], maxLen: number): string[] {
+  for (const k of keys) {
+    const v = profile?.[k];
+    if (Array.isArray(v)) {
+      const out = v
+        .map((x) => sanitizeText(String(x), maxLen))
+        .filter(Boolean) as string[];
+      if (out.length) return out;
+    }
+    // allow comma-separated strings as a convenience (no assumptions: only used if present)
+    if (typeof v === "string" && v.trim()) {
+      const parts = v
+        .split(",")
+        .map((p) => sanitizeText(p.trim(), maxLen))
+        .filter(Boolean) as string[];
+      if (parts.length) return parts;
+    }
+  }
+  return [];
+}
+
 /** Map editor entityType → schema.org @type (pre-gating) */
 function schemaTypeFor(entityType?: string, orgHeuristic = false) {
-  switch ((entityType || "").toLowerCase()) {
+  const normalized = (entityType || "").toLowerCase().trim();
+
+  // ✅ AI Agent (new)
+  if (
+    normalized === "ai_agent" ||
+    normalized === "ai agent" ||
+    normalized === "ai-agent" ||
+    normalized === "agent" ||
+    normalized === "ai"
+  ) {
+    return "SoftwareApplication";
+  }
+
+  switch (normalized) {
     case "local service":
       return "LocalBusiness";
     case "business":
@@ -25,15 +94,22 @@ function schemaTypeFor(entityType?: string, orgHeuristic = false) {
 
 /** After deciding a desired type, gate what is actually allowed to export */
 function applyVerificationGating(
-  desiredType: "Organization" | "LocalBusiness" | "Person",
+  desiredType: "Organization" | "LocalBusiness" | "Person" | "SoftwareApplication",
   verificationStatus?: string | null
-): "Organization" | "LocalBusiness" | "Person" | null {
+): "Organization" | "LocalBusiness" | "Person" | "SoftwareApplication" | null {
   const status = (verificationStatus || "UNVERIFIED").toUpperCase();
+
+  // ✅ Keep existing behavior: org/local service require domain verification to remain org/local service.
   if (desiredType === "Organization" || desiredType === "LocalBusiness") {
     if (status === "DOMAIN_VERIFIED") return desiredType;
     if (status === "PLATFORM_VERIFIED") return "Person";
     if (status === "UNVERIFIED") return "Person";
   }
+
+  // ✅ AI agents are software entities. Verification gating does not downgrade them here.
+  // Verification/export restrictions remain enforced in their dedicated paths (unchanged).
+  if (desiredType === "SoftwareApplication") return desiredType;
+
   return desiredType;
 }
 
@@ -180,9 +256,7 @@ export function buildProfileSchema(
       ? latestUpdateRaw
       : (((profile as any)?.updateMessage as string | null) ?? null);
 
-  const latestUpdate = updateMessageSource
-    ? sanitizeText(updateMessageSource, 500)
-    : null;
+  const latestUpdate = updateMessageSource ? sanitizeText(updateMessageSource, 500) : null;
 
   // Images
   const imagesSet = new Set<string>();
@@ -192,9 +266,7 @@ export function buildProfileSchema(
   if (logoUrl) imagesSet.add(logoUrl);
   if (avatarUrl) imagesSet.add(avatarUrl);
   if (imageUrl) imagesSet.add(imageUrl);
-  const imageUrls = Array.isArray((profile as any)?.imageUrls)
-    ? (profile as any).imageUrls
-    : [];
+  const imageUrls = Array.isArray((profile as any)?.imageUrls) ? (profile as any).imageUrls : [];
   for (const u of imageUrls) {
     const s = sanitizeUrl(u);
     if (s) imagesSet.add(s);
@@ -225,9 +297,7 @@ export function buildProfileSchema(
   };
 
   const linksArr = Array.isArray((profile as any)?.links) ? (profile as any).links : [];
-  const socialsArr = Array.isArray((profile as any)?.socialLinks)
-    ? (profile as any).socialLinks
-    : [];
+  const socialsArr = Array.isArray((profile as any)?.socialLinks) ? (profile as any).socialLinks : [];
   ([] as any[]).concat(linksArr, socialsArr).forEach((v) => {
     const u = toMaybeUrl(v);
     if (u) sameAsSet.add(u);
@@ -282,7 +352,10 @@ export function buildProfileSchema(
   if (!schemaType) return null;
 
   // Name rules
-  const name = displayName ?? (schemaType !== "Person" ? legalName : null) ?? undefined;
+  const name =
+    displayName ??
+    (schemaType !== "Person" ? legalName : null) ??
+    undefined;
 
   const base: any = {
     "@context": "https://schema.org",
@@ -372,7 +445,45 @@ export function buildProfileSchema(
     if (foundedYear) base.foundingDate = String(foundedYear);
     if (teamSize) base.numberOfEmployees = teamSize;
     if (pricingModel) pushAdditional(base, "pricingModel", pricingModel);
+
     // 🔹 Latest update as an additionalProperty for org/local service
+    if (latestUpdate) pushAdditional(base, "latestUpdate", latestUpdate);
+  } else if (schemaType === "SoftwareApplication") {
+    // ✅ AI Agent / SoftwareApplication branch (new)
+    // Add a stable classifier so AI systems can detect it deterministically.
+    base.additionalType = AEOBRO_AI_AGENT_ADDITIONAL_TYPE;
+
+    // Conservative, mainstream categorization (safe for consumers).
+    base.applicationCategory = "AI agent";
+
+    // Optional AI-agent metadata (only emitted if present; no assumptions).
+    // We support multiple key variants so the schema works regardless of the exact Prisma field names.
+    const agentProvider = firstString(profile as any, ["aiAgentProvider", "agentProvider", "provider"], 120);
+    const agentModel = firstString(profile as any, ["aiAgentModel", "agentModel", "model"], 120);
+    const agentVersion = firstString(profile as any, ["aiAgentVersion", "agentVersion", "version"], 60);
+    const docsUrl = firstUrl(profile as any, ["aiAgentDocsUrl", "agentDocsUrl", "docsUrl"]);
+    const apiUrl = firstUrl(profile as any, ["aiAgentApiUrl", "agentApiUrl", "apiUrl"]);
+
+    const capabilities = stringArray(profile as any, ["aiAgentCapabilities", "agentCapabilities", "capabilities"], 120);
+    const inputModes = stringArray(profile as any, ["aiAgentInputModes", "agentInputModes", "inputModes"], 80);
+    const outputModes = stringArray(profile as any, ["aiAgentOutputModes", "agentOutputModes", "outputModes"], 80);
+
+    if (agentVersion) base.softwareVersion = agentVersion;
+    if (docsUrl) base.documentation = docsUrl;
+    if (apiUrl) pushAdditional(base, "apiUrl", apiUrl);
+    if (agentProvider) pushAdditional(base, "provider", agentProvider);
+    if (agentModel) pushAdditional(base, "model", agentModel);
+
+    if (capabilities.length) pushAdditional(base, "capabilities", capabilities.join(", "));
+    if (inputModes.length) pushAdditional(base, "inputModes", inputModes.join(", "));
+    if (outputModes.length) pushAdditional(base, "outputModes", outputModes.join(", "));
+
+    // Reuse existing trust fields as additional properties (safe + non-breaking)
+    if (foundedYear) pushAdditional(base, "foundedYear", String(foundedYear));
+    if (teamSize) pushAdditional(base, "teamSize", teamSize!);
+    if (pricingModel) pushAdditional(base, "pricingModel", pricingModel);
+
+    // Latest update for AI agents as well
     if (latestUpdate) pushAdditional(base, "latestUpdate", latestUpdate);
   } else {
     // Person extras
@@ -405,6 +516,7 @@ export function buildProfileSchema(
     if (foundedYear) pushAdditional(base, "foundedYear", String(foundedYear));
     if (teamSize) pushAdditional(base, "teamSize", teamSize!);
     if (pricingModel) pushAdditional(base, "pricingModel", pricingModel);
+
     // 🔹 Latest update for Person as well
     if (latestUpdate) pushAdditional(base, "latestUpdate", latestUpdate);
   }
