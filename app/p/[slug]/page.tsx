@@ -1,15 +1,12 @@
 // app/p/[slug]/page.tsx
-// 📅 Updated: 2026-02-16 02:27 ET
-// Adds: 2-tier publish gating (LITE vs PLUS) + planStatus enforcement (inactive/missing => LITE)
+// 📅 Updated: 2026-02-18 02:34 PM ET
+// Adds: AI_AGENT public rendering (Phase 1 / Option E scope - Step 4)
+// Keeps: 2-tier publish gating (LITE vs PLUS) + planStatus enforcement (inactive/missing => LITE)
 // Keeps: visibility guard (PUBLIC only). UNPUBLISHED/DELETED => notFound() => no longer crawlable.
 // Keeps: Schema tools eligibility logic unchanged.
 
 import { prisma } from "@/lib/prisma";
-import {
-  buildProfileSchema,
-  buildFAQJsonLd,
-  buildServiceJsonLd,
-} from "@/lib/schema";
+import { buildProfileSchema, buildFAQJsonLd, buildServiceJsonLd } from "@/lib/schema";
 import { getRuntimeBaseUrl } from "@/lib/getBaseUrl";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
@@ -84,6 +81,17 @@ const getProfileFullCached = (slug: string) =>
           updatedAt: true,
           faqJson: true,
           servicesJson: true,
+
+          // ✅ AI Agent fields (already in Prisma schema per your status)
+          aiAgentProvider: true,
+          aiAgentModel: true,
+          aiAgentVersion: true,
+          aiAgentDocsUrl: true,
+          aiAgentApiUrl: true,
+          aiAgentCapabilities: true,
+          aiAgentInputModes: true,
+          aiAgentOutputModes: true,
+
           user: {
             select: {
               plan: true,
@@ -108,9 +116,7 @@ const getProfileFullCached = (slug: string) =>
 /*                             Metadata (SEO)                                 */
 /* -------------------------------------------------------------------------- */
 
-export async function generateMetadata({
-  params,
-}: PageProps): Promise<Metadata> {
+export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const slug = decodeURIComponent(params.slug);
   const meta = await getProfileMetaCached(slug)();
 
@@ -158,6 +164,11 @@ function plusPublishingAllowedFrom(planRaw: unknown, planStatusRaw: unknown): bo
 
   // plan stored as labels in this file ("Plus", "Pro", etc) — keep your current convention
   return plan === "plus" || plan === "pro" || plan === "business" || plan === "enterprise";
+}
+
+function isAiAgentEntity(entityTypeRaw: unknown): boolean {
+  const v = String(entityTypeRaw ?? "").trim().toLowerCase();
+  return v === "ai_agent" || v === "ai agent" || v === "ai-agent";
 }
 
 export default async function Page({ params }: PageProps) {
@@ -269,8 +280,38 @@ export default async function Page({ params }: PageProps) {
     verificationStatus === "PLATFORM_VERIFIED" ||
     isPaidPlan;
 
-  // Branding content check – only show section if something exists
   const hasBrandingContent = !!bio || imageUrls.length > 0;
+
+  // AI_AGENT view model (not gated)
+  const isAiAgent = isAiAgentEntity(profile.entityType);
+  const aiProvider = (profile as any).aiAgentProvider ?? null;
+  const aiModel = (profile as any).aiAgentModel ?? null;
+  const aiVersion = (profile as any).aiAgentVersion ?? null;
+  const aiDocsUrl = (profile as any).aiAgentDocsUrl ?? null;
+  const aiApiUrl = (profile as any).aiAgentApiUrl ?? null;
+
+  const aiCapabilities = Array.isArray((profile as any).aiAgentCapabilities)
+    ? ((profile as any).aiAgentCapabilities as string[]).filter(Boolean)
+    : [];
+
+  const aiInputModes = Array.isArray((profile as any).aiAgentInputModes)
+    ? ((profile as any).aiAgentInputModes as string[]).filter(Boolean)
+    : [];
+
+  const aiOutputModes = Array.isArray((profile as any).aiAgentOutputModes)
+    ? ((profile as any).aiAgentOutputModes as string[]).filter(Boolean)
+    : [];
+
+  const hasAiAgentDetails =
+    isAiAgent &&
+    (!!aiProvider ||
+      !!aiModel ||
+      !!aiVersion ||
+      !!aiDocsUrl ||
+      !!aiApiUrl ||
+      aiCapabilities.length > 0 ||
+      aiInputModes.length > 0 ||
+      aiOutputModes.length > 0);
 
   /* ---------------------------- Build JSON-LD ---------------------------- */
 
@@ -344,6 +385,11 @@ export default async function Page({ params }: PageProps) {
             <div className="flex-1 space-y-2">
               <div className="flex flex-wrap items-center gap-2">
                 <h1 className="text-2xl font-semibold">{displayName}</h1>
+                {isAiAgent && (
+                  <span className="inline-flex items-center rounded-full bg-purple-50 px-3 py-1 text-xs font-medium text-purple-700 border border-purple-200">
+                    AI Agent
+                  </span>
+                )}
                 {verificationLabel && (
                   <span className="inline-flex items-center rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700 border border-blue-200">
                     {verificationLabel}
@@ -355,6 +401,82 @@ export default async function Page({ params }: PageProps) {
               )}
             </div>
           </div>
+
+          {/* AI Agent Details (not gated) */}
+          {hasAiAgentDetails && (
+            <section className="mt-2 rounded-2xl border border-purple-200 bg-purple-50 px-4 py-3 text-sm text-purple-900">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-xs font-semibold uppercase tracking-wide">
+                  AI agent identity
+                </span>
+                <span className="text-[11px] text-purple-800/80">
+                  Machine-readable via JSON-LD
+                </span>
+              </div>
+
+              <ul className="mt-2 space-y-1 text-sm">
+                {aiProvider && (
+                  <li>
+                    <span className="font-medium">Provider:</span> {aiProvider}
+                  </li>
+                )}
+                {aiModel && (
+                  <li>
+                    <span className="font-medium">Model:</span> {aiModel}
+                  </li>
+                )}
+                {aiVersion && (
+                  <li>
+                    <span className="font-medium">Version:</span> {aiVersion}
+                  </li>
+                )}
+                {aiDocsUrl && (
+                  <li>
+                    <span className="font-medium">Docs:</span>{" "}
+                    <a
+                      href={aiDocsUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="underline"
+                    >
+                      {aiDocsUrl}
+                    </a>
+                  </li>
+                )}
+                {aiApiUrl && (
+                  <li>
+                    <span className="font-medium">API:</span>{" "}
+                    <a
+                      href={aiApiUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="underline"
+                    >
+                      {aiApiUrl}
+                    </a>
+                  </li>
+                )}
+                {aiCapabilities.length > 0 && (
+                  <li>
+                    <span className="font-medium">Capabilities:</span>{" "}
+                    {aiCapabilities.join(", ")}
+                  </li>
+                )}
+                {aiInputModes.length > 0 && (
+                  <li>
+                    <span className="font-medium">Input modes:</span>{" "}
+                    {aiInputModes.join(", ")}
+                  </li>
+                )}
+                {aiOutputModes.length > 0 && (
+                  <li>
+                    <span className="font-medium">Output modes:</span>{" "}
+                    {aiOutputModes.join(", ")}
+                  </li>
+                )}
+              </ul>
+            </section>
+          )}
 
           {/* Latest Update (✅ gated) */}
           {updateMessage && (
