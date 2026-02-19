@@ -1,11 +1,10 @@
 // components/ProfileEditor.tsx
-// 📅 Updated: 2026-02-16 13:00 (EST)
-//  - Align UI gating with 2-tier model + planStatus rule:
-//    * If planStatus !== "active" (or missing) => treat as LITE everywhere (fail closed)
-//    * Lite/inactive cannot edit/publish: faqJson, servicesJson, productsJson, updateMessage
-//    * Plus(active) and Pro(active) can edit/publish: faqJson, servicesJson, productsJson, updateMessage
-//  - Keep sections visible but gated/disabled where required
-//  - No endpoint changes, no Prisma changes, no new abstractions, no architectural refactors
+// 📅 Updated: 2026-02-18 14:44 (EST)
+//  - Step 5: Add AI_AGENT editor support (A + B + D)
+//    * Add AI_AGENT to entity type dropdown (stored value: "AI_AGENT")
+//    * Add conditional AI agent fields UI (only when entityType === "AI_AGENT")
+//    * Include AI agent fields in payload + prefill safely (avoid Prisma type assumptions)
+//    * Keep plan gating unchanged: only FAQ/Services/Products/updateMessage are Plus(active)-gated
 
 "use client";
 
@@ -108,9 +107,7 @@ function AIDraftingCallout() {
         aria-expanded={open}
       >
         <div>
-          <div className="text-sm font-semibold text-zinc-900">
-            ✨ Recommended: Use AI to draft your profile
-          </div>
+          <div className="text-sm font-semibold text-zinc-900">✨ Recommended: Use AI to draft your profile</div>
           <div className="mt-1 text-sm text-zinc-600">
             Draft with AI from your sources → review → paste into AEOBRO fields.
           </div>
@@ -120,9 +117,7 @@ function AIDraftingCallout() {
 
       {open && (
         <div className="mt-4 space-y-4">
-          <div className="text-sm font-semibold text-zinc-900">
-            Recommended Way to Complete Your AEOBRO Profile
-          </div>
+          <div className="text-sm font-semibold text-zinc-900">Recommended Way to Complete Your AEOBRO Profile</div>
 
           <ol className="list-decimal space-y-1 pl-5 text-sm text-zinc-700">
             <li>Publish a basic AEOBRO profile (name + entity type).</li>
@@ -163,7 +158,8 @@ type EntityType =
   | "Local Service"
   | "Organization"
   | "Creator / Person"
-  | "Product";
+  | "Product"
+  | "AI_AGENT";
 
 type PlatformHandles = {
   youtube?: string;
@@ -180,11 +176,7 @@ type PlatformHandles = {
 type LinkItem = { label: string; url: string };
 type PressItem = { title: string; url: string };
 
-type VerificationStatus =
-  | "UNVERIFIED"
-  | "PENDING"
-  | "PLATFORM_VERIFIED"
-  | "DOMAIN_VERIFIED";
+type VerificationStatus = "UNVERIFIED" | "PENDING" | "PLATFORM_VERIFIED" | "DOMAIN_VERIFIED";
 
 type PlanTitle = "Lite" | "Plus" | "Pro" | "Business" | "Enterprise";
 
@@ -206,13 +198,7 @@ type ServiceItem = {
 };
 
 type ProductType = "PRODUCT" | "SERVICE" | "OFFER";
-type ProductAvailability =
-  | ""
-  | "InStock"
-  | "OutOfStock"
-  | "PreOrder"
-  | "LimitedAvailability"
-  | "OnlineOnly";
+type ProductAvailability = "" | "InStock" | "OutOfStock" | "PreOrder" | "LimitedAvailability" | "OnlineOnly";
 
 type PriceSpec = {
   amount?: number | null;
@@ -256,7 +242,7 @@ type Profile = {
   handles?: PlatformHandles | null;
   slug?: string | null;
   verificationStatus?: VerificationStatus | null;
-  updateMessage?: string | null; // latest update / announcement
+  updateMessage?: string | null;
 
   // Phase 2 JSON editors
   faqJson?: FAQItem[] | null;
@@ -264,6 +250,16 @@ type Profile = {
 
   // Products / catalog (JSON)
   productsJson?: ProductItem[] | null;
+
+  // ---- AI_AGENT fields (safe optional; may be absent in Prisma client typings)
+  aiAgentProvider?: string | null;
+  aiAgentModel?: string | null;
+  aiAgentVersion?: string | null;
+  aiAgentDocsUrl?: string | null;
+  aiAgentApiUrl?: string | null;
+  aiAgentCapabilities?: string[] | null;
+  aiAgentInputModes?: string[] | null;
+  aiAgentOutputModes?: string[] | null;
 };
 
 /** -------- Utils -------- */
@@ -351,9 +347,18 @@ export default function ProfileEditor({
   // ---- Core identity
   const [displayName, setDisplayName] = React.useState(initial?.displayName ?? "");
   const [legalName, setLegalName] = React.useState(initial?.legalName ?? "");
-  const [entityType, setEntityType] = React.useState<EntityType | "">(
-    (initial?.entityType as EntityType) ?? ""
-  );
+  const [entityType, setEntityType] = React.useState<EntityType | "">((initial?.entityType as EntityType) ?? "");
+
+  // ---- AI_AGENT (safe access; may not exist in prisma types)
+  const initialAny = (initial ?? {}) as any;
+  const [aiAgentProvider, setAiAgentProvider] = React.useState<string>(initialAny?.aiAgentProvider ?? "");
+  const [aiAgentModel, setAiAgentModel] = React.useState<string>(initialAny?.aiAgentModel ?? "");
+  const [aiAgentVersion, setAiAgentVersion] = React.useState<string>(initialAny?.aiAgentVersion ?? "");
+  const [aiAgentDocsUrl, setAiAgentDocsUrl] = React.useState<string>(initialAny?.aiAgentDocsUrl ?? "");
+  const [aiAgentApiUrl, setAiAgentApiUrl] = React.useState<string>(initialAny?.aiAgentApiUrl ?? "");
+  const [aiAgentCapabilities, setAiAgentCapabilities] = React.useState<string>(toCsv(initialAny?.aiAgentCapabilities));
+  const [aiAgentInputModes, setAiAgentInputModes] = React.useState<string>(toCsv(initialAny?.aiAgentInputModes));
+  const [aiAgentOutputModes, setAiAgentOutputModes] = React.useState<string>(toCsv(initialAny?.aiAgentOutputModes));
 
   // ---- Story
   const [tagline, setTagline] = React.useState(initial?.tagline ?? "");
@@ -368,14 +373,12 @@ export default function ProfileEditor({
   const [serviceArea, setServiceArea] = React.useState(toCsv(initial?.serviceArea));
 
   // ---- Trust & Authority
-  const [foundedYear, setFoundedYear] = React.useState(
-    initial?.foundedYear ? String(initial.foundedYear) : ""
-  );
+  const [foundedYear, setFoundedYear] = React.useState(initial?.foundedYear ? String(initial.foundedYear) : "");
   const [teamSize, setTeamSize] = React.useState(initial?.teamSize ? String(initial.teamSize) : "");
   const [languages, setLanguages] = React.useState(toCsv(initial?.languages));
-  const [pricingModel, setPricingModel] = React.useState<
-    "Free" | "Subscription" | "One-time" | "Custom" | ""
-  >((initial?.pricingModel as any) ?? "");
+  const [pricingModel, setPricingModel] = React.useState<"Free" | "Subscription" | "One-time" | "Custom" | "">(
+    (initial?.pricingModel as any) ?? ""
+  );
   const [hours, setHours] = React.useState(initial?.hours ?? "");
 
   const [certifications, setCertifications] = React.useState(initial?.certifications ?? "");
@@ -459,9 +462,7 @@ export default function ProfileEditor({
   const [confirmOpen, setConfirmOpen] = React.useState(false);
 
   // ---- Plan pill (Lite/Plus/Pro/Business/Enterprise)
-  const [plan, setPlan] = React.useState<PlanTitle | null>(
-    planFromServer ? normalizePlanForUi(planFromServer) : null
-  );
+  const [plan, setPlan] = React.useState<PlanTitle | null>(planFromServer ? normalizePlanForUi(planFromServer) : null);
 
   // ---- Plan status (critical global rule: if not active => treat as Lite)
   const [planStatus, setPlanStatus] = React.useState<string | null>(null);
@@ -504,8 +505,7 @@ export default function ProfileEditor({
   const effectivePlanKey = isPlanActive ? planKey : "LITE";
 
   // Pro/Business/Enterprise should behave like Plus for now (but still hidden in UI elsewhere)
-  const isProLike =
-    effectivePlanKey === "PRO" || effectivePlanKey === "BUSINESS" || effectivePlanKey === "ENTERPRISE";
+  const isProLike = effectivePlanKey === "PRO" || effectivePlanKey === "BUSINESS" || effectivePlanKey === "ENTERPRISE";
 
   const isPlusLike = effectivePlanKey === "PLUS" || isProLike;
 
@@ -517,6 +517,8 @@ export default function ProfileEditor({
 
   // FAQ + Services editor should be available on Plus(active) and Pro-like(active) plans
   const canEditFaqsAndServices = isPlusLike;
+
+  const isAiAgent = entityType === "AI_AGENT";
 
   /** ---- Build a normalized payload ---- */
   const buildPayload = React.useCallback((): Profile => {
@@ -554,6 +556,22 @@ export default function ProfileEditor({
       // updateMessage is gated below (do NOT include for Lite/inactive to avoid overwriting)
     };
 
+    // ---- AI_AGENT fields (Lite-allowed; only attach when entityType is AI_AGENT)
+    if (isAiAgent) {
+      base.aiAgentProvider = (aiAgentProvider || "").trim() || null;
+      base.aiAgentModel = (aiAgentModel || "").trim() || null;
+      base.aiAgentVersion = (aiAgentVersion || "").trim() || null;
+
+      const docs = (aiAgentDocsUrl || "").trim();
+      const api = (aiAgentApiUrl || "").trim();
+      base.aiAgentDocsUrl = docs ? normalizeUrl(docs) : null;
+      base.aiAgentApiUrl = api ? normalizeUrl(api) : null;
+
+      base.aiAgentCapabilities = fromCsv(aiAgentCapabilities);
+      base.aiAgentInputModes = fromCsv(aiAgentInputModes);
+      base.aiAgentOutputModes = fromCsv(aiAgentOutputModes);
+    }
+
     // 🔹 Latest update — only send when Plus/Pro-like (active) so Lite users don't overwrite
     if (canEditUpdates) {
       base.updateMessage = (updateMessage || "").trim() || null;
@@ -569,9 +587,7 @@ export default function ProfileEditor({
           const image = p.image ? normalizeUrl(p.image) : null;
 
           const amount =
-            typeof p.price?.amount === "number" && Number.isFinite(p.price.amount)
-              ? p.price.amount
-              : null;
+            typeof p.price?.amount === "number" && Number.isFinite(p.price.amount) ? p.price.amount : null;
 
           const currency = (p.price?.currency || "").trim() || null;
 
@@ -580,10 +596,7 @@ export default function ProfileEditor({
             type: (p.type || "PRODUCT") as ProductType,
             url,
             image,
-            price:
-              amount != null || currency != null
-                ? { amount: amount ?? null, currency: currency ?? null }
-                : null,
+            price: amount != null || currency != null ? { amount: amount ?? null, currency: currency ?? null } : null,
             availability: (p.availability || "") as ProductAvailability,
             category: (p.category || "").trim() || null,
             sku: (p.sku || "").trim() || null,
@@ -654,6 +667,17 @@ export default function ProfileEditor({
     imageUrls,
     handles,
     links,
+    // AI_AGENT
+    isAiAgent,
+    aiAgentProvider,
+    aiAgentModel,
+    aiAgentVersion,
+    aiAgentDocsUrl,
+    aiAgentApiUrl,
+    aiAgentCapabilities,
+    aiAgentInputModes,
+    aiAgentOutputModes,
+    // gated
     updateMessage,
     canEditUpdates,
     products,
@@ -675,11 +699,23 @@ export default function ProfileEditor({
         const data: Profile | null = await res.json();
         if (!data) return;
 
+        const dataAny = data as any;
+
         if (data.id) setProfileId(data.id);
 
         if (data.displayName != null) setDisplayName(data.displayName || "");
         if (data.legalName != null) setLegalName(data.legalName || "");
         if (data.entityType) setEntityType(data.entityType);
+
+        // AI_AGENT fields (safe; may be absent)
+        if (dataAny?.aiAgentProvider != null) setAiAgentProvider(dataAny.aiAgentProvider || "");
+        if (dataAny?.aiAgentModel != null) setAiAgentModel(dataAny.aiAgentModel || "");
+        if (dataAny?.aiAgentVersion != null) setAiAgentVersion(dataAny.aiAgentVersion || "");
+        if (dataAny?.aiAgentDocsUrl != null) setAiAgentDocsUrl(dataAny.aiAgentDocsUrl || "");
+        if (dataAny?.aiAgentApiUrl != null) setAiAgentApiUrl(dataAny.aiAgentApiUrl || "");
+        if (Array.isArray(dataAny?.aiAgentCapabilities)) setAiAgentCapabilities(toCsv(dataAny.aiAgentCapabilities));
+        if (Array.isArray(dataAny?.aiAgentInputModes)) setAiAgentInputModes(toCsv(dataAny.aiAgentInputModes));
+        if (Array.isArray(dataAny?.aiAgentOutputModes)) setAiAgentOutputModes(toCsv(dataAny.aiAgentOutputModes));
 
         if (data.tagline != null) setTagline(data.tagline || "");
         if (data.bio != null) setBio(data.bio || "");
@@ -761,6 +797,18 @@ export default function ProfileEditor({
         }
       }
 
+      // AI_AGENT URL validation (Lite-allowed)
+      if (isAiAgent) {
+        const docs = (aiAgentDocsUrl || "").trim();
+        const api = (aiAgentApiUrl || "").trim();
+        if (docs && !isValidUrl(normalizeUrl(docs))) {
+          throw new Error("AI Agent Docs URL must be a valid URL (https://...).");
+        }
+        if (api && !isValidUrl(normalizeUrl(api))) {
+          throw new Error("AI Agent API URL must be a valid URL (https://...).");
+        }
+      }
+
       // Products validation (URLs only) for Plus/Pro-like(active) where editor is unlocked
       if (canEditProducts) {
         for (const p of products) {
@@ -793,16 +841,15 @@ export default function ProfileEditor({
       const json = await res.json().catch(() => null);
 
       if (!res.ok) {
-        const text =
-          (json && (json.error || json.message)) || `Save failed (HTTP ${res.status}).`;
+        const text = (json && (json.error || json.message)) || `Save failed (HTTP ${res.status}).`;
         throw new Error(text);
       }
 
       const finalSlug: string | undefined = json?.profile?.slug || json?.slug || undefined;
       const finalId: string | undefined = json?.profile?.id || json?.id || profileId || undefined;
-      const finalStatus: VerificationStatus | undefined = (
-        json?.profile?.verificationStatus || json?.verificationStatus
-      ) as VerificationStatus | undefined;
+      const finalStatus: VerificationStatus | undefined = (json?.profile?.verificationStatus || json?.verificationStatus) as
+        | VerificationStatus
+        | undefined;
 
       if (finalId) setProfileId(finalId);
       if (finalSlug) {
@@ -879,8 +926,8 @@ export default function ProfileEditor({
             <span className="font-medium">Save &amp; Publish</span>.
           </span>
           <span className="block">
-            <span className="font-semibold">Only Display Name is required to publish.</span>{" "}
-            Add more when you’re ready — the more details you include, the better your AI visibility.
+            <span className="font-semibold">Only Display Name is required to publish.</span> Add more when you’re ready —
+            the more details you include, the better your AI visibility.
           </span>
           <span className="block">
             To have your AI Ready profile verified, complete one of the options at the bottom of this page.
@@ -957,7 +1004,8 @@ export default function ProfileEditor({
                 i
               </span>
               <span className="pointer-events-none absolute left-1/2 top-full z-10 mt-1 hidden w-64 -translate-x-1/2 rounded-md bg-black px-2 py-1 text-xs leading-snug text-white group-hover:block">
-                Your public name for this profile. It appears in your URL and is the first thing AI tools and people will see.
+                Your public name for this profile. It appears in your URL and is the first thing AI tools and people will
+                see.
               </span>
             </span>
           </label>
@@ -1001,6 +1049,7 @@ export default function ProfileEditor({
               <option>Organization</option>
               <option>Creator / Person</option>
               <option>Product</option>
+              <option value="AI_AGENT">AI Agent (AI_AGENT)</option>
             </select>
           </div>
         </div>
@@ -1010,6 +1059,163 @@ export default function ProfileEditor({
           <PublicUrlReadonly slug={serverSlug} />
         </div>
       </section>
+
+      {/* AI Agent Details (only when entityType === AI_AGENT) */}
+      {isAiAgent && (
+        <section className="grid gap-4">
+          <div className="rounded-2xl border bg-white p-6 shadow-sm space-y-3">
+            <div>
+              <h3 className="text-lg font-semibold">AI Agent Details</h3>
+              <p className="text-sm text-gray-600">
+                Define the canonical identity for your AI agent. These fields are included in your AI Ready JSON-LD.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className={row}>
+                <label className={label} htmlFor="aiAgentProvider">
+                  Provider / Organization
+                </label>
+                <input
+                  id="aiAgentProvider"
+                  className={input}
+                  placeholder="e.g., OpenAI"
+                  value={aiAgentProvider}
+                  onChange={(e) => setAiAgentProvider(e.target.value)}
+                  maxLength={160}
+                />
+              </div>
+              <div className={row}>
+                <label className={label} htmlFor="aiAgentModel">
+                  Model name
+                </label>
+                <input
+                  id="aiAgentModel"
+                  className={input}
+                  placeholder="e.g., gpt-5"
+                  value={aiAgentModel}
+                  onChange={(e) => setAiAgentModel(e.target.value)}
+                  maxLength={160}
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className={row}>
+                <label className={label} htmlFor="aiAgentVersion">
+                  Version (optional)
+                </label>
+                <input
+                  id="aiAgentVersion"
+                  className={input}
+                  placeholder="e.g., 2026-02"
+                  value={aiAgentVersion}
+                  onChange={(e) => setAiAgentVersion(e.target.value)}
+                  maxLength={120}
+                />
+              </div>
+              <div className={row}>
+                <label className={label + " overflow-visible"} htmlFor="aiAgentDocsUrl">
+                  Docs URL (optional)
+                  <span className="relative group ml-1 cursor-help align-middle">
+                    <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-gray-200 text-[10px] font-semibold text-gray-700">
+                      i
+                    </span>
+                    <span className="pointer-events-none absolute left-1/2 top-full z-10 mt-1 hidden w-72 -translate-x-1/2 rounded-md bg-black px-2 py-1 text-xs leading-snug text-white group-hover:block">
+                      Public documentation for the agent or model. Use https:// so AI systems can verify.
+                    </span>
+                  </span>
+                </label>
+                <input
+                  id="aiAgentDocsUrl"
+                  className={input}
+                  placeholder="https://..."
+                  value={aiAgentDocsUrl}
+                  onChange={(e) => setAiAgentDocsUrl(e.target.value)}
+                  maxLength={300}
+                />
+              </div>
+            </div>
+
+            <div className={row}>
+              <label className={label + " overflow-visible"} htmlFor="aiAgentApiUrl">
+                API URL (optional)
+                <span className="relative group ml-1 cursor-help align-middle">
+                  <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-gray-200 text-[10px] font-semibold text-gray-700">
+                    i
+                  </span>
+                  <span className="pointer-events-none absolute left-1/2 top-full z-10 mt-1 hidden w-72 -translate-x-1/2 rounded-md bg-black px-2 py-1 text-xs leading-snug text-white group-hover:block">
+                    Public API endpoint or landing page for the agent (not a secret key).
+                  </span>
+                </span>
+              </label>
+              <input
+                id="aiAgentApiUrl"
+                className={input}
+                placeholder="https://api.example.com"
+                value={aiAgentApiUrl}
+                onChange={(e) => setAiAgentApiUrl(e.target.value)}
+                maxLength={300}
+              />
+            </div>
+
+            <div className={row}>
+              <label className={label + " overflow-visible"} htmlFor="aiAgentCapabilities">
+                Capabilities (comma-separated)
+                <span className="relative group ml-1 cursor-help align-middle">
+                  <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-gray-200 text-[10px] font-semibold text-gray-700">
+                    i
+                  </span>
+                  <span className="pointer-events-none absolute left-1/2 top-full z-10 mt-1 hidden w-72 -translate-x-1/2 rounded-md bg-black px-2 py-1 text-xs leading-snug text-white group-hover:block">
+                    Example: “web_search, code_execution, image_generation”.
+                  </span>
+                </span>
+              </label>
+              <input
+                id="aiAgentCapabilities"
+                className={input}
+                placeholder="e.g., tool_use, retrieval, reasoning"
+                value={aiAgentCapabilities}
+                onChange={(e) => setAiAgentCapabilities(e.target.value)}
+                maxLength={400}
+              />
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className={row}>
+                <label className={label} htmlFor="aiAgentInputModes">
+                  Input modes (comma-separated)
+                </label>
+                <input
+                  id="aiAgentInputModes"
+                  className={input}
+                  placeholder="e.g., text, image, audio"
+                  value={aiAgentInputModes}
+                  onChange={(e) => setAiAgentInputModes(e.target.value)}
+                  maxLength={240}
+                />
+              </div>
+              <div className={row}>
+                <label className={label} htmlFor="aiAgentOutputModes">
+                  Output modes (comma-separated)
+                </label>
+                <input
+                  id="aiAgentOutputModes"
+                  className={input}
+                  placeholder="e.g., text, json, audio"
+                  value={aiAgentOutputModes}
+                  onChange={(e) => setAiAgentOutputModes(e.target.value)}
+                  maxLength={240}
+                />
+              </div>
+            </div>
+
+            <p className="text-xs text-gray-500">
+              These fields are saved when you click <span className="font-medium">Save &amp; Publish</span>.
+            </p>
+          </div>
+        </section>
+      )}
 
       {/* Tagline & Bio */}
       <section className="grid gap-4">
@@ -1043,7 +1249,8 @@ export default function ProfileEditor({
                 i
               </span>
               <span className="pointer-events-none absolute left-1/2 top-full z-10 mt-1 hidden w-72 -translate-x-1/2 rounded-md bg-black px-2 py-1 text-xs leading-snug text-white group-hover:block">
-                A fuller description of what you do, who you help, and why you are credible. AI systems use this to understand your expertise and context.
+                A fuller description of what you do, who you help, and why you are credible. AI systems use this to
+                understand your expertise and context.
               </span>
             </span>
           </label>
@@ -1071,7 +1278,8 @@ export default function ProfileEditor({
                   i
                 </span>
                 <span className="pointer-events-none absolute left-1/2 top-full z-10 mt-1 hidden w-72 -translate-x-1/2 rounded-md bg-black px-2 py-1 text-xs leading-snug text-white group-hover:block">
-                  Your main website or landing page. Include https:// so AI tools and search engines can reliably confirm your brand.
+                  Your main website or landing page. Include https:// so AI tools and search engines can reliably confirm
+                  your brand.
                 </span>
               </span>
             </label>
@@ -1083,7 +1291,9 @@ export default function ProfileEditor({
               onChange={(e) => setWebsite(e.target.value)}
               maxLength={200}
             />
-            <small className="text-xs text-gray-500">Optional, but recommended so AI systems can reliably confirm your official site.</small>
+            <small className="text-xs text-gray-500">
+              Optional, but recommended so AI systems can reliably confirm your official site.
+            </small>
           </div>
           <div className={row}>
             <label className={label + " overflow-visible"} htmlFor="location">
@@ -1450,8 +1660,8 @@ export default function ProfileEditor({
               </h3>
 
               <p className="text-sm text-gray-600">
-                Listing a product, and its details, makes your offering machine-readable, improving how AI systems interpret,
-                compare, and surface what you sell.
+                Listing a product, and its details, makes your offering machine-readable, improving how AI systems
+                interpret, compare, and surface what you sell.
               </p>
             </div>
 
@@ -1648,10 +1858,7 @@ export default function ProfileEditor({
                         type: productDraft.type,
                         url: url ? normalizeUrl(url) : null,
                         image: img ? normalizeUrl(img) : null,
-                        price:
-                          amt != null || currency
-                            ? { amount: amt, currency: currency || "USD" }
-                            : null,
+                        price: amt != null || currency ? { amount: amt, currency: currency || "USD" } : null,
                         availability: productDraft.availability || "",
                         category: productDraft.category.trim() || null,
                         sku: productDraft.sku.trim() || null,
@@ -1695,9 +1902,7 @@ export default function ProfileEditor({
                         <div className="font-medium">
                           {idx + 1}. {p.name}{" "}
                           {p.type ? (
-                            <span className="ml-2 text-xs rounded-full bg-gray-100 px-2 py-0.5 text-gray-700">
-                              {p.type}
-                            </span>
+                            <span className="ml-2 text-xs rounded-full bg-gray-100 px-2 py-0.5 text-gray-700">{p.type}</span>
                           ) : null}
                         </div>
                         <button
@@ -1745,9 +1950,7 @@ export default function ProfileEditor({
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <div className="text-sm font-semibold">Your catalog (read-only on Lite)</div>
-                      <div className="text-xs text-gray-600">
-                        Your items are saved. Upgrade to Plus to edit your catalog.
-                      </div>
+                      <div className="text-xs text-gray-600">Your items are saved. Upgrade to Plus to edit your catalog.</div>
                     </div>
                     <a
                       href="/pricing"
@@ -1763,9 +1966,7 @@ export default function ProfileEditor({
                         <div className="font-medium">
                           {idx + 1}. {p.name}{" "}
                           {p.type ? (
-                            <span className="ml-2 text-xs rounded-full bg-gray-100 px-2 py-0.5 text-gray-700">
-                              {p.type}
-                            </span>
+                            <span className="ml-2 text-xs rounded-full bg-gray-100 px-2 py-0.5 text-gray-700">{p.type}</span>
                           ) : null}
                         </div>
 
@@ -1851,9 +2052,7 @@ export default function ProfileEditor({
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <div className="text-sm font-semibold">Latest update (read-only on Lite)</div>
-                      <div className="text-xs text-gray-600">
-                        Your update is saved. Upgrade to Plus to edit updates.
-                      </div>
+                      <div className="text-xs text-gray-600">Your update is saved. Upgrade to Plus to edit updates.</div>
                     </div>
                     <a
                       href="/pricing"
@@ -2253,9 +2452,7 @@ export default function ProfileEditor({
                       <div className="font-medium">
                         {idx + 1}. {s.name}
                       </div>
-                      {s.description ? (
-                        <div className="mt-1 text-gray-700 whitespace-pre-wrap">{s.description}</div>
-                      ) : null}
+                      {s.description ? <div className="mt-1 text-gray-700 whitespace-pre-wrap">{s.description}</div> : null}
                       {s.url ? (
                         <a
                           href={normalizeUrl(s.url)}
