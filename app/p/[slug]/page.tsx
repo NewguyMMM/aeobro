@@ -1,5 +1,6 @@
 // app/p/[slug]/page.tsx
-// 📅 Updated: 2026-02-18 02:34 PM ET
+// 📅 Updated: 2026-02-18 02:41 PM ET
+// Fix: build failure by removing non-existent Prisma select keys for AI agent fields.
 // Adds: AI_AGENT public rendering (Phase 1 / Option E scope - Step 4)
 // Keeps: 2-tier publish gating (LITE vs PLUS) + planStatus enforcement (inactive/missing => LITE)
 // Keeps: visibility guard (PUBLIC only). UNPUBLISHED/DELETED => notFound() => no longer crawlable.
@@ -82,15 +83,11 @@ const getProfileFullCached = (slug: string) =>
           faqJson: true,
           servicesJson: true,
 
-          // ✅ AI Agent fields (already in Prisma schema per your status)
-          aiAgentProvider: true,
-          aiAgentModel: true,
-          aiAgentVersion: true,
-          aiAgentDocsUrl: true,
-          aiAgentApiUrl: true,
-          aiAgentCapabilities: true,
-          aiAgentInputModes: true,
-          aiAgentOutputModes: true,
+          // ❗ IMPORTANT:
+          // Do NOT select AI agent fields here.
+          // Your current generated Prisma Client types do not include them,
+          // which causes TS compile errors in Vercel build.
+          // We will read them from (profile as any) at runtime if they exist.
 
           user: {
             select: {
@@ -169,6 +166,16 @@ function plusPublishingAllowedFrom(planRaw: unknown, planStatusRaw: unknown): bo
 function isAiAgentEntity(entityTypeRaw: unknown): boolean {
   const v = String(entityTypeRaw ?? "").trim().toLowerCase();
   return v === "ai_agent" || v === "ai agent" || v === "ai-agent";
+}
+
+function asStringOrNull(v: any): string | null {
+  const s = (v ?? "").toString().trim();
+  return s ? s : null;
+}
+
+function asStringArray(v: any): string[] {
+  if (!Array.isArray(v)) return [];
+  return v.map((x) => String(x).trim()).filter(Boolean);
 }
 
 export default async function Page({ params }: PageProps) {
@@ -282,25 +289,19 @@ export default async function Page({ params }: PageProps) {
 
   const hasBrandingContent = !!bio || imageUrls.length > 0;
 
-  // AI_AGENT view model (not gated)
+  // AI_AGENT view model (not gated) — read from runtime object if present
   const isAiAgent = isAiAgentEntity(profile.entityType);
-  const aiProvider = (profile as any).aiAgentProvider ?? null;
-  const aiModel = (profile as any).aiAgentModel ?? null;
-  const aiVersion = (profile as any).aiAgentVersion ?? null;
-  const aiDocsUrl = (profile as any).aiAgentDocsUrl ?? null;
-  const aiApiUrl = (profile as any).aiAgentApiUrl ?? null;
 
-  const aiCapabilities = Array.isArray((profile as any).aiAgentCapabilities)
-    ? ((profile as any).aiAgentCapabilities as string[]).filter(Boolean)
-    : [];
+  const pAny = profile as any;
+  const aiProvider = asStringOrNull(pAny.aiAgentProvider);
+  const aiModel = asStringOrNull(pAny.aiAgentModel);
+  const aiVersion = asStringOrNull(pAny.aiAgentVersion);
+  const aiDocsUrl = asStringOrNull(pAny.aiAgentDocsUrl);
+  const aiApiUrl = asStringOrNull(pAny.aiAgentApiUrl);
 
-  const aiInputModes = Array.isArray((profile as any).aiAgentInputModes)
-    ? ((profile as any).aiAgentInputModes as string[]).filter(Boolean)
-    : [];
-
-  const aiOutputModes = Array.isArray((profile as any).aiAgentOutputModes)
-    ? ((profile as any).aiAgentOutputModes as string[]).filter(Boolean)
-    : [];
+  const aiCapabilities = asStringArray(pAny.aiAgentCapabilities);
+  const aiInputModes = asStringArray(pAny.aiAgentInputModes);
+  const aiOutputModes = asStringArray(pAny.aiAgentOutputModes);
 
   const hasAiAgentDetails =
     isAiAgent &&
@@ -696,12 +697,7 @@ export default async function Page({ params }: PageProps) {
                     <>
                       {" "}
                       —{" "}
-                      <a
-                        href={a.url}
-                        className="underline"
-                        target="_blank"
-                        rel="noreferrer"
-                      >
+                      <a href={a.url} className="underline" target="_blank" rel="noreferrer">
                         View
                       </a>
                     </>
@@ -721,12 +717,7 @@ export default async function Page({ params }: PageProps) {
                 .filter((l) => l.url)
                 .map((l, idx) => (
                   <li key={`${l.url}-${idx}`}>
-                    <a
-                      href={l.url!}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="underline"
-                    >
+                    <a href={l.url!} target="_blank" rel="noreferrer" className="underline">
                       {l.label || l.url}
                     </a>
                   </li>
@@ -744,12 +735,7 @@ export default async function Page({ params }: PageProps) {
                 .filter((p) => p.url)
                 .map((p, idx) => (
                   <li key={`${p.url}-${idx}`}>
-                    <a
-                      href={p.url!}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="underline"
-                    >
+                    <a href={p.url!} target="_blank" rel="noreferrer" className="underline">
                       {p.title || p.url}
                     </a>
                   </li>
