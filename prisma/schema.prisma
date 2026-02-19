@@ -7,9 +7,14 @@ generator client {
 
 datasource db {
   provider          = "postgresql"
+<<<<<<< HEAD
   url               = env("DATABASE_URL")
   directUrl         = env("DIRECT_URL")
   shadowDatabaseUrl = env("SHADOW_DATABASE_URL")
+=======
+  url               = env("DATABASE_URL")           // pooled URL for app runtime
+  directUrl         = env("DIRECT_URL")             // direct (non-pooler) URL for migrations
+>>>>>>> bfbf457 (Add AI Agent Identity Layer migration)
 }
 
 /* ===============================
