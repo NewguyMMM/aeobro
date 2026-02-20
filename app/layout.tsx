@@ -6,7 +6,6 @@ import AuthButton from "./components/AuthButton";
 import { ToastProvider } from "@/components/Toast";
 import HomeLink from "@/components/HomeLink";
 import Footer from "./components/Footer";
-import Image from "next/image";
 import type { Metadata } from "next";
 
 const ASSET_V = "20260220";
@@ -18,10 +17,7 @@ export const metadata: Metadata = {
     template: "%s | AEOBRO",
   },
   icons: {
-    icon: [
-      { url: "/icon.svg" },
-      { url: "/icon.png" },
-    ],
+    icon: [{ url: "/icon.svg" }, { url: "/icon.png" }],
     apple: [{ url: "/apple-icon.png" }],
   },
   themeColor: "#2196F3",
@@ -53,12 +49,12 @@ export default function RootLayout({ children }: { children: ReactNode }) {
             <header className="border-b">
               <div className="container flex items-center justify-between py-4">
                 <a href="/" aria-label="AEOBRO home" className="flex items-center">
-                  <Image
+                  <img
                     src={`/brand/AEOBRO_primary.svg?v=${ASSET_V}`}
                     alt="AEOBRO"
                     width={180}
                     height={36}
-                    priority
+                    style={{ display: "block" }}
                   />
                 </a>
 
