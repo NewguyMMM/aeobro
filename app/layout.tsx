@@ -4,7 +4,7 @@ import "./globals.css";
 import Providers from "./providers";
 import AuthButton from "./components/AuthButton";
 import { ToastProvider } from "@/components/Toast";
-import HomeLink from "./components/HomeLink";
+import HomeLink from "@/components/HomeLink";
 import MobileMenu from "./components/MobileMenu";
 import Footer from "./components/Footer";
 import type { Metadata } from "next";
@@ -49,7 +49,6 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           <ToastProvider>
             <header className="border-b">
               <div className="container flex items-center justify-between py-4">
-                
                 {/* Logo — never shrink on mobile */}
                 <a
                   href="/"
