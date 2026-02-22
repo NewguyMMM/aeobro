@@ -4,7 +4,8 @@ import "./globals.css";
 import Providers from "./providers";
 import AuthButton from "./components/AuthButton";
 import { ToastProvider } from "@/components/Toast";
-import HomeLink from "@/components/HomeLink";
+import HomeLink from "./components/HomeLink";
+import MobileMenu from "./components/MobileMenu";
 import Footer from "./components/Footer";
 import type { Metadata } from "next";
 
@@ -48,7 +49,8 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           <ToastProvider>
             <header className="border-b">
               <div className="container flex items-center justify-between py-4">
-                {/* Logo: never shrink on mobile */}
+                
+                {/* Logo — never shrink on mobile */}
                 <a
                   href="/"
                   aria-label="AEOBRO home"
@@ -62,19 +64,15 @@ export default function RootLayout({ children }: { children: ReactNode }) {
                   />
                 </a>
 
-                {/* Mobile actions: show ONLY AuthButton + Menu button */}
+                {/* Mobile Header (hidden on desktop) */}
                 <div className="flex items-center gap-3 sm:hidden">
-                  {/* Home button appears on all routes except "/" */}
                   <HomeLink />
-                  <a className="btn transition-colors duration-200" href="/audit">
-                    Menu
-                  </a>
+                  <MobileMenu />
                   <AuthButton />
                 </div>
 
-                {/* Desktop nav: unchanged */}
+                {/* Desktop Navigation (hidden on mobile) */}
                 <nav className="hidden sm:flex items-center gap-3">
-                  {/* Home button appears on all routes except "/" */}
                   <HomeLink />
 
                   <a
@@ -83,15 +81,21 @@ export default function RootLayout({ children }: { children: ReactNode }) {
                   >
                     Pricing
                   </a>
+
                   <a
                     href="/faq"
                     className="px-3 py-2 transition-colors duration-200 hover:text-sky-500"
                   >
                     FAQ
                   </a>
-                  <a className="btn transition-colors duration-200" href="/audit">
+
+                  <a
+                    className="btn transition-colors duration-200"
+                    href="/audit"
+                  >
                     Check AI Visibility
                   </a>
+
                   <AuthButton />
                 </nav>
               </div>
@@ -99,7 +103,6 @@ export default function RootLayout({ children }: { children: ReactNode }) {
 
             <main>{children}</main>
 
-            {/* Shared footer with Contact link */}
             <Footer />
           </ToastProvider>
         </Providers>
