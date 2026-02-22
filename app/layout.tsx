@@ -48,17 +48,32 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           <ToastProvider>
             <header className="border-b">
               <div className="container flex items-center justify-between py-4">
-                <a href="/" aria-label="AEOBRO home" className="flex items-center">
+                {/* Logo: never shrink on mobile */}
+                <a
+                  href="/"
+                  aria-label="AEOBRO home"
+                  className="flex items-center shrink-0"
+                >
                   <img
                     src={`/brand/AEOBRO_primary.svg?v=${ASSET_V}`}
                     alt="AEOBRO"
-                    width={180}
-                    height={36}
+                    className="h-[36px] w-auto"
                     style={{ display: "block" }}
                   />
                 </a>
 
-                <nav className="flex items-center gap-3">
+                {/* Mobile actions: show ONLY AuthButton + Menu button */}
+                <div className="flex items-center gap-3 sm:hidden">
+                  {/* Home button appears on all routes except "/" */}
+                  <HomeLink />
+                  <a className="btn transition-colors duration-200" href="/audit">
+                    Menu
+                  </a>
+                  <AuthButton />
+                </div>
+
+                {/* Desktop nav: unchanged */}
+                <nav className="hidden sm:flex items-center gap-3">
                   {/* Home button appears on all routes except "/" */}
                   <HomeLink />
 
