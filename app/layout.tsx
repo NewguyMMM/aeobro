@@ -92,7 +92,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
                     className="btn transition-colors duration-200"
                     href="/audit"
                   >
-                    Check AI Visibility
+                    Check Current AI Identity
                   </a>
 
                   <AuthButton />
