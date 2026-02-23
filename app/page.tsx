@@ -53,7 +53,7 @@ export default async function Home() {
           </p>
 
           <p className="mt-2 max-w-2xl text-base leading-relaxed text-gray-700">
-            AEOBRO publishes the verified public record that defines who you are and
+            AEOBRO publishes a structured, verified public record that represents who you are and
             what you offer.
           </p>
 
