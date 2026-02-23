@@ -34,7 +34,7 @@ export default function Page() {
         acceptedAnswer: {
           "@type": "Answer",
           text:
-            "The problem is that AI systems already answer questions about your organization. They pull from outdated websites, scraped directories, inconsistent bios, and unverified third-party claims. When facts conflict, AI systems infer. Inference is not authority. AEOBRO was created to ease the costly pain point of inference with a clear public record.",
+            "The problem is that AI systems already answer questions about your organization. They pull from outdated websites, scraped directories, inconsistent bios, and unverified third-party claims. When facts conflict, AI systems rely on probabilistic inference. Inference is not authority. AEOBRO was created to ease the costly pain point of inference with a clear public record.",
         },
       },
       {
