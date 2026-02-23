@@ -1,11 +1,9 @@
 // app/api/profile/[slug]/schema/route.ts
-// 📅 Updated: 2026-02-18 02:23 PM ET
-// Adds: AI_AGENT schema support end-to-end (SoftwareApplication JSON-LD emitted by lib/schema.ts)
-// Keeps: 2-tier publish gating (LITE vs PLUS) + planStatus enforcement (inactive/missing => LITE)
-// Keeps: visibility guard so UNPUBLISHED/DELETED profiles return 404 (no longer crawlable)
-// Keeps: syndication gating via isSyndicationAllowed
-// Keeps: caching + headers behavior
-// Result: LITE/inactive cannot publish updateMessage, FAQ, Services (even if stored)
+// 📅 Updated: 2026-02-23 08:05 AM ET
+// Fixes:
+// - Treat planStatus "trialing" as entitled for PLUS publishing (active || trialing)
+// - Use profile.servicesJson + profile.faqJson (JSON columns) instead of legacy tables
+// - Keep: visibility guard, syndication gating, caching/headers, AI_AGENT schema passthrough
 
 import { NextResponse, NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
@@ -39,30 +37,25 @@ function notFoundJson(message = "Profile not found") {
 
 /**
  * 2-tier effective publish access:
- * - planStatus !== "active" => treat as LITE (deny plus publishing)
+ * - planStatus not entitled => treat as LITE (deny plus publishing)
  * - planStatus missing => treat as LITE (fail closed)
- * - PLUS active => allow
- * - PRO/BUSINESS/ENTERPRISE active => behave like PLUS for now (PRO hidden)
+ * - entitled: active OR trialing
+ * - PLUS/PRO/BUSINESS/ENTERPRISE entitled => allow
  */
 function isPlusPublishingAllowed(planRaw: unknown, planStatusRaw: unknown): boolean {
   const planStatus = String(planStatusRaw ?? "").toLowerCase();
-  if (planStatus !== "active") return false;
+  const entitled = planStatus === "active" || planStatus === "trialing";
+  if (!entitled) return false;
 
   const plan = String(planRaw ?? "LITE").toUpperCase();
   const normalized = plan === "FREE" ? "LITE" : plan;
 
-  return (
-    normalized === "PLUS" ||
-    normalized === "PRO" ||
-    normalized === "BUSINESS" ||
-    normalized === "ENTERPRISE"
-  );
+  return normalized === "PLUS" || normalized === "PRO" || normalized === "BUSINESS" || normalized === "ENTERPRISE";
 }
 
 /**
  * Ensure AI agent fields are present on the object passed to buildProfileSchema.
- * This is a no-op if fields don't exist; it simply copies them if present.
- * (No Prisma changes, no extra DB calls.)
+ * No-op if fields don't exist.
  */
 function attachAIAgentFieldsIfPresent(profile: any) {
   const keys = [
@@ -93,46 +86,26 @@ export async function GET(req: NextRequest, { params }: Params) {
   const pretty = url.searchParams.get("pretty") === "1";
   const download = url.searchParams.get("download") === "1";
 
-  // Accept slug or internal id; include only what's needed
   const profile = await prisma.profile.findFirst({
-    where: {
-      OR: [{ slug }, { id: slug }],
-    },
-    include: {
-      user: { select: { plan: true, planStatus: true } },
-    },
+    where: { OR: [{ slug }, { id: slug }] },
+    include: { user: { select: { plan: true, planStatus: true } } },
   });
 
-  // 1) Missing profile => 404
-  if (!profile) {
-    return notFoundJson("Profile not found");
-  }
+  if (!profile) return notFoundJson("Profile not found");
 
-  // 2) Visibility guard (airtight with /p/[slug] behavior)
-  const visibility = (profile as any).visibility as
-    | "PUBLIC"
-    | "UNPUBLISHED"
-    | "DELETED"
-    | undefined;
-
-  if (visibility && visibility !== "PUBLIC") {
-    return notFoundJson("Profile not found");
-  }
+  // Visibility guard (matches /p/[slug])
+  const visibility = (profile as any).visibility as "PUBLIC" | "UNPUBLISHED" | "DELETED" | undefined;
+  if (visibility && visibility !== "PUBLIC") return notFoundJson("Profile not found");
 
   const baseUrl = getBaseUrl();
   const humanUrl = `${baseUrl}/p/${encodeURIComponent(profile.slug ?? slug)}`;
 
-  /** Normalize plan (existing behavior for syndication gate) */
-  const plan = (profile as any).plan ?? profile.user?.plan ?? null;
+  // Prefer User plan for gates (profile.plan may be stale/legacy)
+  const plan = profile.user?.plan ?? null;
 
   const verificationStatus =
-    (profile.verificationStatus as
-      | "UNVERIFIED"
-      | "PLATFORM_VERIFIED"
-      | "DOMAIN_VERIFIED"
-      | null) ?? "UNVERIFIED";
+    (profile.verificationStatus as "UNVERIFIED" | "PLATFORM_VERIFIED" | "DOMAIN_VERIFIED" | null) ?? "UNVERIFIED";
 
-  /** Existing syndication gate */
   const gate = isSyndicationAllowed(
     { verificationStatus, plan },
     {
@@ -165,41 +138,26 @@ export async function GET(req: NextRequest, { params }: Params) {
   }
 
   // ✅ 2-tier publish gating boundary (fail-closed via planStatus)
-  const plusPublishingAllowed = isPlusPublishingAllowed(
-    profile.user?.plan,
-    profile.user?.planStatus
-  );
+  const plusPublishingAllowed = isPlusPublishingAllowed(profile.user?.plan, profile.user?.planStatus);
 
   try {
-    // Only include updateMessage for PLUS+ active
-    const updateMessageForSchema = plusPublishingAllowed
-      ? ((profile as any).updateMessage ?? null)
-      : null;
+    // Only include updateMessage for entitled PLUS-like
+    const updateMessageForSchema = plusPublishingAllowed ? ((profile as any).updateMessage ?? null) : null;
 
-    // Ensure AI agent fields are passed through if present on profile
+    // Pass AI agent fields through if present on profile
     const profileForSchema = attachAIAgentFieldsIfPresent(profile as any);
 
-    const profileSchema = buildProfileSchema(
-      profileForSchema,
-      baseUrl,
-      updateMessageForSchema
-    );
+    const profileSchema = buildProfileSchema(profileForSchema, baseUrl, updateMessageForSchema);
 
-    /** Return profile-only schema */
+    // profile-only schema
     if (!wantAll) {
-      const body = pretty
-        ? JSON.stringify(profileSchema, null, 2)
-        : escapeForJsonLd(profileSchema);
+      const body = pretty ? JSON.stringify(profileSchema, null, 2) : escapeForJsonLd(profileSchema);
 
       return new NextResponse(body, {
         status: 200,
         headers: {
           "Content-Type": "application/ld+json; charset=utf-8",
-          ...(download
-            ? {
-                "Content-Disposition": `attachment; filename="${slug}-schema.json"`,
-              }
-            : {}),
+          ...(download ? { "Content-Disposition": `attachment; filename="${slug}-schema.json"` } : {}),
           "Cache-Control": "public, s-maxage=60, stale-while-revalidate=300",
           "X-Robots-Tag": "all",
           Link: `<${humanUrl}>; rel="describes alternate"; type="text/html"`,
@@ -207,22 +165,16 @@ export async function GET(req: NextRequest, { params }: Params) {
       });
     }
 
-    // ✅ all=1 extras: Only PLUS+ active can publish Services + FAQ
+    // all=1 extras: Only entitled PLUS-like can publish Services + FAQ
     if (!plusPublishingAllowed) {
       const payload = [profileSchema];
-      const body = pretty
-        ? JSON.stringify(payload, null, 2)
-        : escapeForJsonLd(payload);
+      const body = pretty ? JSON.stringify(payload, null, 2) : escapeForJsonLd(payload);
 
       return new NextResponse(body, {
         status: 200,
         headers: {
           "Content-Type": "application/ld+json; charset=utf-8",
-          ...(download
-            ? {
-                "Content-Disposition": `attachment; filename="${slug}-schema-all.json"`,
-              }
-            : {}),
+          ...(download ? { "Content-Disposition": `attachment; filename="${slug}-schema-all.json"` } : {}),
           "Cache-Control": "public, s-maxage=60, stale-while-revalidate=300",
           "X-Robots-Tag": "all",
           Link: `<${humanUrl}>; rel="describes alternate"; type="text/html"`,
@@ -230,78 +182,56 @@ export async function GET(req: NextRequest, { params }: Params) {
       });
     }
 
-    // PLUS+ active: include Services + FAQ
-    const [services, faqs] = await Promise.all([
-      prisma.serviceItem.findMany({
-        where: { profileId: profile.id, isPublic: true },
-        orderBy: { position: "asc" },
-        select: {
-          name: true,
-          description: true,
-          url: true,
-          priceMin: true,
-          priceMax: true,
-          priceUnit: true,
-          currency: true,
-        },
-      }),
-      prisma.fAQItem.findMany({
-        where: { profileId: profile.id, isPublic: true },
-        orderBy: { position: "asc" },
-        select: { question: true, answer: true },
-      }),
-    ]);
+    // ✅ Entitled PLUS-like: include Services + FAQ from JSON columns
+    const services = Array.isArray((profile as any).servicesJson) ? ((profile as any).servicesJson as any[]) : [];
+    const faqs = Array.isArray((profile as any).faqJson) ? ((profile as any).faqJson as any[]) : [];
 
     const servicesJsonLd = buildServiceJsonLd(
       `${humanUrl}#profile`,
-      services.map((s) => ({
-        name: s.name,
-        description: s.description ?? undefined,
-        url: s.url ?? undefined,
-        priceMin: s.priceMin as any,
-        priceMax: s.priceMax as any,
-        priceUnit: s.priceUnit ?? undefined,
-        currency: s.currency ?? undefined,
-      }))
+      services
+        .map((s) => ({
+          name: s?.name,
+          description: s?.description ?? undefined,
+          url: s?.url ?? undefined,
+          priceMin: s?.priceMin ?? undefined,
+          priceMax: s?.priceMax ?? undefined,
+          priceUnit: s?.priceUnit ?? undefined,
+          currency: s?.currency ?? undefined,
+        }))
+        .filter((s) => typeof s.name === "string" && s.name.trim().length > 0)
     );
 
     const faqJsonLd = buildFAQJsonLd(
       profile.slug ?? slug,
-      faqs.map((f) => ({
-        question: f.question,
-        answer: f.answer,
-      }))
+      faqs
+        .map((f) => ({
+          question: f?.question,
+          answer: f?.answer,
+        }))
+        .filter(
+          (f) =>
+            typeof f.question === "string" &&
+            f.question.trim().length > 0 &&
+            typeof f.answer === "string" &&
+            f.answer.trim().length > 0
+        )
     );
 
     const payload = [profileSchema, ...servicesJsonLd, faqJsonLd];
-
-    const body = pretty
-      ? JSON.stringify(payload, null, 2)
-      : escapeForJsonLd(payload);
+    const body = pretty ? JSON.stringify(payload, null, 2) : escapeForJsonLd(payload);
 
     return new NextResponse(body, {
       status: 200,
       headers: {
         "Content-Type": "application/ld+json; charset=utf-8",
-        ...(download
-          ? {
-              "Content-Disposition": `attachment; filename="${slug}-schema-all.json"`,
-            }
-          : {}),
+        ...(download ? { "Content-Disposition": `attachment; filename="${slug}-schema-all.json"` } : {}),
         "Cache-Control": "public, s-maxage=60, stale-while-revalidate=300",
         "X-Robots-Tag": "all",
         Link: `<${humanUrl}>; rel="describes alternate"; type="text/html"`,
       },
     });
   } catch (err: any) {
-    console.error("[schema endpoint] build error", {
-      slug,
-      name: err?.name,
-      message: err?.message,
-    });
-    return NextResponse.json(
-      { error: "Failed to build JSON-LD" },
-      { status: 500, headers: { "Cache-Control": "no-store" } }
-    );
+    console.error("[schema endpoint] build error", { slug, name: err?.name, message: err?.message });
+    return NextResponse.json({ error: "Failed to build JSON-LD" }, { status: 500, headers: { "Cache-Control": "no-store" } });
   }
 }
