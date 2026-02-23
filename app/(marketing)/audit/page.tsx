@@ -740,7 +740,7 @@ export default async function Page({ searchParams }: PageProps) {
 
         {/* Proprietary disclaimer */}
         <p className="mt-2 text-xs text-gray-500">
-          <strong>Disclaimer:</strong> The AEOBRO AI Visibility Score is a proprietary analysis
+          <strong>Disclaimer:</strong> The AEOBRO AI Identity Signal Audit is a proprietary analysis
           based on 18 parameters measuring how clearly AI systems can interpret and understand your public web identity data.
           It is intended for informational and demonstration purposes only.
         </p>
