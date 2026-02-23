@@ -1,14 +1,15 @@
 // app/api/profile/route.ts
-// 📅 Updated: 2026-02-23 13:09 ET
+// 📅 Updated: 2026-02-23 13:15 ET
 // Fix:
 // 1) Normalize UI entityType labels (e.g., "Creator / Person") to Prisma enum EntityType values.
-// 2) Keep fail-closed plan gating unchanged.
-// 3) Keep AI_AGENT optional fields safe (only written if columns exist in Prisma schema).
+// 2) Avoid runtime crashes from DB drift: DO NOT select `visibility` until migration is deployed.
+// 3) Align AI_AGENT UI fields -> actual Prisma Profile fields (agentName, modelBase, publicEndpoint, etc.).
+// 4) Keep fail-closed plan gating, verification gating, export restrictions intact.
 
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
+import { PrismaClient } from "@prisma/client";
 import { z } from "zod";
 import { toKebab, isSlugAllowed, RESERVED_SLUGS } from "@/lib/slug";
 import { revalidatePath, revalidateTag } from "next/cache";
@@ -16,6 +17,20 @@ import { sanitizeProfilePayload } from "@/lib/sanitize";
 
 export const runtime = "nodejs"; // Prisma requires Node runtime
 export const dynamic = "force-dynamic"; // don't cache API responses
+
+/* --------------------------------------------------- */
+/*                    PRISMA SINGLETON                 */
+/* --------------------------------------------------- */
+// NOTE: You said /lib/prisma does NOT exist. This makes the route self-contained.
+const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
+
+const prisma =
+  globalForPrisma.prisma ??
+  new PrismaClient({
+    // log: ["error", "warn"],
+  });
+
+if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma;
 
 /* --------------------------------------------------- */
 /*                         HELPERS                     */
@@ -125,7 +140,12 @@ function pickKnownProfileFields(data: Record<string, any>): Record<string, any> 
 
 /**
  * ✅ Normalize UI entityType strings to Prisma enum values at runtime.
- * This prevents "Expected EntityType" crashes when UI uses display labels.
+ * HARD RULES requested:
+ * - "Creator / Person" -> CREATOR
+ * - "Local Service" -> LOCAL_BUSINESS
+ * - "Business"/"Organization" -> ORGANIZATION
+ * - "AI Agent"/"AI_AGENT" -> AI_AGENT
+ * - Unknown/unsupported -> null (fail-closed)
  */
 function normalizeEntityTypeForDb(input: any): string | null {
   const raw = (input ?? "").toString().trim();
@@ -134,49 +154,53 @@ function normalizeEntityTypeForDb(input: any): string | null {
   const enums = (prisma as any)?.$Enums;
   const entityEnum = enums?.EntityType;
 
-  // Prisma v5+ exposes enums as an object; values are the enum strings.
   const allowed: string[] = entityEnum ? (Object.values(entityEnum) as string[]) : [];
 
-  // If we can't introspect, safest is to pass through (may still fail).
-  if (!allowed.length) return raw;
+  // If we can't introspect allowed values, fail-closed to null (do NOT risk crashing production).
+  if (!allowed.length) return null;
 
   // If already valid enum value, keep it.
   if (allowed.includes(raw)) return raw;
 
-  // Try exact matches ignoring case
-  const lowerAllowed = allowed.map((v) => v.toLowerCase());
-  const idxExact = lowerAllowed.indexOf(raw.toLowerCase());
-  if (idxExact >= 0) return allowed[idxExact];
+  const lc = raw.toLowerCase();
 
-  // Common UI labels -> likely enum patterns.
-  // We DO NOT assume exact enum names; we search within allowed values.
-  const want =
-    raw.toLowerCase() === "creator / person" || raw.toLowerCase() === "creator/person"
-      ? ["creator", "person"]
-      : raw.toLowerCase() === "local service"
-      ? ["local", "service"]
-      : raw.toLowerCase() === "business"
-      ? ["business"]
-      : raw.toLowerCase() === "organization"
-      ? ["organization"]
-      : raw.toLowerCase() === "product"
-      ? ["product"]
-      : raw.toLowerCase() === "ai_agent" || raw.toLowerCase() === "ai agent"
-      ? ["ai", "agent"]
-      : raw.toLowerCase().split(/[\s/_-]+/).filter(Boolean);
+  // Explicit label mapping (deterministic)
+  const explicitMap: Record<string, string> = {
+    "creator / person": "CREATOR",
+    "creator/person": "CREATOR",
+    "creator": "CREATOR",
+    "person": "PERSON",
+    "individual": "PERSON",
+    "business": "ORGANIZATION",
+    "organization": "ORGANIZATION",
+    "org": "ORGANIZATION",
+    "company": "ORGANIZATION",
+    "local service": "LOCAL_BUSINESS",
+    "local_service": "LOCAL_BUSINESS",
+    "local business": "LOCAL_BUSINESS",
+    "local_business": "LOCAL_BUSINESS",
+    "ai agent": "AI_AGENT",
+    "ai_agent": "AI_AGENT",
+    "ai-agent": "AI_AGENT",
+    "product": "", // not supported for Profile.entityType
+  };
 
-  // Best-match search: pick allowed value that contains most tokens.
+  const mapped = explicitMap[lc];
+  if (mapped) return allowed.includes(mapped) ? mapped : null;
+  if (mapped === "") return null;
+
+  // Fallback: token match against allowed values
+  const tokens = lc.split(/[\s/_-]+/).filter(Boolean);
   let best: { val: string; score: number } | null = null;
+
   for (const v of allowed) {
     const lv = v.toLowerCase();
     let score = 0;
-    for (const t of want) if (lv.includes(t)) score++;
+    for (const t of tokens) if (lv.includes(t)) score++;
     if (!best || score > best.score) best = { val: v, score };
   }
 
-  // Require at least 1 token match; otherwise return null to avoid crashing.
   if (best && best.score >= 1) return best.val;
-
   return null;
 }
 
@@ -420,8 +444,15 @@ const ProductItem = z.object({
   position: z.number().int().min(1).max(500).optional().nullable(),
 });
 
-/** AI_AGENT fields (Phase 1) — validated but optional */
+/**
+ * AI_AGENT fields (Phase 1)
+ * We ACCEPT legacy UI keys (aiAgentModel, aiAgentApiUrl, etc.)
+ * but we WRITE to the ACTUAL Prisma fields:
+ * agentName, operatorName, publicEndpoint, modelBase, multiModel, launchDate, version,
+ * autonomyLevel, memoryPolicy, capabilities, toolAccess, restrictedActions, riskCategory
+ */
 const AIAgentFields = z.object({
+  // legacy UI keys (keep for compatibility)
   aiAgentProvider: z.string().trim().max(120).optional().nullable(),
   aiAgentModel: z.string().trim().max(120).optional().nullable(),
   aiAgentVersion: z.string().trim().max(60).optional().nullable(),
@@ -430,6 +461,21 @@ const AIAgentFields = z.object({
   aiAgentCapabilities: csvOrArray,
   aiAgentInputModes: csvOrArray,
   aiAgentOutputModes: csvOrArray,
+
+  // canonical Prisma keys (preferred going forward)
+  agentName: z.string().trim().max(160).optional().nullable(),
+  operatorName: z.string().trim().max(160).optional().nullable(),
+  publicEndpoint: urlMaybeEmpty300.optional().nullable(),
+  modelBase: z.string().trim().max(160).optional().nullable(),
+  multiModel: z.union([z.boolean(), z.string()]).optional().nullable(),
+  launchDate: z.string().trim().max(60).optional().nullable(),
+  version: z.string().trim().max(60).optional().nullable(),
+  autonomyLevel: z.string().trim().max(80).optional().nullable(),
+  memoryPolicy: z.string().trim().max(500).optional().nullable(),
+  capabilities: csvOrArray,
+  toolAccess: csvOrArray,
+  restrictedActions: csvOrArray,
+  riskCategory: z.string().trim().max(80).optional().nullable(),
 });
 
 /** EXTENDED Profile Schema */
@@ -461,8 +507,62 @@ const ProfileSchema = z.object({
   servicesJson: z.array(ServiceItem).optional().nullable().default([]),
   productsJson: z.array(ProductItem).optional().nullable().default([]),
   updateMessage: z.string().trim().max(500).optional().nullable(),
+
   ...AIAgentFields.shape,
 });
+
+/* --------------------------------------------------- */
+/*               SAFE SELECT (NO VISIBILITY)           */
+/* --------------------------------------------------- */
+// IMPORTANT: Production DB is missing Profile.visibility. Never select all columns.
+const PROFILE_SELECT_SAFE_NO_VISIBILITY = {
+  userId: true,
+  displayName: true,
+  legalName: true,
+  entityType: true,
+
+  tagline: true,
+  bio: true,
+  website: true,
+  location: true,
+
+  serviceArea: true,
+  foundedYear: true,
+  teamSize: true,
+  languages: true,
+  pricingModel: true,
+  hours: true,
+
+  certifications: true,
+  press: true,
+  logoUrl: true,
+  imageUrls: true,
+
+  handles: true,
+  links: true,
+
+  slug: true,
+
+  faqJson: true,
+  servicesJson: true,
+  productsJson: true,
+  updateMessage: true,
+
+  // Canonical AI agent fields (actual Prisma fields)
+  agentName: true,
+  operatorName: true,
+  publicEndpoint: true,
+  modelBase: true,
+  multiModel: true,
+  launchDate: true,
+  version: true,
+  autonomyLevel: true,
+  memoryPolicy: true,
+  capabilities: true,
+  toolAccess: true,
+  restrictedActions: true,
+  riskCategory: true,
+} as const;
 
 /* --------------------------------------------------- */
 /*                       GET                           */
@@ -475,6 +575,7 @@ export async function GET() {
   try {
     const profile = await prisma.profile.findUnique({
       where: { userId: auth.userId },
+      select: PROFILE_SELECT_SAFE_NO_VISIBILITY,
     });
 
     const payload =
@@ -489,6 +590,9 @@ export async function GET() {
         servicesJson: [],
         productsJson: [],
         handles: {},
+        capabilities: [],
+        toolAccess: [],
+        restrictedActions: [],
       };
 
     return NextResponse.json({ ok: true, profile: payload, ...payload });
@@ -525,6 +629,8 @@ export async function PUT(req: Request) {
     // ✅ Preserve validated AI fields even if sanitize doesn't know them
     const d = {
       ...(dSan as any),
+
+      // legacy UI keys
       aiAgentProvider: (parsed.data as any).aiAgentProvider ?? null,
       aiAgentModel: (parsed.data as any).aiAgentModel ?? null,
       aiAgentVersion: (parsed.data as any).aiAgentVersion ?? null,
@@ -533,6 +639,21 @@ export async function PUT(req: Request) {
       aiAgentCapabilities: (parsed.data as any).aiAgentCapabilities ?? [],
       aiAgentInputModes: (parsed.data as any).aiAgentInputModes ?? [],
       aiAgentOutputModes: (parsed.data as any).aiAgentOutputModes ?? [],
+
+      // canonical Prisma keys (preferred)
+      agentName: (parsed.data as any).agentName ?? null,
+      operatorName: (parsed.data as any).operatorName ?? null,
+      publicEndpoint: (parsed.data as any).publicEndpoint ?? "",
+      modelBase: (parsed.data as any).modelBase ?? null,
+      multiModel: (parsed.data as any).multiModel ?? null,
+      launchDate: (parsed.data as any).launchDate ?? null,
+      version: (parsed.data as any).version ?? null,
+      autonomyLevel: (parsed.data as any).autonomyLevel ?? null,
+      memoryPolicy: (parsed.data as any).memoryPolicy ?? null,
+      capabilities: (parsed.data as any).capabilities ?? [],
+      toolAccess: (parsed.data as any).toolAccess ?? [],
+      restrictedActions: (parsed.data as any).restrictedActions ?? [],
+      riskCategory: (parsed.data as any).riskCategory ?? null,
     };
 
     // ✅ Server-side permission boundary (fail-closed)
@@ -586,17 +707,42 @@ export async function PUT(req: Request) {
       slug: finalSlug,
     };
 
-    // ✅ AI agent identity fields are NOT plan-gated (allowed for LITE).
-    // ✅ Prisma-safe: only include if these columns exist on Prisma Profile model.
-    const aiOptional = pickKnownProfileFields({
-      aiAgentProvider: emptyToNull(d.aiAgentProvider),
-      aiAgentModel: emptyToNull(d.aiAgentModel),
-      aiAgentVersion: emptyToNull(d.aiAgentVersion),
-      aiAgentDocsUrl: emptyToNull(d.aiAgentDocsUrl),
-      aiAgentApiUrl: emptyToNull(d.aiAgentApiUrl),
-      aiAgentCapabilities: d.aiAgentCapabilities ?? [],
-      aiAgentInputModes: d.aiAgentInputModes ?? [],
-      aiAgentOutputModes: d.aiAgentOutputModes ?? [],
+    /**
+     * ✅ AI_AGENT alignment:
+     * We accept legacy UI keys (aiAgentModel, aiAgentVersion, aiAgentApiUrl, aiAgentCapabilities...)
+     * but we WRITE to canonical Prisma columns.
+     *
+     * Mapping strategy (no Prisma changes):
+     * - agentName: use d.agentName if provided, else null (UI should be updated later)
+     * - operatorName: use d.operatorName else aiAgentProvider as fallback
+     * - modelBase: use d.modelBase else aiAgentModel
+     * - version: use d.version else aiAgentVersion
+     * - publicEndpoint: use d.publicEndpoint else aiAgentApiUrl
+     * - capabilities: use d.capabilities else aiAgentCapabilities
+     *
+     * NOTE: aiAgentDocsUrl / inputModes / outputModes have no canonical Prisma columns in your authoritative schema.
+     * We accept them for now but do not store them (fail-closed) until UI is aligned or schema expands later.
+     */
+    const aiCanonical = pickKnownProfileFields({
+      agentName: emptyToNull(d.agentName),
+      operatorName: emptyToNull(d.operatorName ?? d.aiAgentProvider),
+      publicEndpoint: emptyToNull(d.publicEndpoint ?? d.aiAgentApiUrl),
+      modelBase: emptyToNull(d.modelBase ?? d.aiAgentModel),
+      version: emptyToNull(d.version ?? d.aiAgentVersion),
+      autonomyLevel: emptyToNull(d.autonomyLevel),
+      memoryPolicy: emptyToNull(d.memoryPolicy),
+      riskCategory: emptyToNull(d.riskCategory),
+      multiModel:
+        typeof d.multiModel === "boolean"
+          ? d.multiModel
+          : typeof d.multiModel === "string"
+          ? d.multiModel.toLowerCase() === "true"
+          : null,
+      launchDate: emptyToNull(d.launchDate),
+
+      capabilities: (d.capabilities && Array.isArray(d.capabilities) ? d.capabilities : d.aiAgentCapabilities) ?? [],
+      toolAccess: d.toolAccess ?? [],
+      restrictedActions: d.restrictedActions ?? [],
     });
 
     // ✅ PLUS-only fields (server enforced; fail-closed)
@@ -611,7 +757,7 @@ export async function PUT(req: Request) {
 
     const payload = {
       ...payloadBase,
-      ...aiOptional,
+      ...aiCanonical,
       ...plusOnly,
     };
 
