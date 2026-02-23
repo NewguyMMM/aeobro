@@ -333,7 +333,7 @@ export default function Page() {
               <ul className="list-disc list-inside text-gray-700 mt-2 space-y-1">
                 <li>Publishes official records</li>
                 <li>Verifies authority</li>
-                <li>Persists across model updates</li>
+                <li>Exists independently of model updates</li>
                 <li>Can be cited as a source</li>
               </ul>
             </div>
