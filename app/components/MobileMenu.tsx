@@ -44,7 +44,7 @@ export default function MobileMenu() {
             role="menuitem"
             onClick={() => setOpen(false)}
           >
-            Check AI Visibility
+            Check Current AI Identity
           </a>
         </div>
       )}
