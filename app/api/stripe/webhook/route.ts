@@ -1,10 +1,9 @@
 // app/api/stripe/webhook/route.ts
-// ✅ Updated: 2026-02-23 07:16 ET
-// Fix: Portal policy alignment:
+// ✅ Updated: 2026-02-23 07:22 ET
+// Policy alignment:
 // - Upgrade immediate + prorated charge now
 // - If payment fails → do NOT grant Plus entitlement
-// Change: Do NOT treat "past_due" as entitled
-// Add: invoice.payment_failed handler to mark planStatus as past_due (without unpublishing immediately)
+// - past_due → NOT entitled to Plus, but do NOT unpublish (Stripe retries)
 // Keeps: wrong-mode protection, lapse/unpublish rules, 90-day retention, reactivation, mapping
 
 import { NextResponse } from "next/server";
@@ -77,12 +76,6 @@ function isStripeMissingResource(err: any) {
   );
 }
 
-/**
- * Validate a subscriptionId exists in the current Stripe mode (as determined by STRIPE_SECRET_KEY).
- * - Returns the subscriptionId if valid
- * - Returns null if missing (wrong mode / deleted / invalid)
- * - Throws for non-"missing resource" Stripe errors
- */
 async function validateSubscriptionIdInThisMode(
   subscriptionId?: string | null
 ): Promise<string | null> {
@@ -120,7 +113,6 @@ async function applySubscriptionLapseEffects(
     retentionUntil.toISOString()
   );
 
-  // 1) Anchor the lapse timestamp (only set once)
   await prisma.user.update({
     where: { id: userId },
     data: {
@@ -129,7 +121,6 @@ async function applySubscriptionLapseEffects(
     },
   });
 
-  // 2) Unpublish profile immediately (404 => effectively not crawlable)
   await prisma.profile.updateMany({
     where: { userId },
     data: {
@@ -148,7 +139,6 @@ async function applySubscriptionReactivationEffects(userId: string) {
 
   console.log("[stripe webhook] Applying reactivation effects for user:", userId);
 
-  // Clear lapse anchor
   await prisma.user.update({
     where: { id: userId },
     data: {
@@ -157,7 +147,6 @@ async function applySubscriptionReactivationEffects(userId: string) {
     },
   });
 
-  // Republish ONLY if it was unpublished due to lapse
   await prisma.profile.updateMany({
     where: {
       userId,
@@ -188,7 +177,6 @@ async function upsertUserFromCustomerId(
 ) {
   if (!customerId) return null;
 
-  // 1) Try by stripeCustomerId
   const byCustomer = await prisma.user.findFirst({
     where: { stripeCustomerId: customerId },
     select: { id: true, email: true, subscriptionLapsedAt: true },
@@ -207,7 +195,6 @@ async function upsertUserFromCustomerId(
     });
   }
 
-  // 2) Fallback: retrieve from Stripe and match by email
   const retrieved = (await stripe.customers.retrieve(
     customerId
   )) as Stripe.Customer | Stripe.DeletedCustomer;
@@ -247,7 +234,6 @@ async function upsertUserFromCustomerId(
 export async function POST(req: Request) {
   let event: Stripe.Event;
 
-  // Verify signature first
   try {
     const signature = req.headers.get("stripe-signature");
     if (!signature) {
@@ -265,7 +251,6 @@ export async function POST(req: Request) {
 
   try {
     switch (event.type) {
-      /* -------------------- checkout.session.completed -------------------- */
       case "checkout.session.completed": {
         const session = event.data.object as Stripe.Checkout.Session;
         const customerId = session.customer as string | undefined;
@@ -273,7 +258,6 @@ export async function POST(req: Request) {
 
         let mappedPlan: DbPlan | undefined;
 
-        // We store price id in metadata.plan_price_id from the /checkout endpoint.
         const metaPriceId =
           typeof session.metadata?.plan_price_id === "string"
             ? session.metadata.plan_price_id.trim()
@@ -291,17 +275,15 @@ export async function POST(req: Request) {
           );
         }
 
-        // ✅ Prevent wrong-mode subscription poisoning
         const safeSubId = await validateSubscriptionIdInThisMode(subscriptionId ?? null);
 
         const updated = await upsertUserFromCustomerId(customerId ?? "", {
           stripeSubscriptionId: safeSubId ?? undefined,
-          plan: mappedPlan, // if undefined, leave existing plan as-is
+          plan: mappedPlan,
           planStatus: mappedPlan ? "active" : undefined,
           currentPeriodEnd: undefined,
         });
 
-        // If this was a purchase/activation, treat as reactivation safety
         if (updated?.id && updated.planStatus === "active") {
           await applySubscriptionReactivationEffects(updated.id);
         }
@@ -309,7 +291,6 @@ export async function POST(req: Request) {
         break;
       }
 
-      /* --------------- customer.subscription.created/updated --------------- */
       case "customer.subscription.created":
       case "customer.subscription.updated": {
         const sub = event.data.object as Stripe.Subscription;
@@ -332,25 +313,22 @@ export async function POST(req: Request) {
 
         const mappedPlan = mapPriceToPlan(priceId);
 
-        // ✅ Entitlement must match AEOBRO FAQ:
-        // If payment fails and Stripe marks subscription as past_due, do NOT grant Plus.
-        const entitlementStatuses = ["trialing", "active"] as const;
-        const isEntitled = entitlementStatuses.includes(sub.status as any);
-
-        // If we can map the price and the sub is entitled, use that plan.
-        // Otherwise fall back to LITE as the baseline.
-        const plan: DbPlan = mappedPlan && isEntitled ? mappedPlan : "LITE";
-
-        let currentPeriodEnd: Date | null = null;
-        if (sub.current_period_end) {
-          currentPeriodEnd = new Date(sub.current_period_end * 1000);
-        }
-
-        // ✅ Prevent wrong-mode subscription poisoning
         const safeSubId = await validateSubscriptionIdInThisMode(sub.id);
 
+        const currentPeriodEnd = sub.current_period_end
+          ? new Date(sub.current_period_end * 1000)
+          : null;
+
+        // ✅ Entitled = truly paid/trialing
+        const isEntitled = sub.status === "active" || sub.status === "trialing";
+
+        // ✅ If past_due, do NOT grant Plus. Keep them on LITE, but do NOT unpublish.
+        const isPastDue = sub.status === "past_due";
+
+        const plan: DbPlan = mappedPlan && isEntitled ? mappedPlan : "LITE";
+
         const updated = await upsertUserFromCustomerId(sub.customer as string, {
-          stripeSubscriptionId: safeSubId, // string | null
+          stripeSubscriptionId: safeSubId,
           plan,
           planStatus: sub.status,
           currentPeriodEnd,
@@ -359,9 +337,13 @@ export async function POST(req: Request) {
         if (updated?.id) {
           if (isEntitled) {
             await applySubscriptionReactivationEffects(updated.id);
+          } else if (isPastDue) {
+            // Do nothing further: Stripe will retry payment.
+            // User remains LITE (no Plus), but we do NOT unpublish the profile.
+            console.warn("[stripe webhook] past_due: not entitled, not unpublishing", {
+              userId: updated.id,
+            });
           } else {
-            // For non-entitled statuses (canceled, unpaid, incomplete_expired, etc),
-            // apply lapse effects (unpublish + retention).
             await applySubscriptionLapseEffects(updated.id);
           }
         }
@@ -369,7 +351,6 @@ export async function POST(req: Request) {
         break;
       }
 
-      /* ----------------------- invoice.payment_succeeded ------------------- */
       case "invoice.payment_succeeded": {
         const invoice = event.data.object as Stripe.Invoice;
         const customerId = invoice.customer as string | null;
@@ -400,12 +381,10 @@ export async function POST(req: Request) {
           ? new Date(periodEndUnix * 1000)
           : null;
 
-        // ✅ Prevent wrong-mode subscription poisoning
         const safeSubId = await validateSubscriptionIdInThisMode(subscriptionId ?? null);
 
         const updated = await upsertUserFromCustomerId(customerId, {
           stripeSubscriptionId: safeSubId ?? undefined,
-          // Only set plan if we can map from price ID.
           plan: mappedPlan ?? undefined,
           planStatus: "active",
           currentPeriodEnd,
@@ -418,7 +397,6 @@ export async function POST(req: Request) {
         break;
       }
 
-      /* ----------------------- invoice.payment_failed ---------------------- */
       case "invoice.payment_failed": {
         const invoice = event.data.object as Stripe.Invoice;
         const customerId = invoice.customer as string | null;
@@ -433,10 +411,7 @@ export async function POST(req: Request) {
           invoice.attempt_count
         );
 
-        // Key behavior:
-        // - Mark planStatus so the app can gate premium features.
-        // - Do NOT unpublish immediately here; Stripe may retry.
-        // - subscription.updated will ultimately drive lapse effects if it moves to a non-entitled state.
+        // Mark status; do NOT unpublish here.
         await upsertUserFromCustomerId(customerId, {
           planStatus: "past_due",
         });
@@ -444,7 +419,6 @@ export async function POST(req: Request) {
         break;
       }
 
-      /* ----------------------- customer.subscription.deleted -------------- */
       case "customer.subscription.deleted": {
         const sub = event.data.object as Stripe.Subscription;
         console.log(
@@ -466,7 +440,6 @@ export async function POST(req: Request) {
       }
 
       default: {
-        // We ignore other events, but log them once in case we need them later.
         console.log("[stripe webhook] Ignoring event type:", event.type);
         break;
       }
