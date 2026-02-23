@@ -173,6 +173,18 @@ export default function Page() {
             "No. AEOBRO does not promise rankings, traffic, placement, or revenue. No rankings promised. No traffic guarantees. Just accurate representation. AI systems and search engines decide what to surface and when.",
         },
       },
+
+      // ✅ NEW (INSERTED HERE): Upgrades/downgrades + proration policy
+      {
+        "@type": "Question",
+        name: "How do upgrades and downgrades work with billing?",
+        acceptedAnswer: {
+          "@type": "Answer",
+          text:
+            "Upgrades (Lite → Plus) take effect immediately. Stripe prorates the difference and charges only what’s owed for the remaining time in your billing period. If the payment fails, Plus access is not granted. Downgrades (Plus → Lite) take effect at the end of your current billing period. There are no refunds, and you keep Plus access until the period ends.",
+        },
+      },
+
       {
         "@type": "Question",
         name: "How do I cancel?",
@@ -208,7 +220,7 @@ export default function Page() {
         acceptedAnswer: {
           "@type": "Answer",
           text:
-            "Centralized AI Ready Profile: a single, verified public page plus structured JSON-LD that consolidates your official links and key facts. Basic profile: core fields (name, tagline, bio) with a limited number of links and images. Products / Catalog: structured listings of products or offerings in a machine-readable format. Updates: a publishable stream of official changes (new offerings, announcements, corrections) that keeps your record current. FAQ markup: publish common questions and answers in schema.org format. Service markup: structured data describing offerings, service areas, and attributes.",
+            "Centralized AI Identity Profile: a single, verified public page plus structured JSON-LD that consolidates your official links and key facts. Basic profile: core fields (name, tagline, bio) with a limited number of links and images. Products / Catalog: structured listings of products or offerings in a machine-readable format. Updates: a publishable stream of official changes (new offerings, announcements, corrections) that keeps your record current. FAQ markup: publish common questions and answers in schema.org format. Service markup: structured data describing offerings, service areas, and attributes.",
         },
       },
     ],
@@ -410,8 +422,8 @@ export default function Page() {
         <div className="card">
           <h3 className="font-semibold">How do I create a profile on AEOBRO?</h3>
           <p className="text-gray-700 mt-2">
-            Click the <strong>“Create Your AI Identity Profile”</strong> button on
-            aeobro.com.
+            Click the <strong>“Create Your AI Identity Profile”</strong> button
+            on aeobro.com.
           </p>
         </div>
 
@@ -437,9 +449,9 @@ export default function Page() {
               account you control for verification.
             </li>
             <li>
-              <strong>Businesses (Plus and Pro-coming soon):</strong> A web business domain,
-              or a social media account you control for verification.{" "}
-              <strong>Business domains are preferred.</strong>
+              <strong>Businesses (Plus and Pro-coming soon):</strong> A web
+              business domain, or a social media account you control for
+              verification. <strong>Business domains are preferred.</strong>
             </li>
           </ul>
           <p className="text-gray-700 mt-2">
@@ -510,8 +522,9 @@ export default function Page() {
             However, publishing JSON-LD only on your website means your identity
             exists in a single, self-asserted location. By also publishing on
             AEOBRO, your brand maintains a{" "}
-            <strong>verifiable, trusted, and citable</strong> third-party identity
-            layer that AI systems can reference independently of your website.
+            <strong>verifiable, trusted, and citable</strong> third-party
+            identity layer that AI systems can reference independently of your
+            website.
           </p>
           <p className="text-gray-700 mt-2">
             AEOBRO does not guarantee rankings or placement; it improves
@@ -524,8 +537,8 @@ export default function Page() {
           <h3 className="font-semibold">Why don’t I see results immediately?</h3>
           <p className="text-gray-700 mt-2">
             Because AI systems update on their own schedules. AEOBRO defines the
-            record they reference, but it doesn’t control when third-party systems
-            refresh or display it.
+            record they reference, but it doesn’t control when third-party
+            systems refresh or display it.
           </p>
         </div>
 
@@ -555,6 +568,24 @@ export default function Page() {
             <strong>No rankings promised. No traffic guarantees.</strong> Just
             accurate representation. AI systems and search engines decide what to
             surface and when.
+          </p>
+        </div>
+
+        {/* ✅ NEW (INSERTED HERE): Upgrades/downgrades + proration policy */}
+        <div className="card">
+          <h3 className="font-semibold">
+            How do upgrades and downgrades work with billing?
+          </h3>
+          <p className="text-gray-700 mt-2">
+            <strong>Upgrades (Lite → Plus)</strong> take effect immediately.
+            Stripe prorates the difference and charges only what’s owed for the
+            remaining time in your billing period. If the payment fails, Plus
+            access is not granted.
+          </p>
+          <p className="text-gray-700 mt-2">
+            <strong>Downgrades (Plus → Lite)</strong> take effect at the end of
+            your current billing period. There are no refunds, and you keep Plus
+            access until the period ends.
           </p>
         </div>
 
@@ -597,7 +628,7 @@ export default function Page() {
         <div className="card">
           <h3 className="font-semibold">What do the pricing features mean?</h3>
 
-          <h4 className="font-medium mt-4">Centralized AI Ready Profile</h4>
+          <h4 className="font-medium mt-4">Centralized AI Identity Profile</h4>
           <p className="text-gray-700 mt-2">
             A single, verified public page plus structured JSON-LD that
             consolidates your official links and key facts. <em>Advantage:</em>{" "}
