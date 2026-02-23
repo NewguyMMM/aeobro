@@ -60,7 +60,7 @@ export default function Page() {
         name: "What does AEOBRO stand for?",
         acceptedAnswer: {
           "@type": "Answer",
-          text: "AI Engine Optimization · Business Reach Optimization.",
+          text: "AI Engine Organization · Business Reach Optimization.",
         },
       },
       {
@@ -363,7 +363,7 @@ export default function Page() {
         <div className="card">
           <h3 className="font-semibold">What does AEOBRO stand for?</h3>
           <p className="text-gray-700 mt-2">
-            AI Engine Optimization · Business Reach Optimization
+            AI Engine Organization · Business Reach Optimization
           </p>
         </div>
 
