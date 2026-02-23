@@ -77,7 +77,7 @@ export default function Page() {
         name: "How do I create a profile on AEOBRO?",
         acceptedAnswer: {
           "@type": "Answer",
-          text: 'Click the "Create Your AI Ready Profile" button on aeobro.com.',
+          text: 'Click the "Create Your AI Identity Profile" button on aeobro.com.',
         },
       },
       {
@@ -95,7 +95,7 @@ export default function Page() {
         acceptedAnswer: {
           "@type": "Answer",
           text:
-            "Verification. Creators (Lite): a web domain, or a social media account you control for verification. Businesses (Plus and Pro): a web business domain, or a social media account you control for verification (business domains are preferred). Without verification, your profile can exist as a draft, but it won’t publish to AI engines.",
+            "Verification. Creators (Lite): a web domain, or a social media account you control for verification. Businesses (Plus and Pro-coming soon): a web business domain, or a social media account you control for verification (business domains are preferred). Without verification, your profile can exist as a draft, but it won’t publish to AI engines.",
         },
       },
       {
@@ -410,7 +410,7 @@ export default function Page() {
         <div className="card">
           <h3 className="font-semibold">How do I create a profile on AEOBRO?</h3>
           <p className="text-gray-700 mt-2">
-            Click the <strong>“Create Your AI Ready Profile”</strong> button on
+            Click the <strong>“Create Your AI Identity Profile”</strong> button on
             aeobro.com.
           </p>
         </div>
@@ -437,7 +437,7 @@ export default function Page() {
               account you control for verification.
             </li>
             <li>
-              <strong>Businesses (Plus and Pro):</strong> A web business domain,
+              <strong>Businesses (Plus and Pro-coming soon):</strong> A web business domain,
               or a social media account you control for verification.{" "}
               <strong>Business domains are preferred.</strong>
             </li>
