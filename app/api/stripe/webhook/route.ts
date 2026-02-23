@@ -1,10 +1,11 @@
 // app/api/stripe/webhook/route.ts
-// ✅ Updated: 2026-02-16 12:55 ET
-// Fix: Prevent wrong-mode (test/live) subscription IDs from poisoning production DB.
-// Strategy: Validate subscriptionId in current Stripe mode before storing to DB.
-// Keeps: subscription lapse → unpublish profile + 90-day retention timer
-// Keeps: reactivation → republish profile + clear retention
-// Keeps: price->plan mapping + logging
+// ✅ Updated: 2026-02-23 07:16 ET
+// Fix: Portal policy alignment:
+// - Upgrade immediate + prorated charge now
+// - If payment fails → do NOT grant Plus entitlement
+// Change: Do NOT treat "past_due" as entitled
+// Add: invoice.payment_failed handler to mark planStatus as past_due (without unpublishing immediately)
+// Keeps: wrong-mode protection, lapse/unpublish rules, 90-day retention, reactivation, mapping
 
 import { NextResponse } from "next/server";
 import Stripe from "stripe";
@@ -331,8 +332,9 @@ export async function POST(req: Request) {
 
         const mappedPlan = mapPriceToPlan(priceId);
 
-        // Define "active entitlement" strictly.
-        const entitlementStatuses = ["trialing", "active", "past_due"] as const;
+        // ✅ Entitlement must match AEOBRO FAQ:
+        // If payment fails and Stripe marks subscription as past_due, do NOT grant Plus.
+        const entitlementStatuses = ["trialing", "active"] as const;
         const isEntitled = entitlementStatuses.includes(sub.status as any);
 
         // If we can map the price and the sub is entitled, use that plan.
@@ -358,6 +360,8 @@ export async function POST(req: Request) {
           if (isEntitled) {
             await applySubscriptionReactivationEffects(updated.id);
           } else {
+            // For non-entitled statuses (canceled, unpaid, incomplete_expired, etc),
+            // apply lapse effects (unpublish + retention).
             await applySubscriptionLapseEffects(updated.id);
           }
         }
@@ -410,6 +414,32 @@ export async function POST(req: Request) {
         if (updated?.id) {
           await applySubscriptionReactivationEffects(updated.id);
         }
+
+        break;
+      }
+
+      /* ----------------------- invoice.payment_failed ---------------------- */
+      case "invoice.payment_failed": {
+        const invoice = event.data.object as Stripe.Invoice;
+        const customerId = invoice.customer as string | null;
+        if (!customerId) break;
+
+        console.warn(
+          "[stripe webhook] invoice.payment_failed invoice.id:",
+          invoice.id,
+          "billing_reason:",
+          invoice.billing_reason,
+          "attempt_count:",
+          invoice.attempt_count
+        );
+
+        // Key behavior:
+        // - Mark planStatus so the app can gate premium features.
+        // - Do NOT unpublish immediately here; Stripe may retry.
+        // - subscription.updated will ultimately drive lapse effects if it moves to a non-entitled state.
+        await upsertUserFromCustomerId(customerId, {
+          planStatus: "past_due",
+        });
 
         break;
       }
