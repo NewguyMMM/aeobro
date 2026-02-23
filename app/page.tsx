@@ -27,8 +27,8 @@ export default async function Home() {
   }
 
   const ctaLabel = hasProfile
-    ? "Edit Your AI Ready Profile"
-    : "Create Your AI Ready Profile";
+    ? "Edit Your AI Identity Profile"
+    : "Create Your AI Identity Profile";
 
   const ctaSentence = hasProfile
     ? "Your AI Identity Layer lives here."
