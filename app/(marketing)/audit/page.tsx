@@ -7,7 +7,7 @@ import { authOptions } from "@/lib/auth";
 export const dynamic = "force-dynamic" as const;
 
 export const metadata = {
-  title: "AI-Visibility Audit | AEOBRO",
+  title: "AI Identity Signal Audit | AEOBRO",
   description:
     "Quick, provisional AI-visibility score for your domain. Enter your domain address to see a rough baseline of your current AI interpretation.",
   alternates: { canonical: "/audit" },
@@ -564,7 +564,7 @@ export default async function Page({ searchParams }: PageProps) {
   const jsonLd = {
     "@context": "https://schema.org",
     "@type": "WebPage",
-    name: "AI-Visibility Audit",
+    name: "AI Identity Signal Audit",
     url: "https://aeobro.com/audit",
     description:
       "Quick, provisional AI-visibility score for your domain. Enter your domain address to see a rough baseline of your current AI interpretation.",
@@ -584,7 +584,7 @@ export default async function Page({ searchParams }: PageProps) {
       {
         "@type": "ListItem",
         position: 2,
-        name: "AI-Visibility Audit",
+        name: "AI Identity Signal Audit",
         item: "https://aeobro.com/audit",
       },
     ],
@@ -600,7 +600,7 @@ export default async function Page({ searchParams }: PageProps) {
         {JSON.stringify(breadcrumbLd)}
       </Script>
 
-      <h1 className="text-4xl font-extrabold">AI-Visibility Audit</h1>
+      <h1 className="text-4xl font-extrabold">AI Identity Signal Audit</h1>
       <p
         className="mt-3 text-gray-600"
         title="A fast, single-page analysis with short timeouts."
