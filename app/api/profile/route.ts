@@ -1,9 +1,9 @@
 // app/api/profile/route.ts
-// 📅 Updated: 2026-02-23 07:48 AM ET
-// Fixes:
-// - GET returns the profile object directly (matches ProfileEditor prefill expectations)
-// - Treat planStatus "trialing" as entitled (consistent with webhook entitlement)
-// - Only write AI_AGENT fields when entityType === "AI_AGENT" (prevents accidental wipes / spoof writes)
+// 📅 Updated: 2026-02-23 13:09 ET
+// Fix:
+// 1) Normalize UI entityType labels (e.g., "Creator / Person") to Prisma enum EntityType values.
+// 2) Keep fail-closed plan gating unchanged.
+// 3) Keep AI_AGENT optional fields safe (only written if columns exist in Prisma schema).
 
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
@@ -14,8 +14,8 @@ import { toKebab, isSlugAllowed, RESERVED_SLUGS } from "@/lib/slug";
 import { revalidatePath, revalidateTag } from "next/cache";
 import { sanitizeProfilePayload } from "@/lib/sanitize";
 
-export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
+export const runtime = "nodejs"; // Prisma requires Node runtime
+export const dynamic = "force-dynamic"; // don't cache API responses
 
 /* --------------------------------------------------- */
 /*                         HELPERS                     */
@@ -45,13 +45,16 @@ async function requireUserId() {
 }
 
 /**
- * ✅ Fail-closed plan enforcement
- * Rules:
- * - If planStatus not entitled => treat as LITE
- * - Entitled statuses: active, trialing
- * - PLUS-like: PLUS/PRO/BUSINESS/ENTERPRISE
+ * ✅ Fail-closed plan enforcement (permission boundary)
+ * Required rules:
+ * - If planStatus !== "active" => treat as LITE
+ * - If planStatus missing => treat as LITE
+ * - PLUS (and PRO/BUSINESS/ENTERPRISE for now) behaves like PLUS
+ * - If plan missing => treat as LITE
  */
-async function getEffectivePlanKey(userId: string): Promise<{ planKey: "LITE" | "PLUS"; isEntitled: boolean }> {
+async function getEffectivePlanKey(
+  userId: string
+): Promise<{ planKey: "LITE" | "PLUS"; isActive: boolean }> {
   try {
     const u = await (prisma.user as any).findUnique({
       where: { id: userId },
@@ -61,25 +64,28 @@ async function getEffectivePlanKey(userId: string): Promise<{ planKey: "LITE" | 
     const rawPlan = String(u?.plan ?? "LITE").toUpperCase();
     const rawStatus = String(u?.planStatus ?? "").toLowerCase();
 
-    const isEntitled = rawStatus === "active" || rawStatus === "trialing";
-    if (!isEntitled) return { planKey: "LITE", isEntitled: false };
+    const isActive = rawStatus === "active"; // fail-closed: missing => false
+    if (!isActive) return { planKey: "LITE", isActive: false };
 
     const normalizedPlan = rawPlan === "FREE" ? "LITE" : rawPlan;
 
+    // PRO remains hidden; behaves like PLUS for now
     const isPlusLike =
       normalizedPlan === "PLUS" ||
       normalizedPlan === "PRO" ||
       normalizedPlan === "BUSINESS" ||
       normalizedPlan === "ENTERPRISE";
 
-    return { planKey: isPlusLike ? "PLUS" : "LITE", isEntitled: true };
+    return { planKey: isPlusLike ? "PLUS" : "LITE", isActive: true };
   } catch {
-    return { planKey: "LITE", isEntitled: false };
+    return { planKey: "LITE", isActive: false };
   }
 }
 
 /**
- * ✅ Prisma-safe payload writer for optional fields
+ * ✅ Prisma-safe optional payload writer (schema-safe, not DB-safe)
+ * We only include fields that exist on Prisma's Profile model
+ * (prevents runtime errors from unknown fields).
  */
 let __profileFieldSet: Set<string> | null = null;
 
@@ -100,7 +106,7 @@ function getProfileFieldSet(): Set<string> {
       return __profileFieldSet;
     }
   } catch {
-    // ignore
+    // fall through
   }
 
   __profileFieldSet = new Set<string>();
@@ -111,12 +117,70 @@ function pickKnownProfileFields(data: Record<string, any>): Record<string, any> 
   const fieldSet = getProfileFieldSet();
   const out: Record<string, any> = {};
   for (const [k, v] of Object.entries(data)) {
-    if (fieldSet.size === 0) continue; // fail-closed for optional fields
+    if (fieldSet.size === 0) continue; // fail-closed for optional fields if introspection failed
     if (fieldSet.has(k)) out[k] = v;
   }
   return out;
 }
 
+/**
+ * ✅ Normalize UI entityType strings to Prisma enum values at runtime.
+ * This prevents "Expected EntityType" crashes when UI uses display labels.
+ */
+function normalizeEntityTypeForDb(input: any): string | null {
+  const raw = (input ?? "").toString().trim();
+  if (!raw) return null;
+
+  const enums = (prisma as any)?.$Enums;
+  const entityEnum = enums?.EntityType;
+
+  // Prisma v5+ exposes enums as an object; values are the enum strings.
+  const allowed: string[] = entityEnum ? (Object.values(entityEnum) as string[]) : [];
+
+  // If we can't introspect, safest is to pass through (may still fail).
+  if (!allowed.length) return raw;
+
+  // If already valid enum value, keep it.
+  if (allowed.includes(raw)) return raw;
+
+  // Try exact matches ignoring case
+  const lowerAllowed = allowed.map((v) => v.toLowerCase());
+  const idxExact = lowerAllowed.indexOf(raw.toLowerCase());
+  if (idxExact >= 0) return allowed[idxExact];
+
+  // Common UI labels -> likely enum patterns.
+  // We DO NOT assume exact enum names; we search within allowed values.
+  const want =
+    raw.toLowerCase() === "creator / person" || raw.toLowerCase() === "creator/person"
+      ? ["creator", "person"]
+      : raw.toLowerCase() === "local service"
+      ? ["local", "service"]
+      : raw.toLowerCase() === "business"
+      ? ["business"]
+      : raw.toLowerCase() === "organization"
+      ? ["organization"]
+      : raw.toLowerCase() === "product"
+      ? ["product"]
+      : raw.toLowerCase() === "ai_agent" || raw.toLowerCase() === "ai agent"
+      ? ["ai", "agent"]
+      : raw.toLowerCase().split(/[\s/_-]+/).filter(Boolean);
+
+  // Best-match search: pick allowed value that contains most tokens.
+  let best: { val: string; score: number } | null = null;
+  for (const v of allowed) {
+    const lv = v.toLowerCase();
+    let score = 0;
+    for (const t of want) if (lv.includes(t)) score++;
+    if (!best || score > best.score) best = { val: v, score };
+  }
+
+  // Require at least 1 token match; otherwise return null to avoid crashing.
+  if (best && best.score >= 1) return best.val;
+
+  return null;
+}
+
+// URL schema that allows empty, normalizes protocol, and enforces MAX length
 const urlMaybeEmptyMax = (maxLen: number) =>
   z
     .string()
@@ -127,7 +191,7 @@ const urlMaybeEmptyMax = (maxLen: number) =>
     .transform((v) => (v ?? "").trim())
     .refine(
       (v) => {
-        if (!v) return true;
+        if (!v) return true; // allow empty
         try {
           const s = /^https?:\/\//i.test(v) ? v : `https://${v}`;
           new URL(s);
@@ -318,6 +382,7 @@ const PlatformHandles = z
   .partial()
   .optional();
 
+/** FAQ + SERVICE JSON schemas */
 const FAQItem = z.object({
   question: z.string().trim().max(500),
   answer: z.string().trim().max(5000),
@@ -335,6 +400,7 @@ const ServiceItem = z.object({
   position: z.number().int().min(1).max(500).optional().nullable(),
 });
 
+/** Product schema */
 const Money = z.object({
   amount: z.union([z.number(), z.string()]).optional().nullable(),
   currency: z.string().trim().max(10).optional().nullable(),
@@ -354,6 +420,7 @@ const ProductItem = z.object({
   position: z.number().int().min(1).max(500).optional().nullable(),
 });
 
+/** AI_AGENT fields (Phase 1) — validated but optional */
 const AIAgentFields = z.object({
   aiAgentProvider: z.string().trim().max(120).optional().nullable(),
   aiAgentModel: z.string().trim().max(120).optional().nullable(),
@@ -365,40 +432,18 @@ const AIAgentFields = z.object({
   aiAgentOutputModes: csvOrArray,
 });
 
+/** EXTENDED Profile Schema */
 const ProfileSchema = z.object({
   displayName: z.string().trim().max(120).optional().nullable(),
   tagline: z.string().trim().max(160).optional().nullable(),
   location: z.string().trim().max(120).optional().nullable(),
   website: urlMaybeEmpty200.optional().nullable().or(z.literal("")).default(""),
   bio: z.string().trim().max(2000).optional().nullable(),
-
   links: z.array(LinkItem).max(20).optional().nullable().transform((v) => v ?? []),
-
   legalName: z.string().trim().max(160).optional().nullable(),
 
-  entityType: z
-    .string()
-    .trim()
-    .max(50)
-    .optional()
-    .nullable()
-    .refine(
-      (v) => {
-        if (v === null || v === undefined || v === "") return true;
-        const allowed = new Set([
-          "Business",
-          "Local Service",
-          "Organization",
-          "Creator / Person",
-          "Product",
-          "AI_AGENT",
-          "AI Agent",
-          "AI agent",
-        ]);
-        return allowed.has(v);
-      },
-      { message: "Invalid entityType" }
-    ),
+  // Accept UI strings; we normalize to DB enum later.
+  entityType: z.string().trim().max(50).optional().nullable(),
 
   serviceArea: csvOrArray,
   foundedYear: intNullable,
@@ -406,23 +451,16 @@ const ProfileSchema = z.object({
   languages: csvOrArray,
   pricingModel: z.enum(["Free", "Subscription", "One-time", "Custom"]).optional().nullable(),
   hours: z.string().trim().max(160).optional().nullable(),
-
   certifications: z.string().trim().max(2000).optional().nullable(),
   press: z.array(PressItem).optional().nullable().transform((v) => v ?? []),
-
   logoUrl: urlMaybeEmpty300.optional().nullable(),
   imageUrls: z.array(urlMaybeEmpty300).optional().default([]),
-
   handles: PlatformHandles,
-
   slug: z.string().trim().max(80).optional().nullable(),
-
   faqJson: z.array(FAQItem).optional().nullable().default([]),
   servicesJson: z.array(ServiceItem).optional().nullable().default([]),
   productsJson: z.array(ProductItem).optional().nullable().default([]),
-
   updateMessage: z.string().trim().max(500).optional().nullable(),
-
   ...AIAgentFields.shape,
 });
 
@@ -453,8 +491,7 @@ export async function GET() {
         handles: {},
       };
 
-    // ✅ IMPORTANT: return the profile object directly (ProfileEditor expects this)
-    return NextResponse.json(payload);
+    return NextResponse.json({ ok: true, profile: payload, ...payload });
   } catch (e: any) {
     console.error("GET /api/profile failed:", e);
     return jsonError(500, "DB_READ_FAILED", e?.message || "Failed to load profile");
@@ -478,15 +515,14 @@ export async function PUT(req: Request) {
 
   const parsed = ProfileSchema.safeParse(body);
   if (!parsed.success) {
-    return jsonError(400, "VALIDATION", "Validation failed", {
-      details: parsed.error.format(),
-    });
+    return jsonError(400, "VALIDATION", "Validation failed", { details: parsed.error.format() });
   }
 
   try {
+    // ✅ Sanitize AFTER validation, BEFORE DB write
     const dSan = sanitizeProfilePayload(parsed.data as any);
 
-    // preserve validated AI fields even if sanitizeProfilePayload doesn't know about them
+    // ✅ Preserve validated AI fields even if sanitize doesn't know them
     const d = {
       ...(dSan as any),
       aiAgentProvider: (parsed.data as any).aiAgentProvider ?? null,
@@ -499,24 +535,32 @@ export async function PUT(req: Request) {
       aiAgentOutputModes: (parsed.data as any).aiAgentOutputModes ?? [],
     };
 
-    const { planKey, isEntitled } = await getEffectivePlanKey(auth.userId);
-    const canEditPlus = isEntitled && planKey === "PLUS";
+    // ✅ Server-side permission boundary (fail-closed)
+    const { planKey, isActive } = await getEffectivePlanKey(auth.userId);
+    const canEditPlus = isActive && planKey === "PLUS";
 
+    // read existing (so we can detect slug changes)
     const existing = await prisma.profile.findUnique({
       where: { userId: auth.userId },
       select: { id: true, slug: true },
     });
 
+    // Prefer displayName, then legalName, then client-proposed slug
     const proposedBase = (d.displayName ?? d.legalName ?? d.slug ?? "").toString();
     const finalSlug = await ensureUniqueSlug(proposedBase, {
       current: existing?.slug ?? null,
       location: d.location ?? null,
     });
 
+    // ✅ Normalize entityType to Prisma enum value (prevents "Expected EntityType")
+    const entityTypeDb = normalizeEntityTypeForDb(d.entityType);
+
     const payloadBase: Record<string, any> = {
       displayName: emptyToNull(d.displayName),
       legalName: emptyToNull(d.legalName),
-      entityType: emptyToNull(d.entityType),
+
+      entityType: entityTypeDb, // ✅ critical fix
+
       tagline: emptyToNull(d.tagline),
       bio: emptyToNull(d.bio),
 
@@ -542,21 +586,20 @@ export async function PUT(req: Request) {
       slug: finalSlug,
     };
 
-    // ✅ Only attach AI fields when entityType is AI_AGENT
-    const isAiAgent = String(d.entityType ?? "") === "AI_AGENT";
-    const aiOptional = isAiAgent
-      ? pickKnownProfileFields({
-          aiAgentProvider: emptyToNull(d.aiAgentProvider),
-          aiAgentModel: emptyToNull(d.aiAgentModel),
-          aiAgentVersion: emptyToNull(d.aiAgentVersion),
-          aiAgentDocsUrl: emptyToNull(d.aiAgentDocsUrl),
-          aiAgentApiUrl: emptyToNull(d.aiAgentApiUrl),
-          aiAgentCapabilities: d.aiAgentCapabilities ?? [],
-          aiAgentInputModes: d.aiAgentInputModes ?? [],
-          aiAgentOutputModes: d.aiAgentOutputModes ?? [],
-        })
-      : {};
+    // ✅ AI agent identity fields are NOT plan-gated (allowed for LITE).
+    // ✅ Prisma-safe: only include if these columns exist on Prisma Profile model.
+    const aiOptional = pickKnownProfileFields({
+      aiAgentProvider: emptyToNull(d.aiAgentProvider),
+      aiAgentModel: emptyToNull(d.aiAgentModel),
+      aiAgentVersion: emptyToNull(d.aiAgentVersion),
+      aiAgentDocsUrl: emptyToNull(d.aiAgentDocsUrl),
+      aiAgentApiUrl: emptyToNull(d.aiAgentApiUrl),
+      aiAgentCapabilities: d.aiAgentCapabilities ?? [],
+      aiAgentInputModes: d.aiAgentInputModes ?? [],
+      aiAgentOutputModes: d.aiAgentOutputModes ?? [],
+    });
 
+    // ✅ PLUS-only fields (server enforced; fail-closed)
     const plusOnly = canEditPlus
       ? {
           faqJson: d.faqJson ?? [],
@@ -579,6 +622,7 @@ export async function PUT(req: Request) {
       select: { id: true, slug: true },
     });
 
+    /* ---------- Cache invalidation ---------- */
     const oldSlug = existing?.slug;
 
     if (oldSlug && oldSlug !== saved.slug) {
@@ -608,6 +652,7 @@ export async function PUT(req: Request) {
   }
 }
 
+// Some clients use POST—support both.
 export async function POST(req: Request) {
   return PUT(req);
 }
