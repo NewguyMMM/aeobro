@@ -31,6 +31,10 @@ export async function POST(request: Request) {
   const secret = process.env.STRIPE_SECRET_KEY;
   const looksLive = !!secret && secret.startsWith("sk_live_");
 
+  // ✅ Pin portal behavior to a specific Stripe Customer Portal configuration
+  // Set in Vercel env: STRIPE_PORTAL_CONFIGURATION_ID = bpc_...
+  const portalConfigId = process.env.STRIPE_PORTAL_CONFIGURATION_ID || undefined;
+
   try {
     // 🔒 1) Require a logged-in user
     const session = await getServerSession(authOptions);
@@ -43,7 +47,11 @@ export async function POST(request: Request) {
         hasSessionEmail,
         looksLive,
       });
-      return jsonError(401, "Unauthorized", { origin, hasSessionEmail, looksLive });
+      return jsonError(401, "Unauthorized", {
+        origin,
+        hasSessionEmail,
+        looksLive,
+      });
     }
 
     // 🔎 2) Load user billing identifiers (customer + subscription)
@@ -58,7 +66,11 @@ export async function POST(request: Request) {
         hasSessionEmail,
         looksLive,
       });
-      return jsonError(404, "User not found", { origin, hasSessionEmail, looksLive });
+      return jsonError(404, "User not found", {
+        origin,
+        hasSessionEmail,
+        looksLive,
+      });
     }
 
     if (!secret) {
@@ -95,6 +107,7 @@ export async function POST(request: Request) {
       userId: user.id,
       hasSubscriptionId,
       hasCustomerId: !!stripeCustomerId,
+      hasPortalConfigId: !!portalConfigId,
     });
 
     /**
@@ -195,10 +208,11 @@ export async function POST(request: Request) {
       });
     }
 
-    // 6) Create Stripe Billing Portal session
+    // 6) Create Stripe Billing Portal session (PINNED to configuration)
     const portalSession = await stripe.billingPortal.sessions.create({
       customer: stripeCustomerId,
       return_url: returnUrl,
+      ...(portalConfigId ? { configuration: portalConfigId } : {}),
     });
 
     console.log("[portal] portal_session_created", {
@@ -206,6 +220,7 @@ export async function POST(request: Request) {
       userId: user.id,
       looksLive,
       hasSubscriptionId,
+      usedPortalConfigId: !!portalConfigId,
     });
 
     return NextResponse.json(
