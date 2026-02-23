@@ -729,7 +729,7 @@ export default async function Page({ searchParams }: PageProps) {
         <p>
           This is an analysis of various parameters such as structured data (JSON-LD),
           verification status, entity disambiguation, link graph health, and crawlability over time.
-          A higher score indicates clearer, more complete identity signals that help AI systems understand and interpret your brand.
+          A higher score reflects clearer, more complete identity signals available to AI systems.
         </p>
 
         {/* Clarification (expectations) */}
