@@ -82,7 +82,7 @@ export default function Page() {
       },
       {
         "@type": "Question",
-        name: "What is an AI-ready Profile?",
+        name: "What is an AI-Identity Profile?",
         acceptedAnswer: {
           "@type": "Answer",
           text:
@@ -416,7 +416,7 @@ export default function Page() {
         </div>
 
         <div className="card">
-          <h3 className="font-semibold">What is an AI-ready Profile?</h3>
+          <h3 className="font-semibold">What is an AI-Identity Profile?</h3>
           <p className="text-gray-700 mt-2">
             Your information, organized as a public page plus structured data
             (JSON-LD) that helps search engines and AI assistants understand your
