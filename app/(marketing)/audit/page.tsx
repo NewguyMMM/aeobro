@@ -639,7 +639,7 @@ export default async function Page({ searchParams }: PageProps) {
 
       {!q && (
         <p id="audit-help" className="text-sm text-gray-500 mt-2">
-          Example result: “✅ JSON-LD detected. AI-readiness score: 82 / 100 (clear identity signals detected)”
+          Example result: “✅ JSON-LD detected. Identity Signal Score: 82 / 100 (clear identity signals detected)”
         </p>
       )}
 
