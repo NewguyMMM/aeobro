@@ -1,12 +1,9 @@
 // app/api/profile/route.ts
-// 📅 Updated: 2026-02-18 02:15 PM ET
-// Feature: AI_AGENT identity support (Phase 1 / Option E scope - Step 2)
-//
-// Guarantees:
-// - Does NOT modify Prisma schema, Stripe logic, verification gating, or export restrictions.
-// - Adds AI_AGENT support to ProfileSchema validation + DB write.
-// - AI_AGENT core identity fields are allowed on LITE.
-// - Publish fields remain PLUS-active only (fail-closed).
+// 📅 Updated: 2026-02-23 07:48 AM ET
+// Fixes:
+// - GET returns the profile object directly (matches ProfileEditor prefill expectations)
+// - Treat planStatus "trialing" as entitled (consistent with webhook entitlement)
+// - Only write AI_AGENT fields when entityType === "AI_AGENT" (prevents accidental wipes / spoof writes)
 
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
@@ -17,19 +14,14 @@ import { toKebab, isSlugAllowed, RESERVED_SLUGS } from "@/lib/slug";
 import { revalidatePath, revalidateTag } from "next/cache";
 import { sanitizeProfilePayload } from "@/lib/sanitize";
 
-export const runtime = "nodejs"; // Prisma requires Node runtime
-export const dynamic = "force-dynamic"; // don't cache API responses
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 /* --------------------------------------------------- */
 /*                         HELPERS                     */
 /* --------------------------------------------------- */
 
-function jsonError(
-  status: number,
-  errorCode: string,
-  message: string,
-  extra?: any
-) {
+function jsonError(status: number, errorCode: string, message: string, extra?: any) {
   return NextResponse.json({ ok: false, errorCode, message, ...extra }, { status });
 }
 
@@ -48,28 +40,18 @@ async function requireUserId() {
 
     return { userId: user.id };
   } catch (e: any) {
-    return {
-      err: jsonError(
-        500,
-        "AUTH_FAILURE",
-        e?.message || "Auth resolution failed"
-      ),
-    };
+    return { err: jsonError(500, "AUTH_FAILURE", e?.message || "Auth resolution failed") };
   }
 }
 
 /**
- * ✅ Fail-closed plan enforcement (permission boundary)
- * Required rules:
- * - If planStatus !== "active" => treat as LITE
- * - If planStatus missing => treat as LITE
- * - PLUS (and PRO/BUSINESS/ENTERPRISE for now) behaves like PLUS
- * - If plan missing => treat as LITE
+ * ✅ Fail-closed plan enforcement
+ * Rules:
+ * - If planStatus not entitled => treat as LITE
+ * - Entitled statuses: active, trialing
+ * - PLUS-like: PLUS/PRO/BUSINESS/ENTERPRISE
  */
-async function getEffectivePlanKey(userId: string): Promise<{
-  planKey: "LITE" | "PLUS";
-  isActive: boolean;
-}> {
+async function getEffectivePlanKey(userId: string): Promise<{ planKey: "LITE" | "PLUS"; isEntitled: boolean }> {
   try {
     const u = await (prisma.user as any).findUnique({
       where: { id: userId },
@@ -79,28 +61,25 @@ async function getEffectivePlanKey(userId: string): Promise<{
     const rawPlan = String(u?.plan ?? "LITE").toUpperCase();
     const rawStatus = String(u?.planStatus ?? "").toLowerCase();
 
-    const isActive = rawStatus === "active"; // fail-closed: missing => false
-    if (!isActive) return { planKey: "LITE", isActive: false };
+    const isEntitled = rawStatus === "active" || rawStatus === "trialing";
+    if (!isEntitled) return { planKey: "LITE", isEntitled: false };
 
     const normalizedPlan = rawPlan === "FREE" ? "LITE" : rawPlan;
 
-    // PRO remains hidden; behaves like PLUS for now
     const isPlusLike =
       normalizedPlan === "PLUS" ||
       normalizedPlan === "PRO" ||
       normalizedPlan === "BUSINESS" ||
       normalizedPlan === "ENTERPRISE";
 
-    return { planKey: isPlusLike ? "PLUS" : "LITE", isActive: true };
+    return { planKey: isPlusLike ? "PLUS" : "LITE", isEntitled: true };
   } catch {
-    return { planKey: "LITE", isActive: false };
+    return { planKey: "LITE", isEntitled: false };
   }
 }
 
 /**
- * ✅ Prisma-safe payload writer
- * We only include fields that actually exist on the Prisma Profile model.
- * This prevents runtime errors if field names ever differ across environments.
+ * ✅ Prisma-safe payload writer for optional fields
  */
 let __profileFieldSet: Set<string> | null = null;
 
@@ -110,9 +89,7 @@ function getProfileFieldSet(): Set<string> {
   try {
     const dmmf = (prisma as any)?._dmmf;
     const models = dmmf?.datamodel?.models;
-    const profileModel = Array.isArray(models)
-      ? models.find((m: any) => m?.name === "Profile")
-      : null;
+    const profileModel = Array.isArray(models) ? models.find((m: any) => m?.name === "Profile") : null;
 
     const fields = Array.isArray(profileModel?.fields)
       ? profileModel.fields.map((f: any) => String(f?.name)).filter(Boolean)
@@ -123,7 +100,7 @@ function getProfileFieldSet(): Set<string> {
       return __profileFieldSet;
     }
   } catch {
-    // fall through to empty set
+    // ignore
   }
 
   __profileFieldSet = new Set<string>();
@@ -132,17 +109,14 @@ function getProfileFieldSet(): Set<string> {
 
 function pickKnownProfileFields(data: Record<string, any>): Record<string, any> {
   const fieldSet = getProfileFieldSet();
-  // If we couldn't discover fields, we still return data as-is (Prisma will validate).
-  // However, we will only use this helper for optional AI fields to avoid unknown-field errors.
   const out: Record<string, any> = {};
   for (const [k, v] of Object.entries(data)) {
-    if (fieldSet.size === 0) continue; // fail-closed: don't add unknown optional fields
+    if (fieldSet.size === 0) continue; // fail-closed for optional fields
     if (fieldSet.has(k)) out[k] = v;
   }
   return out;
 }
 
-// URL schema that allows empty, normalizes protocol, and enforces MAX length
 const urlMaybeEmptyMax = (maxLen: number) =>
   z
     .string()
@@ -153,7 +127,7 @@ const urlMaybeEmptyMax = (maxLen: number) =>
     .transform((v) => (v ?? "").trim())
     .refine(
       (v) => {
-        if (!v) return true; // allow empty
+        if (!v) return true;
         try {
           const s = /^https?:\/\//i.test(v) ? v : `https://${v}`;
           new URL(s);
@@ -198,7 +172,6 @@ const intNullable = z
 /* --------------------------------------------------- */
 
 const REGION_MAP: Record<string, string> = {
-  // US states
   alabama: "al",
   alaska: "ak",
   arizona: "az",
@@ -249,7 +222,6 @@ const REGION_MAP: Record<string, string> = {
   "west virginia": "wv",
   wisconsin: "wi",
   wyoming: "wy",
-  // Canadian provinces (subset)
   ontario: "on",
   quebec: "qc",
   "british columbia": "bc",
@@ -260,16 +232,13 @@ function geoSuffixFromLocation(location?: string | null): string | null {
   if (!location) return null;
   const raw = String(location).toLowerCase();
 
-  // try last 2–3 character token first
   const abbrev = raw.match(/\b([a-z]{2,3})\b/gi)?.at(-1);
   if (abbrev && /^[a-z]{2,3}$/i.test(abbrev)) return toKebab(abbrev);
 
-  // look for full state/province name
   for (const key of Object.keys(REGION_MAP)) {
     if (raw.includes(key)) return REGION_MAP[key];
   }
 
-  // fallback to last token from kebab-case
   const tokens = toKebab(raw).split("-").filter(Boolean);
   if (tokens.length) {
     const last = tokens.at(-1)!;
@@ -349,7 +318,6 @@ const PlatformHandles = z
   .partial()
   .optional();
 
-/** FAQ + SERVICE JSON schemas */
 const FAQItem = z.object({
   question: z.string().trim().max(500),
   answer: z.string().trim().max(5000),
@@ -367,7 +335,6 @@ const ServiceItem = z.object({
   position: z.number().int().min(1).max(500).optional().nullable(),
 });
 
-/** Product schema */
 const Money = z.object({
   amount: z.union([z.number(), z.string()]).optional().nullable(),
   currency: z.string().trim().max(10).optional().nullable(),
@@ -379,33 +346,25 @@ const ProductItem = z.object({
   url: urlMaybeEmpty300.optional().nullable(),
   image: urlMaybeEmpty300.optional().nullable(),
   category: z.string().trim().max(80).optional().nullable(),
-  availability: z
-    .enum(["InStock", "OutOfStock", "PreOrder", "LimitedAvailability"])
-    .optional()
-    .nullable(),
+  availability: z.enum(["InStock", "OutOfStock", "PreOrder", "LimitedAvailability"]).optional().nullable(),
   price: Money.optional().nullable(),
-
   sku: z.string().trim().max(80).optional().nullable(),
   brand: z.string().trim().max(120).optional().nullable(),
   gtin: z.string().trim().max(40).optional().nullable(),
-
   position: z.number().int().min(1).max(500).optional().nullable(),
 });
 
-/** AI_AGENT fields (Phase 1) — validated but optional */
 const AIAgentFields = z.object({
   aiAgentProvider: z.string().trim().max(120).optional().nullable(),
   aiAgentModel: z.string().trim().max(120).optional().nullable(),
   aiAgentVersion: z.string().trim().max(60).optional().nullable(),
   aiAgentDocsUrl: urlMaybeEmpty300.optional().nullable(),
   aiAgentApiUrl: urlMaybeEmpty300.optional().nullable(),
-
   aiAgentCapabilities: csvOrArray,
   aiAgentInputModes: csvOrArray,
   aiAgentOutputModes: csvOrArray,
 });
 
-/** EXTENDED Profile Schema */
 const ProfileSchema = z.object({
   displayName: z.string().trim().max(120).optional().nullable(),
   tagline: z.string().trim().max(160).optional().nullable(),
@@ -417,7 +376,6 @@ const ProfileSchema = z.object({
 
   legalName: z.string().trim().max(160).optional().nullable(),
 
-  // ✅ Expanded to allow AI_AGENT (no assumptions about UI casing)
   entityType: z
     .string()
     .trim()
@@ -465,7 +423,6 @@ const ProfileSchema = z.object({
 
   updateMessage: z.string().trim().max(500).optional().nullable(),
 
-  // ✅ AI agent identity fields
   ...AIAgentFields.shape,
 });
 
@@ -496,11 +453,8 @@ export async function GET() {
         handles: {},
       };
 
-    return NextResponse.json({
-      ok: true,
-      profile: payload,
-      ...payload,
-    });
+    // ✅ IMPORTANT: return the profile object directly (ProfileEditor expects this)
+    return NextResponse.json(payload);
   } catch (e: any) {
     console.error("GET /api/profile failed:", e);
     return jsonError(500, "DB_READ_FAILED", e?.message || "Failed to load profile");
@@ -530,10 +484,9 @@ export async function PUT(req: Request) {
   }
 
   try {
-    // ✅ Sanitize AFTER validation, BEFORE any DB write
     const dSan = sanitizeProfilePayload(parsed.data as any);
 
-    // ✅ Preserve validated AI fields even if sanitizeProfilePayload doesn't yet know about them
+    // preserve validated AI fields even if sanitizeProfilePayload doesn't know about them
     const d = {
       ...(dSan as any),
       aiAgentProvider: (parsed.data as any).aiAgentProvider ?? null,
@@ -546,24 +499,20 @@ export async function PUT(req: Request) {
       aiAgentOutputModes: (parsed.data as any).aiAgentOutputModes ?? [],
     };
 
-    // ✅ Server-side permission boundary (fail-closed)
-    const { planKey, isActive } = await getEffectivePlanKey(auth.userId);
-    const canEditPlus = isActive && planKey === "PLUS";
+    const { planKey, isEntitled } = await getEffectivePlanKey(auth.userId);
+    const canEditPlus = isEntitled && planKey === "PLUS";
 
-    // read existing (so we can detect slug changes)
     const existing = await prisma.profile.findUnique({
       where: { userId: auth.userId },
       select: { id: true, slug: true },
     });
 
-    // Prefer displayName, then legalName, then client-proposed slug
     const proposedBase = (d.displayName ?? d.legalName ?? d.slug ?? "").toString();
     const finalSlug = await ensureUniqueSlug(proposedBase, {
       current: existing?.slug ?? null,
       location: d.location ?? null,
     });
 
-    // Normalize empties to null; arrays to [] so UI and public page are stable
     const payloadBase: Record<string, any> = {
       displayName: emptyToNull(d.displayName),
       legalName: emptyToNull(d.legalName),
@@ -590,24 +539,24 @@ export async function PUT(req: Request) {
       handles: d.handles ?? {},
       links: d.links ?? [],
 
-      // slug always written
       slug: finalSlug,
     };
 
-    // ✅ AI agent identity fields are NOT plan-gated (allowed for LITE).
-    // ✅ Prisma-safe: only include if these columns exist on Profile model.
-    const aiOptional = pickKnownProfileFields({
-      aiAgentProvider: emptyToNull(d.aiAgentProvider),
-      aiAgentModel: emptyToNull(d.aiAgentModel),
-      aiAgentVersion: emptyToNull(d.aiAgentVersion),
-      aiAgentDocsUrl: emptyToNull(d.aiAgentDocsUrl),
-      aiAgentApiUrl: emptyToNull(d.aiAgentApiUrl),
-      aiAgentCapabilities: d.aiAgentCapabilities ?? [],
-      aiAgentInputModes: d.aiAgentInputModes ?? [],
-      aiAgentOutputModes: d.aiAgentOutputModes ?? [],
-    });
+    // ✅ Only attach AI fields when entityType is AI_AGENT
+    const isAiAgent = String(d.entityType ?? "") === "AI_AGENT";
+    const aiOptional = isAiAgent
+      ? pickKnownProfileFields({
+          aiAgentProvider: emptyToNull(d.aiAgentProvider),
+          aiAgentModel: emptyToNull(d.aiAgentModel),
+          aiAgentVersion: emptyToNull(d.aiAgentVersion),
+          aiAgentDocsUrl: emptyToNull(d.aiAgentDocsUrl),
+          aiAgentApiUrl: emptyToNull(d.aiAgentApiUrl),
+          aiAgentCapabilities: d.aiAgentCapabilities ?? [],
+          aiAgentInputModes: d.aiAgentInputModes ?? [],
+          aiAgentOutputModes: d.aiAgentOutputModes ?? [],
+        })
+      : {};
 
-    // ✅ PLUS-only fields (server enforced; fail-closed)
     const plusOnly = canEditPlus
       ? {
           faqJson: d.faqJson ?? [],
@@ -630,7 +579,6 @@ export async function PUT(req: Request) {
       select: { id: true, slug: true },
     });
 
-    /* ---------- Cache invalidation ---------- */
     const oldSlug = existing?.slug;
 
     if (oldSlug && oldSlug !== saved.slug) {
@@ -646,22 +594,13 @@ export async function PUT(req: Request) {
     revalidateTag(`profile:${saved.slug}`);
     revalidatePath(`/sitemap.xml`);
 
-    return NextResponse.json({
-      ok: true,
-      slug: saved.slug,
-      id: saved.id,
-    });
+    return NextResponse.json({ ok: true, slug: saved.slug, id: saved.id });
   } catch (err: any) {
     if (
       err?.code === "P2002" &&
-      (err?.meta?.target?.includes?.("slug") ||
-        err?.meta?.target?.includes?.("Profile_slug_key"))
+      (err?.meta?.target?.includes?.("slug") || err?.meta?.target?.includes?.("Profile_slug_key"))
     ) {
-      return jsonError(
-        409,
-        "SLUG_TAKEN",
-        "That public URL is already taken. Please choose another."
-      );
+      return jsonError(409, "SLUG_TAKEN", "That public URL is already taken. Please choose another.");
     }
 
     console.error("PUT /api/profile failed:", err);
@@ -669,7 +608,6 @@ export async function PUT(req: Request) {
   }
 }
 
-// Some clients use POST—support both.
 export async function POST(req: Request) {
   return PUT(req);
 }
