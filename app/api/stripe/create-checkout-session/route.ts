@@ -54,7 +54,7 @@ export async function POST(req: Request) {
     apiVersion: "2024-06-20",
   });
 
-  // Parse request body
+  // Parse body safely
   let body: any = null;
   try {
     body = await req.json();
@@ -67,7 +67,7 @@ export async function POST(req: Request) {
     process.env.APP_URL ||
     "http://localhost:3000";
 
-  console.log("[stripe] payload:", body);
+  console.log("[stripe] incoming payload:", body);
   console.log("[stripe] key mode:", mode, redactKey(stripeSecretKey));
 
   const planRaw = body?.plan;
@@ -90,7 +90,7 @@ export async function POST(req: Request) {
     );
   }
 
-  // Verify price exists (catches test/live mismatches early)
+  // Validate price exists (catches test/live mismatches)
   try {
     await stripe.prices.retrieve(priceId);
   } catch (err: any) {
@@ -115,18 +115,21 @@ export async function POST(req: Request) {
     where: { email: sessionUser.user.email },
   });
 
-  if (!user) {
-    return NextResponse.json({ error: "User not found" }, { status: 404 });
+  if (!user || !user.email) {
+    return NextResponse.json(
+      { error: "User not found or missing email" },
+      { status: 404 }
+    );
   }
 
-  let customerId = user.stripeCustomerId;
+  let customerId = user.stripeCustomerId ?? undefined;
 
   // 🔥 CREATE STRIPE CUSTOMER ONLY IF MISSING
   if (!customerId) {
-    console.log("[stripe] creating new Stripe customer for user");
+    console.log("[stripe] creating new Stripe customer");
 
     const customer = await stripe.customers.create({
-      email: user.email,
+      email: user.email, // now safely narrowed to string
       metadata: {
         aeobroUserId: user.id,
       },
@@ -139,9 +142,9 @@ export async function POST(req: Request) {
       data: { stripeCustomerId: customerId },
     });
 
-    console.log("[stripe] stored new stripeCustomerId:", customerId);
+    console.log("[stripe] stored stripeCustomerId:", customerId);
   } else {
-    console.log("[stripe] reusing existing stripeCustomerId:", customerId);
+    console.log("[stripe] reusing stripeCustomerId:", customerId);
   }
 
   const successUrl = `${origin}/billing/success?plan=${resolvedPlan}`;
