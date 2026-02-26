@@ -383,7 +383,7 @@ export default function PricingPage() {
           bestFor="individuals, creators, or small teams who want a simple, AI-ready profile."
           features={[
             {
-              label: "Centralized AI Ready Profile",
+              label: "Centralized AI Identity Profile",
               tooltip: CENTRALIZED_TOOLTIP,
             },
           ]}
@@ -395,7 +395,7 @@ export default function PricingPage() {
           price="$29.99/mo"
           bestFor="brands and businesses that want richer AI understanding with structured products, updates, FAQs, and services."
           features={[
-            { label: "Centralized AI Ready Profile", tooltip: CENTRALIZED_TOOLTIP },
+            { label: "Centralized AI Identity Profile", tooltip: CENTRALIZED_TOOLTIP },
             { label: "Products / Catalog", tooltip: PRODUCTS_TOOLTIP },
             { label: "Updates", tooltip: UPDATES_TOOLTIP },
             { label: "FAQ markup", tooltip: FAQ_TOOLTIP },
