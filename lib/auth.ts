@@ -1,8 +1,8 @@
 // lib/auth.ts
-// ✅ Updated: 2026-02-26 05:58 ET
+// ✅ Updated: 2026-02-26
 // - Option 1: canonical sign-in page is /login
-// - Removed trustHost (not supported in next-auth v4)
-// - Preserves existing providers, callbacks, events, plan sync logic, verification finalization
+// - Remove any unsupported options (e.g., trustHost) to keep builds stable
+// - Keep existing providers/callbacks/events/plan sync/verification finalization
 
 import type { NextAuthOptions } from "next-auth";
 import { PrismaAdapter } from "@auth/prisma-adapter";
@@ -45,8 +45,6 @@ const tiktokEnabled =
 
 // ───────────────────────────────────────────────────────────
 // OAuth allowlist (must mirror what UI enables)
-// - Deterministic: only providers with env enabled may finalize and write PlatformAccount
-// - NextAuth provider IDs here are: "google" | "facebook" | "twitter"
 // ───────────────────────────────────────────────────────────
 const ALLOWED_OAUTH_PROVIDERS = new Set<string>([
   ...(googleEnabled ? ["google"] : []),
@@ -54,19 +52,14 @@ const ALLOWED_OAUTH_PROVIDERS = new Set<string>([
   ...(twitterEnabled ? ["twitter"] : []),
 ]);
 
-// ───────────────────────────────────────────────────────────
-// NextAuth configuration
-// ───────────────────────────────────────────────────────────
 export const authOptions: NextAuthOptions = {
   adapter: PrismaAdapter(prisma),
   session: { strategy: "jwt" },
 
   /**
-   * ✅ Critical: ensure the SESSION cookie works on both:
+   * ✅ Ensure session cookie works on both:
    * - aeobro.com
    * - www.aeobro.com
-   *
-   * This prevents “logged out on www / logged in on apex” regressions after canonical redirects.
    */
   cookies: {
     sessionToken: {
@@ -135,6 +128,7 @@ If you did not request this, you can safely ignore this email.`;
           html,
           text,
         });
+
         if (error) throw new Error(`Resend error: ${error.message || String(error)}`);
       },
     }),
@@ -152,14 +146,11 @@ If you did not request this, you can safely ignore this email.`;
         try {
           // @ts-expect-error App Router runtime provides formData()
           const form = await req?.formData?.();
-          token =
-            (form?.get?.("cf-turnstile-response") as string | undefined) ??
-            undefined;
+          token = (form?.get?.("cf-turnstile-response") as string | undefined) ?? undefined;
         } catch {
-          token = (credentials as any)?.["cf-turnstile-response"] as
-            | string
-            | undefined;
+          token = (credentials as any)?.["cf-turnstile-response"] as string | undefined;
         }
+
         const { ok } = await verifyTurnstileToken(token);
         if (!ok) throw new Error("CAPTCHA verification failed");
 
@@ -171,20 +162,14 @@ If you did not request this, you can safely ignore this email.`;
         const user = await prisma.user.findUnique({ where: { email } });
         if (!user) return null;
 
-        const passwordHash = (user as any)?.passwordHash as
-          | string
-          | undefined
-          | null;
+        const passwordHash = (user as any)?.passwordHash as string | undefined | null;
         if (!passwordHash) return null;
 
         const isValid = await compare(password, passwordHash);
-        return isValid
-          ? { id: user.id, email: user.email, name: user.name ?? null }
-          : null;
+        return isValid ? { id: user.id, email: user.email, name: user.name ?? null } : null;
       },
     }),
 
-    // --- Google OAuth (YouTube verification) ---
     ...(googleEnabled
       ? [
           GoogleProvider({
@@ -192,8 +177,7 @@ If you did not request this, you can safely ignore this email.`;
             clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
             authorization: {
               params: {
-                scope:
-                  "openid email profile https://www.googleapis.com/auth/youtube.readonly",
+                scope: "openid email profile https://www.googleapis.com/auth/youtube.readonly",
                 prompt: "consent",
                 access_type: "offline",
               },
@@ -202,7 +186,6 @@ If you did not request this, you can safely ignore this email.`;
         ]
       : []),
 
-    // --- Facebook OAuth (optional) ---
     ...(facebookEnabled
       ? [
           FacebookProvider({
@@ -217,7 +200,6 @@ If you did not request this, you can safely ignore this email.`;
         ]
       : []),
 
-    // --- X (Twitter) OAuth 2.0 (optional) ---
     ...(twitterEnabled
       ? [
           TwitterProvider({
@@ -228,59 +210,41 @@ If you did not request this, you can safely ignore this email.`;
         ]
       : []),
 
-    // --- TikTok stub ---
-    // ...(tiktokEnabled ? [TikTokProvider({ clientId: process.env.TIKTOK_CLIENT_ID!, clientSecret: process.env.TIKTOK_CLIENT_SECRET! })] : []),
+    // TikTok stub remains unused
+    // ...(tiktokEnabled ? [TikTokProvider(...)] : []),
   ],
 
   callbacks: {
-    // 🔑 JWT: always sync billing plan from Prisma into the token
     async jwt({ token, user, account }) {
-      if (user?.id) {
-        token.sub = (user as any).id ?? user.id;
-      }
+      if (user?.id) token.sub = (user as any).id ?? user.id;
 
-      // Persist provider-specific tokens on first OAuth sign-in
       if (account?.provider === "google") {
-        if (account.access_token)
-          (token as any).googleAccessToken = account.access_token;
-        if (account.refresh_token)
-          (token as any).googleRefreshToken = account.refresh_token;
-        if (typeof account.expires_at === "number")
-          (token as any).googleExpiresAt = account.expires_at;
+        if (account.access_token) (token as any).googleAccessToken = account.access_token;
+        if (account.refresh_token) (token as any).googleRefreshToken = account.refresh_token;
+        if (typeof account.expires_at === "number") (token as any).googleExpiresAt = account.expires_at;
       }
       if (account?.provider === "facebook") {
-        if (account.access_token)
-          (token as any).facebookAccessToken = account.access_token;
+        if (account.access_token) (token as any).facebookAccessToken = account.access_token;
       }
       if (account?.provider === "twitter") {
-        if (account.access_token)
-          (token as any).twitterAccessToken = account.access_token;
+        if (account.access_token) (token as any).twitterAccessToken = account.access_token;
       }
 
-      // 🆕 Always load the latest plan from Prisma using userId (from user or token.sub)
       const userId = (user as any)?.id ?? (token.sub as string | undefined);
       if (userId) {
         try {
           const dbUser = await prisma.user.findUnique({
             where: { id: userId },
-            select: {
-              plan: true,
-              planStatus: true,
-              currentPeriodEnd: true,
-            },
+            select: { plan: true, planStatus: true, currentPeriodEnd: true },
           });
 
           if (dbUser) {
-            // Default missing plan to LITE instead of FREE
             (token as any).plan = dbUser.plan ?? "LITE";
             (token as any).planStatus = dbUser.planStatus ?? "inactive";
-            (token as any).currentPeriodEnd =
-              dbUser.currentPeriodEnd?.toISOString() ?? null;
+            (token as any).currentPeriodEnd = dbUser.currentPeriodEnd?.toISOString() ?? null;
           } else {
-            // Safety: ensure a plan is always present when we have a userId
             (token as any).plan = (token as any).plan ?? "LITE";
-            (token as any).planStatus =
-              (token as any).planStatus ?? "inactive";
+            (token as any).planStatus = (token as any).planStatus ?? "inactive";
           }
         } catch (err) {
           console.error("JWT plan sync error:", err);
@@ -290,29 +254,21 @@ If you did not request this, you can safely ignore this email.`;
       return token;
     },
 
-    // 🔑 Session: expose plan + planStatus + currentPeriodEnd on session.user
     async session({ session, token }) {
       if (token?.sub) (session.user as any).id = token.sub;
 
       (session.user as any).plan = (token as any).plan ?? "LITE";
-      (session.user as any).planStatus =
-        (token as any).planStatus ?? "inactive";
-      (session.user as any).currentPeriodEnd =
-        (token as any).currentPeriodEnd
-          ? new Date((token as any).currentPeriodEnd)
-          : null;
+      (session.user as any).planStatus = (token as any).planStatus ?? "inactive";
+      (session.user as any).currentPeriodEnd = (token as any).currentPeriodEnd
+        ? new Date((token as any).currentPeriodEnd)
+        : null;
 
-      if ((token as any).googleAccessToken)
-        (session as any).googleAccessToken = (token as any).googleAccessToken;
-      if ((token as any).googleRefreshToken)
-        (session as any).googleRefreshToken = (token as any).googleRefreshToken;
-      if ((token as any).googleExpiresAt)
-        (session as any).googleExpiresAt = (token as any).googleExpiresAt;
+      if ((token as any).googleAccessToken) (session as any).googleAccessToken = (token as any).googleAccessToken;
+      if ((token as any).googleRefreshToken) (session as any).googleRefreshToken = (token as any).googleRefreshToken;
+      if ((token as any).googleExpiresAt) (session as any).googleExpiresAt = (token as any).googleExpiresAt;
 
-      if ((token as any).facebookAccessToken)
-        (session as any).facebookAccessToken = (token as any).facebookAccessToken;
-      if ((token as any).twitterAccessToken)
-        (session as any).twitterAccessToken = (token as any).twitterAccessToken;
+      if ((token as any).facebookAccessToken) (session as any).facebookAccessToken = (token as any).facebookAccessToken;
+      if ((token as any).twitterAccessToken) (session as any).twitterAccessToken = (token as any).twitterAccessToken;
 
       return session;
     },
@@ -366,7 +322,7 @@ If you did not request this, you can safely ignore this email.`;
     },
   },
 
-  // ✅ Option 1: canonical sign-in page
+  // ✅ Option 1: canonical sign-in route is /login (no new /signin UI required)
   pages: { signIn: "/login" },
 };
 
@@ -388,12 +344,7 @@ export async function finalizePlatformVerification({
 }: FinalizeParams) {
   const normalizedProvider = String(provider ?? "").trim().toLowerCase();
 
-  if (
-    !normalizedProvider ||
-    normalizedProvider === "domain" ||
-    normalizedProvider === "dns" ||
-    normalizedProvider === "txt"
-  ) {
+  if (!normalizedProvider || normalizedProvider === "domain" || normalizedProvider === "dns" || normalizedProvider === "txt") {
     return;
   }
 
@@ -408,16 +359,13 @@ export async function finalizePlatformVerification({
   if (!user?.profile) return;
   const profile = user.profile;
 
-  const { externalId, handle, url } = await fetchProviderIdentity(
-    normalizedProvider,
-    accessToken
-  );
+  const { externalId, handle, url } =
+    await fetchProviderIdentity(normalizedProvider, accessToken);
+
   if (!externalId) return;
 
   const pa = await prisma.platformAccount.upsert({
-    where: {
-      provider_externalId: { provider: normalizedProvider, externalId },
-    },
+    where: { provider_externalId: { provider: normalizedProvider, externalId } },
     update: {
       handle,
       url,
