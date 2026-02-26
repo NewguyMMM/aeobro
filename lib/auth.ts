@@ -367,7 +367,8 @@ If you did not request this, you can safely ignore this email.`;
     },
   },
 
-  pages: { signIn: "/signin" },
+  // ✅ OPTION 1 FIX: canonical sign-in page is /login
+  pages: { signIn: "/login" },
 };
 
 // ───────────────────────────────────────────────────────────
@@ -393,7 +394,12 @@ export async function finalizePlatformVerification({
   const normalizedProvider = String(provider ?? "").trim().toLowerCase();
 
   // Block nonsense providers that should never become PlatformAccount providers
-  if (!normalizedProvider || normalizedProvider === "domain" || normalizedProvider === "dns" || normalizedProvider === "txt") {
+  if (
+    !normalizedProvider ||
+    normalizedProvider === "domain" ||
+    normalizedProvider === "dns" ||
+    normalizedProvider === "txt"
+  ) {
     return;
   }
 
@@ -411,8 +417,6 @@ export async function finalizePlatformVerification({
   const profile = user.profile;
 
   // 2) Canonical identity via provider module
-  // NOTE: We do NOT allow provider modules to decide platformContext for OAuth writes.
-  // OAuth writes are always platformContext="OAUTH".
   const { externalId, handle, url } =
     await fetchProviderIdentity(normalizedProvider, accessToken);
 
@@ -488,31 +492,3 @@ export async function finalizePlatformVerification({
     /* noop */
   }
 }
-
-// ───────────────────────────────────────────────────────────
-// (Optional) TikTok custom provider stub (uncomment when needed)
-// import type { OAuthConfig } from "next-auth/providers";
-// function TikTokProvider(params: { clientId: string; clientSecret: string }): OAuthConfig<any> {
-//   return {
-//     id: "tiktok",
-//     name: "TikTok",
-//     type: "oauth",
-//     authorization: {
-//       url: "https://www.tiktok.com/v2/auth/authorize/",
-//       params: { scope: "user.info.basic", response_type: "code" },
-//     },
-//     token: "https://open.tiktokapis.com/v2/oauth/token/",
-//     userinfo: "https://open.tiktokapis.com/v2/user/info/",
-//     clientId: params.clientId,
-//     clientSecret: params.clientSecret,
-//     profile(profile: any) {
-//       // shape depends on TikTok API response
-//       return {
-//         id: profile?.data?.user?.open_id,
-//         name: profile?.data?.user?.display_name,
-//         image: profile?.data?.user?.avatar_url,
-//       };
-//     },
-//   };
-// }
-// ───────────────────────────────────────────────────────────
