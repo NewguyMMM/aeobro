@@ -1,29 +1,25 @@
 // middleware.ts
-// Updated: 2026-02-02
-// - ADD (SAFE): API abuse rate limiting for /api/auth/* and /api/verify/* using Upstash (Edge-safe dynamic imports)
-// - KEEP: Canonical host enforcement (aeobro.com + aeobro.vercel.app -> www.aeobro.com)
+// Updated: 2026-02-26
+// - RECONCILE: Canonical host enforcement now points to apex (aeobro.com) to match NEXTAUTH_URL
+// - KEEP: API abuse rate limiting for /api/auth/* and /api/verify/* using Upstash (Edge-safe dynamic imports)
 // - KEEP: legacy auth redirects, Link header on /p/[slug], anti-enumeration
 // - KEEP: security headers (CSP, HSTS, X-CTO, Referrer-Policy, Permissions-Policy, etc.)
 // - KEEP: Edge-safe dynamic import() for Upstash libs
 //
 // IMPORTANT:
-// - We are NOT using @vercel/kv here because your build failed due to missing dependency.
-// - This file will compile with your existing Upstash packages (already used in current middleware).
-// - Rate limiting is FAIL-OPEN (never blocks if limiter errors or env is missing).
-//
-// To tune API limits via env (optional):
-// - AEO_AUTH_LIMIT_PER_MIN (default 30)
-// - AEO_VERIFY_LIMIT_PER_MIN (default 20)
-// - AEO_BIOGEN_LIMIT_PER_MIN (default 10)
-// - AEO_BIOCHECK_LIMIT_PER_MIN (default 15)
+// - Rate limiting remains FAIL-OPEN (never blocks if limiter errors or env is missing).
+// - Canonical redirect is method-preserving (308) and runs FIRST.
+// - Matcher is minimally extended to include /api/_debug/* for canonical redirect consistency.
 
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
 // ---------- Canonical Host Enforcement ----------
-const CANONICAL_HOST = "www.aeobro.com";
+// ✅ Canonical host is now APEX to match NEXTAUTH_URL=https://aeobro.com
+const CANONICAL_HOST = "aeobro.com";
+
 // Only enforce for these exact hosts (so preview deployments are not affected)
-const ENFORCED_HOSTS = new Set(["aeobro.com", "aeobro.vercel.app"]);
+const ENFORCED_HOSTS = new Set(["www.aeobro.com", "aeobro.vercel.app"]);
 
 // ---------- Tunables ----------
 const PROBE_LIMIT_PER_MIN =
@@ -204,7 +200,7 @@ export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
   // ---- 0) Canonical host redirect (RUN FIRST) ----
-  // Prevents cookies/OAuth/schema URLs from ever being served on non-canonical hosts.
+  // Prevent cookies/OAuth/schema URLs from ever being served on non-canonical hosts.
   const host = req.headers.get("host") || "";
   if (ENFORCED_HOSTS.has(host) && host !== CANONICAL_HOST) {
     const url = req.nextUrl.clone();
@@ -386,6 +382,9 @@ export const config = {
     // ✅ Apply to the API routes we are protecting
     "/api/auth/:path*",
     "/api/verify/:path*",
+
+    // ✅ Ensure canonical redirect also applies to debug endpoints (optional but safe)
+    "/api/_debug/:path*",
 
     // ✅ Apply to broad HTML routes, but avoid Next internals and static assets.
     "/((?!api/|_next/|favicon.ico|robots.txt|sitemap.xml|.*\\.(?:png|jpg|jpeg|gif|webp|svg|ico|css|js|map|txt|woff|woff2|ttf|eot)).*)",
