@@ -1,10 +1,9 @@
 // lib/auth.ts
-// ✅ Updated: 2026-02-26 (hotfix)
-// Goals:
-// - Make magic-link failures visible + deterministic
-// - Prevent module-load Resend initialization (can fail silently)
-// - Add NextAuth debug/logger (gated by NEXTAUTH_DEBUG=true)
+// ✅ Updated: 2026-02-26 (production-stable)
+// - Canonical sign-in page: /login
+// - Remove cookie overrides (avoid subtle NextAuth breakage)
 // - Keep existing providers/callbacks/events/plan sync/verification finalization
+// - Add explicit logging + safer Resend sendVerificationRequest
 
 import type { NextAuthOptions } from "next-auth";
 import { PrismaAdapter } from "@auth/prisma-adapter";
@@ -28,6 +27,21 @@ import { fetchProviderIdentity } from "@/lib/verify/providers";
 // ───────────────────────────────────────────────────────────
 const BRAND_BLUE = "#2563EB"; // Tailwind blue-600
 
+function requireEnv(name: string): string {
+  const v = process.env[name];
+  if (!v) {
+    // Log once per invocation (shows up in Vercel function logs)
+    console.error(`[auth] Missing required env: ${name}`);
+  }
+  return v ?? "";
+}
+
+function getResend(): Resend | null {
+  const key = process.env.RESEND_API_KEY;
+  if (!key) return null;
+  return new Resend(key);
+}
+
 // ───────────────────────────────────────────────────────────
 // Provider feature flags (env-driven)
 // ───────────────────────────────────────────────────────────
@@ -40,13 +54,7 @@ const facebookEnabled =
 const twitterEnabled =
   !!process.env.TWITTER_CLIENT_ID && !!process.env.TWITTER_CLIENT_SECRET;
 
-// TikTok requires a custom provider; left as a stub below
-const tiktokEnabled =
-  !!process.env.TIKTOK_CLIENT_ID && !!process.env.TIKTOK_CLIENT_SECRET; // not used yet
-
-// ───────────────────────────────────────────────────────────
 // OAuth allowlist (must mirror what UI enables)
-// ───────────────────────────────────────────────────────────
 const ALLOWED_OAUTH_PROVIDERS = new Set<string>([
   ...(googleEnabled ? ["google"] : []),
   ...(facebookEnabled ? ["facebook"] : []),
@@ -55,74 +63,43 @@ const ALLOWED_OAUTH_PROVIDERS = new Set<string>([
 
 export const authOptions: NextAuthOptions = {
   adapter: PrismaAdapter(prisma),
+
+  // ✅ Keep JWT (matches your existing gating strategy)
   session: { strategy: "jwt" },
 
-  // ✅ Turn on deep NextAuth logs only when you explicitly enable it
+  // ✅ Strong diagnostics in Vercel logs (controlled by NEXTAUTH_DEBUG)
   debug: process.env.NEXTAUTH_DEBUG === "true",
   logger: {
-    error(code, metadata) {
-      console.error("[nextauth][error]", code, metadata);
+    error(code, ...message) {
+      console.error("[nextauth][error]", code, ...message);
     },
-    warn(code) {
-      console.warn("[nextauth][warn]", code);
+    warn(code, ...message) {
+      console.warn("[nextauth][warn]", code, ...message);
     },
-    debug(code, metadata) {
+    debug(code, ...message) {
       if (process.env.NEXTAUTH_DEBUG === "true") {
-        console.log("[nextauth][debug]", code, metadata);
+        console.log("[nextauth][debug]", code, ...message);
       }
-    },
-  },
-
-  /**
-   * ✅ Ensure session cookie works on both:
-   * - aeobro.com
-   * - www.aeobro.com
-   */
-  cookies: {
-    sessionToken: {
-      name: "__Secure-next-auth.session-token",
-      options: {
-        domain: ".aeobro.com",
-        path: "/",
-        httpOnly: true,
-        sameSite: "lax",
-        secure: true,
-      },
     },
   },
 
   providers: [
     // --- Email magic link via Resend ---
     EmailProvider({
-      from: process.env.EMAIL_FROM,
+      from: process.env.EMAIL_FROM, // NextAuth uses this label; we validate inside sender
       maxAge: 10 * 60, // 10 minutes
       async sendVerificationRequest({ identifier, url }) {
-        // ✅ Validate env at call-time (NOT module-load)
-        const apiKey = process.env.RESEND_API_KEY;
-        const from = process.env.EMAIL_FROM;
+        const resend = getResend();
+        const from = requireEnv("EMAIL_FROM");
 
-        if (!apiKey) {
-          console.error("❌ [auth] Missing RESEND_API_KEY");
-          throw new Error("Missing RESEND_API_KEY");
+        if (!resend) {
+          throw new Error("RESEND_API_KEY is missing");
         }
         if (!from) {
-          console.error("❌ [auth] Missing EMAIL_FROM");
-          throw new Error("Missing EMAIL_FROM");
+          throw new Error("EMAIL_FROM is missing");
         }
-
-        const resend = new Resend(apiKey);
 
         const year = new Date().getFullYear();
-        let ip = "Unknown IP";
-        let ua = "Unknown device";
-        try {
-          // next/headers is safe here; this runs inside a request
-          const { headers } = await import("next/headers");
-          ip = headers().get("x-forwarded-for") || ip;
-          ua = headers().get("user-agent") || ua;
-        } catch {
-          /* noop */
-        }
 
         const html = `
 <table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="background:#f9f9f9;padding:24px 0;text-align:center">
@@ -141,7 +118,6 @@ export const authOptions: NextAuthOptions = {
         This link expires in <strong>10 minutes</strong> and can only be used once.<br/>
         If you didn’t request this, you can safely ignore this email.
       </p>
-      <p style="font-size:11px;color:#9aa3b2;line-height:1.4;margin-top:10px">Request from: ${ip} — ${ua}</p>
     </div>
     <p style="font-size:12px;color:#aaa;margin:16px 0 0">© ${year} AEOBRO</p>
   </td></tr>
@@ -154,30 +130,17 @@ ${url}
 
 If you did not request this, you can safely ignore this email.`;
 
-        try {
-          const result = await resend.emails.send({
-            from,
-            to: identifier,
-            subject: "Your AEOBRO sign-in link",
-            html,
-            text,
-          });
+        const { error } = await resend.emails.send({
+          from,
+          to: identifier,
+          subject: "Your AEOBRO sign-in link",
+          html,
+          text,
+        });
 
-          // Resend SDK usually returns { data, error }
-          const anyResult = result as any;
-          if (anyResult?.error) {
-            console.error("❌ [auth] Resend send error:", anyResult.error);
-            throw new Error(
-              `Resend error: ${anyResult.error.message || String(anyResult.error)}`
-            );
-          }
-
-          if (process.env.NEXTAUTH_DEBUG === "true") {
-            console.log("📨 [auth] Resend send ok:", anyResult?.data ?? result);
-          }
-        } catch (err) {
-          console.error("❌ [auth] sendVerificationRequest failed:", err);
-          throw err;
+        if (error) {
+          console.error("[auth] Resend send failed:", error);
+          throw new Error(`Resend error: ${error.message || String(error)}`);
         }
       },
     }),
@@ -268,9 +231,6 @@ If you did not request this, you can safely ignore this email.`;
           }),
         ]
       : []),
-
-    // TikTok stub remains unused
-    // ...(tiktokEnabled ? [TikTokProvider(...)] : []),
   ],
 
   callbacks: {
@@ -386,18 +346,17 @@ If you did not request this, you can safely ignore this email.`;
           accessToken,
           scope,
         });
-      } catch {
-        console.error("finalizePlatformVerification error");
+      } catch (err) {
+        console.error("finalizePlatformVerification error", err);
       }
     },
   },
 
-  // ✅ canonical sign-in route
   pages: { signIn: "/login" },
 };
 
 // ───────────────────────────────────────────────────────────
-// finalizePlatformVerification helper
+// finalizePlatformVerification helper (unchanged behavior)
 // ───────────────────────────────────────────────────────────
 type FinalizeParams = {
   userId: string;
@@ -442,7 +401,9 @@ export async function finalizePlatformVerification({
   if (!externalId) return;
 
   const pa = await prisma.platformAccount.upsert({
-    where: { provider_externalId: { provider: normalizedProvider, externalId } },
+    where: {
+      provider_externalId: { provider: normalizedProvider, externalId },
+    },
     update: {
       handle,
       url,
