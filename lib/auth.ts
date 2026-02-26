@@ -1,8 +1,8 @@
 // lib/auth.ts
-// ✅ Updated: 2026-02-26 05:49 ET
+// ✅ Updated: 2026-02-26 05:58 ET
 // - Option 1: canonical sign-in page is /login
-// - trustHost: true (fixes host/url resolution issues behind proxies like Vercel)
-// - preserve existing providers, callbacks, events, plan sync logic, verification finalization
+// - Removed trustHost (not supported in next-auth v4)
+// - Preserves existing providers, callbacks, events, plan sync logic, verification finalization
 
 import type { NextAuthOptions } from "next-auth";
 import { PrismaAdapter } from "@auth/prisma-adapter";
@@ -45,6 +45,8 @@ const tiktokEnabled =
 
 // ───────────────────────────────────────────────────────────
 // OAuth allowlist (must mirror what UI enables)
+// - Deterministic: only providers with env enabled may finalize and write PlatformAccount
+// - NextAuth provider IDs here are: "google" | "facebook" | "twitter"
 // ───────────────────────────────────────────────────────────
 const ALLOWED_OAUTH_PROVIDERS = new Set<string>([
   ...(googleEnabled ? ["google"] : []),
@@ -60,16 +62,11 @@ export const authOptions: NextAuthOptions = {
   session: { strategy: "jwt" },
 
   /**
-   * ✅ Critical on Vercel / behind proxies:
-   * Allows NextAuth to trust the Host/X-Forwarded-* headers to construct absolute URLs correctly.
-   * Fixes a class of URL parsing / host mismatch issues that can surface as Safari “expected pattern”.
-   */
-  trustHost: true,
-
-  /**
    * ✅ Critical: ensure the SESSION cookie works on both:
    * - aeobro.com
    * - www.aeobro.com
+   *
+   * This prevents “logged out on www / logged in on apex” regressions after canonical redirects.
    */
   cookies: {
     sessionToken: {
@@ -138,7 +135,6 @@ If you did not request this, you can safely ignore this email.`;
           html,
           text,
         });
-
         if (error) throw new Error(`Resend error: ${error.message || String(error)}`);
       },
     }),
@@ -156,9 +152,13 @@ If you did not request this, you can safely ignore this email.`;
         try {
           // @ts-expect-error App Router runtime provides formData()
           const form = await req?.formData?.();
-          token = (form?.get?.("cf-turnstile-response") as string | undefined) ?? undefined;
+          token =
+            (form?.get?.("cf-turnstile-response") as string | undefined) ??
+            undefined;
         } catch {
-          token = (credentials as any)?.["cf-turnstile-response"] as string | undefined;
+          token = (credentials as any)?.["cf-turnstile-response"] as
+            | string
+            | undefined;
         }
         const { ok } = await verifyTurnstileToken(token);
         if (!ok) throw new Error("CAPTCHA verification failed");
@@ -171,11 +171,16 @@ If you did not request this, you can safely ignore this email.`;
         const user = await prisma.user.findUnique({ where: { email } });
         if (!user) return null;
 
-        const passwordHash = (user as any)?.passwordHash as string | undefined | null;
+        const passwordHash = (user as any)?.passwordHash as
+          | string
+          | undefined
+          | null;
         if (!passwordHash) return null;
 
         const isValid = await compare(password, passwordHash);
-        return isValid ? { id: user.id, email: user.email, name: user.name ?? null } : null;
+        return isValid
+          ? { id: user.id, email: user.email, name: user.name ?? null }
+          : null;
       },
     }),
 
@@ -197,7 +202,7 @@ If you did not request this, you can safely ignore this email.`;
         ]
       : []),
 
-    // --- Facebook OAuth ---
+    // --- Facebook OAuth (optional) ---
     ...(facebookEnabled
       ? [
           FacebookProvider({
@@ -212,7 +217,7 @@ If you did not request this, you can safely ignore this email.`;
         ]
       : []),
 
-    // --- X (Twitter) OAuth 2.0 ---
+    // --- X (Twitter) OAuth 2.0 (optional) ---
     ...(twitterEnabled
       ? [
           TwitterProvider({
@@ -228,36 +233,54 @@ If you did not request this, you can safely ignore this email.`;
   ],
 
   callbacks: {
+    // 🔑 JWT: always sync billing plan from Prisma into the token
     async jwt({ token, user, account }) {
-      if (user?.id) token.sub = (user as any).id ?? user.id;
+      if (user?.id) {
+        token.sub = (user as any).id ?? user.id;
+      }
 
+      // Persist provider-specific tokens on first OAuth sign-in
       if (account?.provider === "google") {
-        if (account.access_token) (token as any).googleAccessToken = account.access_token;
-        if (account.refresh_token) (token as any).googleRefreshToken = account.refresh_token;
-        if (typeof account.expires_at === "number") (token as any).googleExpiresAt = account.expires_at;
+        if (account.access_token)
+          (token as any).googleAccessToken = account.access_token;
+        if (account.refresh_token)
+          (token as any).googleRefreshToken = account.refresh_token;
+        if (typeof account.expires_at === "number")
+          (token as any).googleExpiresAt = account.expires_at;
       }
       if (account?.provider === "facebook") {
-        if (account.access_token) (token as any).facebookAccessToken = account.access_token;
+        if (account.access_token)
+          (token as any).facebookAccessToken = account.access_token;
       }
       if (account?.provider === "twitter") {
-        if (account.access_token) (token as any).twitterAccessToken = account.access_token;
+        if (account.access_token)
+          (token as any).twitterAccessToken = account.access_token;
       }
 
+      // 🆕 Always load the latest plan from Prisma using userId (from user or token.sub)
       const userId = (user as any)?.id ?? (token.sub as string | undefined);
       if (userId) {
         try {
           const dbUser = await prisma.user.findUnique({
             where: { id: userId },
-            select: { plan: true, planStatus: true, currentPeriodEnd: true },
+            select: {
+              plan: true,
+              planStatus: true,
+              currentPeriodEnd: true,
+            },
           });
 
           if (dbUser) {
+            // Default missing plan to LITE instead of FREE
             (token as any).plan = dbUser.plan ?? "LITE";
             (token as any).planStatus = dbUser.planStatus ?? "inactive";
-            (token as any).currentPeriodEnd = dbUser.currentPeriodEnd?.toISOString() ?? null;
+            (token as any).currentPeriodEnd =
+              dbUser.currentPeriodEnd?.toISOString() ?? null;
           } else {
+            // Safety: ensure a plan is always present when we have a userId
             (token as any).plan = (token as any).plan ?? "LITE";
-            (token as any).planStatus = (token as any).planStatus ?? "inactive";
+            (token as any).planStatus =
+              (token as any).planStatus ?? "inactive";
           }
         } catch (err) {
           console.error("JWT plan sync error:", err);
@@ -267,21 +290,29 @@ If you did not request this, you can safely ignore this email.`;
       return token;
     },
 
+    // 🔑 Session: expose plan + planStatus + currentPeriodEnd on session.user
     async session({ session, token }) {
       if (token?.sub) (session.user as any).id = token.sub;
 
       (session.user as any).plan = (token as any).plan ?? "LITE";
-      (session.user as any).planStatus = (token as any).planStatus ?? "inactive";
-      (session.user as any).currentPeriodEnd = (token as any).currentPeriodEnd
-        ? new Date((token as any).currentPeriodEnd)
-        : null;
+      (session.user as any).planStatus =
+        (token as any).planStatus ?? "inactive";
+      (session.user as any).currentPeriodEnd =
+        (token as any).currentPeriodEnd
+          ? new Date((token as any).currentPeriodEnd)
+          : null;
 
-      if ((token as any).googleAccessToken) (session as any).googleAccessToken = (token as any).googleAccessToken;
-      if ((token as any).googleRefreshToken) (session as any).googleRefreshToken = (token as any).googleRefreshToken;
-      if ((token as any).googleExpiresAt) (session as any).googleExpiresAt = (token as any).googleExpiresAt;
+      if ((token as any).googleAccessToken)
+        (session as any).googleAccessToken = (token as any).googleAccessToken;
+      if ((token as any).googleRefreshToken)
+        (session as any).googleRefreshToken = (token as any).googleRefreshToken;
+      if ((token as any).googleExpiresAt)
+        (session as any).googleExpiresAt = (token as any).googleExpiresAt;
 
-      if ((token as any).facebookAccessToken) (session as any).facebookAccessToken = (token as any).facebookAccessToken;
-      if ((token as any).twitterAccessToken) (session as any).twitterAccessToken = (token as any).twitterAccessToken;
+      if ((token as any).facebookAccessToken)
+        (session as any).facebookAccessToken = (token as any).facebookAccessToken;
+      if ((token as any).twitterAccessToken)
+        (session as any).twitterAccessToken = (token as any).twitterAccessToken;
 
       return session;
     },
@@ -323,7 +354,12 @@ If you did not request this, you can safely ignore this email.`;
         const accessToken = (account as any).access_token as string | undefined;
         const scope = (account as any).scope as string | undefined;
 
-        await finalizePlatformVerification({ userId: user.id, provider, accessToken, scope });
+        await finalizePlatformVerification({
+          userId: user.id,
+          provider,
+          accessToken,
+          scope,
+        });
       } catch {
         console.error("finalizePlatformVerification error");
       }
@@ -352,9 +388,15 @@ export async function finalizePlatformVerification({
 }: FinalizeParams) {
   const normalizedProvider = String(provider ?? "").trim().toLowerCase();
 
-  if (!normalizedProvider || normalizedProvider === "domain" || normalizedProvider === "dns" || normalizedProvider === "txt") {
+  if (
+    !normalizedProvider ||
+    normalizedProvider === "domain" ||
+    normalizedProvider === "dns" ||
+    normalizedProvider === "txt"
+  ) {
     return;
   }
+
   if (!ALLOWED_OAUTH_PROVIDERS.has(normalizedProvider)) {
     return;
   }
@@ -366,11 +408,16 @@ export async function finalizePlatformVerification({
   if (!user?.profile) return;
   const profile = user.profile;
 
-  const { externalId, handle, url } = await fetchProviderIdentity(normalizedProvider, accessToken);
+  const { externalId, handle, url } = await fetchProviderIdentity(
+    normalizedProvider,
+    accessToken
+  );
   if (!externalId) return;
 
   const pa = await prisma.platformAccount.upsert({
-    where: { provider_externalId: { provider: normalizedProvider, externalId } },
+    where: {
+      provider_externalId: { provider: normalizedProvider, externalId },
+    },
     update: {
       handle,
       url,
