@@ -4,8 +4,13 @@
 import * as React from "react";
 import { signIn } from "next-auth/react";
 
-function getSafeCallbackUrl(): string {
-  // Default destination after login
+/**
+ * Always return an ABSOLUTE, same-origin callbackUrl.
+ * This avoids Safari/WebKit throwing:
+ * “The string did not match the expected pattern.”
+ * when some internal code tries to do new URL(relativeUrl).
+ */
+function safeAbsoluteCallbackUrl(): string {
   const defaultPath = "/dashboard";
 
   if (typeof window === "undefined") return defaultPath;
@@ -16,16 +21,15 @@ function getSafeCallbackUrl(): string {
     const qs = new URLSearchParams(window.location.search);
     const cb = qs.get("callbackUrl");
 
-    // If none provided, use default (absolute)
+    // Default to dashboard
     if (!cb) return `${origin}${defaultPath}`;
 
     // Resolve relative OR absolute against current origin
     const resolved = new URL(cb, origin);
 
-    // Fail-closed: prevent open redirects to other origins
+    // Fail-closed: prevent open redirect
     if (resolved.origin !== origin) return `${origin}${defaultPath}`;
 
-    // Keep full path/query/hash on same origin
     return `${origin}${resolved.pathname}${resolved.search}${resolved.hash}`;
   } catch {
     return `${origin}${defaultPath}`;
@@ -34,12 +38,12 @@ function getSafeCallbackUrl(): string {
 
 export default function LoginPage() {
   const [callbackUrl, setCallbackUrl] = React.useState<string>(() => {
-    // initialize once
-    return typeof window !== "undefined" ? `${window.location.origin}/dashboard` : "/dashboard";
+    if (typeof window === "undefined") return "/dashboard";
+    return `${window.location.origin}/dashboard`;
   });
 
   React.useEffect(() => {
-    setCallbackUrl(getSafeCallbackUrl());
+    setCallbackUrl(safeAbsoluteCallbackUrl());
   }, []);
 
   const [email, setEmail] = React.useState("");
@@ -62,21 +66,31 @@ export default function LoginPage() {
 
     setBusy(true);
     try {
-      // Key change: callbackUrl is always ABSOLUTE and same-origin safe
       const res = await signIn("email", {
         email: trimmed,
-        callbackUrl,
+        callbackUrl, // ✅ always absolute
         redirect: false,
       });
 
-      // NextAuth sometimes returns { error } rather than throwing
+      // NextAuth often returns { error } rather than throwing
       if (res?.error) {
-        setError(res.error);
-      } else {
-        setMessage("Check your email for the sign-in link.");
+        const msg = String(res.error);
+        if (msg.toLowerCase().includes("expected pattern")) {
+          setError("Sign-in is temporarily unavailable. Please refresh and try again.");
+        } else {
+          setError(msg);
+        }
+        return;
       }
+
+      setMessage("Check your email for the sign-in link.");
     } catch (err: any) {
-      setError(err?.message || "Could not start sign-in. Please try again.");
+      const msg = err?.message || "Could not start sign-in. Please try again.";
+      if (String(msg).toLowerCase().includes("expected pattern")) {
+        setError("Sign-in is temporarily unavailable. Please refresh and try again.");
+      } else {
+        setError(msg);
+      }
     } finally {
       setBusy(false);
     }
@@ -100,6 +114,7 @@ export default function LoginPage() {
             {error}
           </div>
         )}
+
         {message && (
           <div
             role="status"
@@ -113,6 +128,7 @@ export default function LoginPage() {
           <label htmlFor="email" className="sr-only">
             Email address
           </label>
+
           <input
             id="email"
             type="email"
