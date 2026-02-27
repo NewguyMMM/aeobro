@@ -468,32 +468,46 @@ export default function ProfileEditor({
   const [planStatus, setPlanStatus] = React.useState<string | null>(null);
 
   React.useEffect(() => {
-    // If server already told us the plan, trust it and skip the fetch for plan (but we still want status)
-    let cancelled = false;
+  let cancelled = false;
 
-    (async () => {
-      try {
-        const r = await fetch("/api/account", { cache: "no-store" });
-        if (!r.ok) return;
-        const j = await r.json();
+  if (status === "unauthenticated") {
+    const callbackUrl = encodeURIComponent(window.location.href);
+    window.location.assign(`/api/auth/signin?callbackUrl=${callbackUrl}`);
+    return;
+  }
 
-        const rawPlan = (j?.plan as string | undefined) ?? undefined;
-        const rawStatus = (j?.planStatus as string | undefined) ?? undefined;
+  if (status !== "authenticated") return;
 
-        if (!cancelled) {
-          if (!planFromServer && rawPlan) setPlan(normalizePlanForUi(rawPlan));
-          if (rawStatus) setPlanStatus(rawStatus);
-          // If status missing, we fail-closed below by treating as not active.
-        }
-      } catch {
-        /* ignore */
+  (async () => {
+    try {
+      const r = await fetch("/api/account", { cache: "no-store" });
+
+      if (r.status === 401) {
+        const callbackUrl = encodeURIComponent(window.location.href);
+        window.location.assign(`/api/auth/signin?callbackUrl=${callbackUrl}`);
+        return;
       }
-    })();
 
-    return () => {
-      cancelled = true;
-    };
-  }, [planFromServer]);
+      if (!r.ok) return;
+
+      const j = await r.json();
+
+      const rawPlan = j?.plan;
+      const rawStatus = j?.planStatus;
+
+      if (!cancelled) {
+        if (!planFromServer && rawPlan) {
+          setPlan(normalizePlanForUi(rawPlan));
+        }
+        setPlanStatus(rawStatus ?? null);
+      }
+    } catch {}
+  })();
+
+  return () => {
+    cancelled = true;
+  };
+}, [planFromServer, status]);
 
   // Upper-case key for gating logic; default Lite if unknown
   const planKey = (plan ?? "Lite").toUpperCase();
