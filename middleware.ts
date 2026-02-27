@@ -1,15 +1,17 @@
 // middleware.ts
-// Updated: 2026-02-26 (HOTFIX: stop redirect loop, keep prior stable canonical host)
+// Updated: 2026-02-27 (MAGIC LINK LOOP HARDENING + keep prior behavior)
 // - KEEP: API abuse rate limiting for /api/auth/* and /api/verify/* using Upstash (Edge-safe dynamic imports)
-// - KEEP: Canonical host enforcement to www.aeobro.com (this matches prior stable behavior)
-// - KEEP: legacy auth redirects, Link header on /p/[slug], anti-enumeration
-// - KEEP: security headers (CSP, HSTS, X-CTO, Referrer-Policy, Permissions-Policy, etc.)
-// - KEEP: Edge-safe dynamic import() for Upstash libs
+// - KEEP: Canonical host enforcement to www.aeobro.com (prior stable behavior)
+// - KEEP: legacy auth redirects (/signin -> /login, etc.)
+// - KEEP: Link header on /p/[slug], anti-enumeration, security headers
+// - CHANGE: Explicitly harden NextAuth magic-link flow by ensuring middleware never
+//           does anything except: (a) canonical host redirect, (b) rate limiting + headers,
+//           on /api/auth/* paths. No other behavior is applied.
 //
-// NOTE:
+// NOTES:
 // - Rate limiting is FAIL-OPEN.
 // - Canonical redirect is method-preserving (308) and runs FIRST.
-// - Adds /api/_debug/* to matcher (so debug endpoints can be used safely).
+// - Preview deployments are not affected by canonical redirect.
 
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
@@ -172,6 +174,7 @@ export async function middleware(req: NextRequest) {
 
   // ---- 0) Canonical host redirect (RUN FIRST) ----
   // Redirect ONLY when request is on an enforced host.
+  // IMPORTANT: this must be safe for /api/auth/callback/email (magic links).
   const hostHeader = req.headers.get("host") || "";
   const host = hostHeader.split(":")[0]; // defensive (ports)
 
@@ -182,13 +185,11 @@ export async function middleware(req: NextRequest) {
     return NextResponse.redirect(url, 308);
   }
 
-  // ---- 1) Legacy auth redirects ----
-  if (legacy.has(pathname)) {
-    const url = new URL("/login", req.url);
-    return NextResponse.redirect(url);
-  }
-
-  // ---- 2) API abuse rate limiting (Upstash, fail-open) ----
+  // ---- 1) API abuse rate limiting (Upstash, fail-open) ----
+  // HARDENING: For /api/auth/*, middleware should ONLY ever do:
+  // - canonical host (above)
+  // - rate limit (below)
+  // - security headers
   if (pathname.startsWith("/api/auth/") || pathname.startsWith("/api/verify/")) {
     const ip = getClientIp(req);
 
@@ -225,6 +226,13 @@ export async function middleware(req: NextRequest) {
     if (decision === "unavailable") res.headers.set("x-ratelimit", "unavailable");
     applySecurityHeaders(req, res);
     return res;
+  }
+
+  // ---- 2) Legacy auth redirects (HTML routes only) ----
+  // (Never touches /api/auth/* due to the early return above)
+  if (legacy.has(pathname)) {
+    const url = new URL("/login", req.url);
+    return NextResponse.redirect(url);
   }
 
   // ---- 3) HTML route behavior ----
