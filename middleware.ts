@@ -5,8 +5,7 @@
 // - KEEP: legacy auth redirects (/signin -> /login, etc.)
 // - KEEP: Link header on /p/[slug], anti-enumeration, security headers
 // - CHANGE: Explicitly harden NextAuth magic-link flow by ensuring middleware never
-//           does anything except: (a) canonical host redirect, (b) rate limiting + headers,
-//           on /api/auth/* paths. No other behavior is applied.
+//           breaks /api/auth/callback/* and /api/auth/session via rate limiting.
 //
 // NOTES:
 // - Rate limiting is FAIL-OPEN.
@@ -43,7 +42,7 @@ const ENABLE_ANTI_ENUM = (process.env.AEO_ANTI_ENUM ?? "1") !== "0";
 
 // If you self-host assets from other domains, add them here
 const IMG_SRC = ["'self'", "data:", "https:"].join(" ");
-const FONT_SRC = ["'self'", "data:"].join(" ");
+const FONT_SRC = ["'self'", "data:", "https:"].join(" ");
 const CONNECT_SRC = ["'self'", "https:", "wss:"].join(" ");
 
 // Next.js App Router requires either nonce/hashes or (temporarily) allowing inline/eval.
@@ -186,17 +185,21 @@ export async function middleware(req: NextRequest) {
   }
 
   // ---- 1) API abuse rate limiting (Upstash, fail-open) ----
-  // HARDENING: For /api/auth/*, middleware should ONLY ever do:
-  // - canonical host (above)
-  // - rate limit (below)
-  // - security headers
-  if (pathname.startsWith("/api/auth/") || pathname.startsWith("/api/verify/")) {
+  // HARDENING: Never rate limit magic-link callback or session endpoints.
+  const isAuthPath = pathname.startsWith("/api/auth/");
+  const isVerifyPath = pathname.startsWith("/api/verify/");
+
+  const isAuthCallbackOrSession =
+    pathname.startsWith("/api/auth/callback/") ||
+    pathname === "/api/auth/session";
+
+  if ((isAuthPath || isVerifyPath) && !isAuthCallbackOrSession) {
     const ip = getClientIp(req);
 
     let bucketPrefix = "aeo:rl:api";
     let limit = VERIFY_LIMIT_PER_MIN;
 
-    if (pathname.startsWith("/api/auth/")) {
+    if (isAuthPath) {
       bucketPrefix = "aeo:rl:auth";
       limit = AUTH_LIMIT_PER_MIN;
     } else if (pathname.startsWith("/api/verify/bio-code/generate")) {
@@ -228,8 +231,16 @@ export async function middleware(req: NextRequest) {
     return res;
   }
 
+  // IMPORTANT: For /api/auth/callback/* and /api/auth/session, we do NOT rate limit,
+  // but we still want consistent security headers.
+  if (isAuthPath && isAuthCallbackOrSession) {
+    const res = NextResponse.next();
+    applySecurityHeaders(req, res);
+    return res;
+  }
+
   // ---- 2) Legacy auth redirects (HTML routes only) ----
-  // (Never touches /api/auth/* due to the early return above)
+  // (Never touches /api/auth/* due to the early returns above)
   if (legacy.has(pathname)) {
     const url = new URL("/login", req.url);
     return NextResponse.redirect(url);
