@@ -917,11 +917,11 @@ export default function ProfileEditor({
 
   /** ---- Status pill ---- */
   const hasEverSaved = Boolean(serverSlug || profileId);
-  const status = !hasEverSaved ? "Not yet published" : dirty ? "Unsaved changes" : "Published";
-  const statusClasses =
-    status === "Published"
-      ? "bg-green-100 text-green-700 ring-1 ring-green-200"
-      : status === "Unsaved changes"
+const publishStatus = !hasEverSaved ? "Not yet published" : dirty ? "Unsaved changes" : "Published";
+const statusClasses =
+  publishStatus === "Published"
+    ? "bg-green-100 text-green-700 ring-1 ring-green-200"
+      : publishStatus === "Unsaved changes"
       ? "bg-yellow-100 text-yellow-800 ring-1 ring-yellow-200"
       : "bg-gray-100 text-gray-700 ring-1 ring-gray-200";
 
