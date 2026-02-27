@@ -20,7 +20,6 @@ function mapDbPlanToUi(plan: string | null | undefined): UiPlan {
       return "Pro";
     case "BUSINESS":
       return "Business";
-    // Treat FREE, LITE, null, or anything unknown as Lite
     case "FREE":
     case "LITE":
     default:
@@ -33,25 +32,30 @@ export async function GET() {
 
   // ✅ Not signed in → 401 (do NOT claim any plan)
   if (!session?.user?.email) {
-    return NextResponse.json({ ok: false, error: "UNAUTHORIZED" }, { status: 401 });
+    return NextResponse.json(
+      { ok: false, error: "UNAUTHORIZED" },
+      { status: 401 }
+    );
   }
 
-  // Look up the user's plan + status from the User table by email
   const user = await prisma.user.findUnique({
     where: { email: session.user.email },
-    select: {
-      plan: true,
-      planStatus: true, // ✅ include status if present in your schema
-    },
+    select: { plan: true, planStatus: true },
   });
 
-  const plan = mapDbPlanToUi(user?.plan ?? null);
+  // ✅ Session exists but user row missing (rare edge case) → treat as unauthorized
+  if (!user) {
+    return NextResponse.json(
+      { ok: false, error: "USER_NOT_FOUND" },
+      { status: 401 }
+    );
+  }
 
   return NextResponse.json(
     {
       ok: true,
-      plan,
-      planStatus: user?.planStatus ?? null,
+      plan: mapDbPlanToUi(user.plan),
+      planStatus: user.planStatus ?? null,
     },
     { status: 200 }
   );
