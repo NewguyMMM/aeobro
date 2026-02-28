@@ -1,9 +1,8 @@
 // lib/auth.ts
-// ✅ Updated: 2026-02-26 (production-stable)
+// ✅ Updated: 2026-02-28 (production-stable + email logo + subtle security badge)
 // - Canonical sign-in page: /login
-// - Remove cookie overrides (avoid subtle NextAuth breakage)
-// - Keep existing providers/callbacks/events/plan sync/verification finalization
-// - Add explicit logging + safer Resend sendVerificationRequest
+// - Keep providers/callbacks/events/plan sync/verification finalization
+// - Email magic link now uses hosted PNG logo + email-safe HTML tables + subtle security badge
 
 import type { NextAuthOptions } from "next-auth";
 import { PrismaAdapter } from "@auth/prisma-adapter";
@@ -25,7 +24,8 @@ import { fetchProviderIdentity } from "@/lib/verify/providers";
 // ───────────────────────────────────────────────────────────
 // Branding / transactional email
 // ───────────────────────────────────────────────────────────
-const BRAND_BLUE = "#2563EB"; // Tailwind blue-600
+const BRAND_BLUE = "#2196F3"; // AEOBRO canonical blue
+const EMAIL_LOGO_URL = "https://www.aeobro.com/brand/aeobro-email-logo.png";
 
 function requireEnv(name: string): string {
   const v = process.env[name];
@@ -101,32 +101,80 @@ export const authOptions: NextAuthOptions = {
 
         const year = new Date().getFullYear();
 
+        // Email-safe, table-based layout (Gmail/Outlook safe). Uses hosted PNG logo.
         const html = `
-<table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="background:#f9f9f9;padding:24px 0;text-align:center">
-  <tr><td>
-    <div style="max-width:480px;margin:0 auto;background:#ffffff;border-radius:12px;padding:32px 24px;font-family:Inter,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#222;text-align:left;box-shadow:0 2px 8px rgba(0,0,0,0.06)">
-      <div style="text-align:center;margin-bottom:16px;line-height:1">
-        <span style="font-size:22px;font-weight:700;color:#111;letter-spacing:0.2px;">AEO</span><span style="font-size:22px;font-weight:700;letter-spacing:0.2px;color:${BRAND_BLUE};">BRO</span>
-      </div>
-      <p style="font-size:16px;margin:0 0 24px">Click below to securely sign in:</p>
-      <p style="text-align:center;margin:0 0 32px">
-        <a href="${url}" style="display:inline-block;padding:12px 24px;background:${BRAND_BLUE};color:#ffffff !important;font-weight:600;border-radius:10px;text-decoration:none;border:1px solid ${BRAND_BLUE}">
-          Sign in to AEOBRO
-        </a>
-      </p>
-      <p style="font-size:13px;color:#777;line-height:1.5;margin:0">
-        This link expires in <strong>10 minutes</strong> and can only be used once.<br/>
-        If you didn’t request this, you can safely ignore this email.
-      </p>
-    </div>
-    <p style="font-size:12px;color:#aaa;margin:16px 0 0">© ${year} AEOBRO</p>
-  </td></tr>
-</table>`.trim();
+<!DOCTYPE html>
+<html>
+  <body style="margin:0;padding:0;background-color:#f4f6f8;">
+    <table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="background-color:#f4f6f8;padding:40px 0;">
+      <tr>
+        <td align="center">
+          <table width="480" cellpadding="0" cellspacing="0" role="presentation" style="background:#ffffff;border-radius:12px;padding:36px 28px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#111;box-shadow:0 2px 10px rgba(0,0,0,0.06);">
+            <tr>
+              <td align="center" style="padding-bottom:22px;">
+                <img
+                  src="${EMAIL_LOGO_URL}"
+                  width="220"
+                  height="auto"
+                  alt="AEOBRO"
+                  style="display:block;border:0;outline:none;text-decoration:none;"
+                />
+              </td>
+            </tr>
+
+            <tr>
+              <td align="center" style="font-size:18px;font-weight:700;padding-bottom:10px;">
+                Sign in to AEOBRO
+              </td>
+            </tr>
+
+            <tr>
+              <td align="center" style="font-size:14px;color:#444;line-height:1.6;padding-bottom:22px;">
+                Click the button below to securely access your account.
+              </td>
+            </tr>
+
+            <tr>
+              <td align="center" style="padding-bottom:18px;">
+                <a
+                  href="${url}"
+                  style="background:${BRAND_BLUE};color:#ffffff !important;text-decoration:none;padding:12px 22px;border-radius:10px;font-size:14px;font-weight:700;display:inline-block;border:1px solid ${BRAND_BLUE};"
+                >
+                  Sign In Securely
+                </a>
+              </td>
+            </tr>
+
+            <!-- Subtle security badge -->
+            <tr>
+              <td align="center" style="font-size:12px;color:#6b7280;line-height:1.5;padding-top:6px;">
+                🔒 Secure link • Single-use • Expires in 10 minutes
+              </td>
+            </tr>
+
+            <tr>
+              <td style="padding-top:22px;border-bottom:1px solid #eee;"></td>
+            </tr>
+
+            <tr>
+              <td align="center" style="font-size:12px;color:#9aa0a6;line-height:1.6;padding-top:16px;">
+                If you didn’t request this email, you can safely ignore it.<br/>
+                © ${year} AEOBRO
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>`.trim();
 
         const text = `Sign in to AEOBRO
 
 Use the link below to sign in (expires in 10 minutes, single-use):
 ${url}
+
+Security: single-use link • expires in 10 minutes
 
 If you did not request this, you can safely ignore this email.`;
 
